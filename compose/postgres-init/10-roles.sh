@@ -1,5 +1,4 @@
 #!/bin/sh
-# SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
   -v owner="$OSTROM_OWNER" -v owner_pw="$OSTROM_OWNER_PASSWORD" \
