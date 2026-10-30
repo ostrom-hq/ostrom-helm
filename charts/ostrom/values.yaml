@@ -236,8 +236,11 @@ externalDatabase:
   polisExistingSecret: ""     # key `url`
 
 # --- Ory Polis (SAML ↔ OIDC bridge) ---------------------------------------------------------------------------------
+# Coming soon: SAML single sign-on. The server has no SAML code yet, so Polis stays off by default (an unused service
+# is attack surface and resources for nothing). Support is kept here for when it lands; turning it on today deploys
+# Polis and its host, with nothing calling it.
 polis:
-  enabled: true
+  enabled: false
   image:
     repository: docker.io/boxyhq/jackson
     tag: "26.2.0"

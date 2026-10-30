@@ -7,6 +7,7 @@ tests:
     set:
       ingress.hosts: { api: api.ostrom.run, app: app.ostrom.run, site: ostrom.run, siteAliases: [www.ostrom.run], sso: sso.ostrom.run }
       ingress.tls.secretName: ostrom-origin-tls
+      polis.enabled: true
     asserts:
       - hasDocuments: { count: 5 }
       - equal: { path: 'spec.tls[0].secretName', value: ostrom-origin-tls }
@@ -43,7 +44,7 @@ tests:
   - it: no artifacts Ingress when its body size is unset
     set: { ingress.artifactsBodySize: "" }
     asserts:
-      - hasDocuments: { count: 4 }
+      - hasDocuments: { count: 3 }
   - it: one origin for the browser, the console's host serves the console and /api/v1 from the server; the API host serves all of the API
     set: { ingress.hosts: { api: api.ostrom.run, app: app.ostrom.run, site: ostrom.run, sso: sso.ostrom.run } }
     asserts:
@@ -73,3 +74,7 @@ tests:
         documentIndex: 0
       - equal: { path: 'spec.rules[0].host', value: api.example.com }
         documentIndex: 0
+  - it: no SSO host by default (Polis is off until the server speaks SAML)
+    asserts:
+      - hasDocuments: { count: 4 }
+      - notEqual: { path: metadata.name, value: o-ostrom-sso }

@@ -74,7 +74,8 @@ yourself and set `server.signingKey.existingSecret` and `server.secretsKey.exist
 
 ## 6. DNS
 
-Point `api.`, `app.`, `sso.` and the site host at the ingress controller's address.
+Point `api.`, `app.` and the site host at the ingress controller's address (and `sso.` only with
+`polis.enabled: true`; SAML is coming soon).
 
 ## External PostgreSQL
 
