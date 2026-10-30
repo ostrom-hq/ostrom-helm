@@ -117,8 +117,14 @@ key: {{ if .Values.postgresql.enabled }}owner-password{{ else }}migration-passwo
 {{- if .Values.server.signingKey.existingSecret -}}{{ .Values.server.signingKey.existingSecret }}{{- else -}}{{ printf "%s-signing-key" (include "ostrom.fullname" .) }}{{- end -}}
 {{- end -}}
 
+{{/* The Secret the user gives for the secrets key, or "": safe when `server.secretsKey` is absent (`--reuse-values`). */}}
+{{- define "ostrom.secretsKey.existingSecret" -}}
+{{- dig "secretsKey" "existingSecret" "" .Values.server -}}
+{{- end -}}
+
 {{- define "ostrom.secretsKey.secretName" -}}
-{{- if .Values.server.secretsKey.existingSecret -}}{{ .Values.server.secretsKey.existingSecret }}{{- else -}}{{ printf "%s-secrets-key" (include "ostrom.fullname" .) }}{{- end -}}
+{{- $given := include "ostrom.secretsKey.existingSecret" . -}}
+{{- if $given -}}{{ $given }}{{- else -}}{{ printf "%s-secrets-key" (include "ostrom.fullname" .) }}{{- end -}}
 {{- end -}}
 
 {{- define "ostrom.polis.secretName" -}}

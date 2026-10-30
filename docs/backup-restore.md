@@ -76,9 +76,11 @@ cd compose
 docker compose exec -T postgres pg_dump -U postgres -Fc ostrom > ostrom-$(date +%F).dump
 docker compose exec -T postgres pg_dump -U postgres -Fc polis  > polis-$(date +%F).dump
 docker compose cp server:/var/lib/ostrom/instance-key.pem ./instance-key.pem   # keep with .env, encrypted
+docker compose cp server:/var/lib/ostrom/data/secrets.key ./secrets.key        # likewise: it opens the org secrets
 cp .env env-backup
 ```
 
 Restore: `docker compose up -d postgres`, then
 `docker compose exec -T postgres pg_restore -U postgres -d ostrom --clean --if-exists --no-owner --role=ostrom < ostrom-….dump`
-(same for `polis`), copy `instance-key.pem` back with `docker compose cp`, and `docker compose up -d`.
+(same for `polis`), copy `instance-key.pem` to `/var/lib/ostrom/` and `secrets.key` to `/var/lib/ostrom/data/` with
+`docker compose cp`, and `docker compose up -d`.
