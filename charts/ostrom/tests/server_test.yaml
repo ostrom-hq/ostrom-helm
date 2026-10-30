@@ -4,15 +4,33 @@ templates:
   - templates/server-config.yaml
 release: { name: o, namespace: ostrom }
 tests:
-  - it: wires the database, the URLs and cloud sessions into the ConfigMap
+  - it: wires the database (serving role), the URLs and Polis into the ConfigMap; no cloud sessions by default
     template: templates/server-config.yaml
-    set: { global.urls.api: "https://api.ostrom.run" }
+    set: { global.urls.api: "https://api.ostrom.run", global.urls.app: "https://app.ostrom.run" }
     asserts:
       - equal: { path: data.OSTROM_DATABASE_URL, value: "postgresql://o-ostrom-postgresql:5432/ostrom" }
+      - equal: { path: data.OSTROM_DATABASE_USER, value: ostrom_app }
       - equal: { path: data.OSTROM_PUBLIC_URL, value: "https://api.ostrom.run" }
-      - equal: { path: data.OSTROM_CLOUD_NAMESPACE, value: ostrom }
-      - equal: { path: data.OSTROM_CLOUD_RUNNER_IMAGE, value: "ghcr.io/ostrom-hq/ostrom-runner:0.1.0" }
+      - equal: { path: data.OSTROM_CONSOLE_URL, value: "https://app.ostrom.run" }
       - equal: { path: data.OSTROM_SAML_POLIS_URL, value: "http://o-ostrom-polis:5225" }
+      - notExists: { path: data.OSTROM_RUNNERS_DRIVER }
+  - it: cloud sessions use the Kubernetes driver in the release namespace
+    template: templates/server-config.yaml
+    set: { cloudSessions.enabled: true, server.replicas: 1, global.imagePullSecrets: [ghcr], cloudSessions.runner.priorityClassName: low }
+    asserts:
+      - equal: { path: data.OSTROM_RUNNERS_DRIVER, value: kubernetes }
+      - equal: { path: data.OSTROM_RUNNERS_SERVER_URL, value: "http://o-ostrom-server.ostrom.svc:8080" }
+      - equal: { path: data.OSTROM_RUNNERS_IMAGE, value: "ghcr.io/ostrom-hq/ostrom-runner:0.1.0" }
+      - equal: { path: data.OSTROM_RUNNERS_KUBERNETES_NAMESPACE, value: ostrom }
+      - equal: { path: data.OSTROM_RUNNERS_KUBERNETES_IMAGE_PULL_SECRET, value: ghcr }
+      - equal: { path: data.OSTROM_RUNNERS_KUBERNETES_PRIORITY_CLASS, value: low }
+      - equal: { path: data.OSTROM_RUNNERS_WORKSPACE_SIZE, value: 10Gi }
+      - equal: { path: data.OSTROM_RUNNERS_KUBERNETES_SERVER_SELECTOR, value: "app.kubernetes.io/name=ostrom,app.kubernetes.io/instance=o,app.kubernetes.io/component=server" }
+  - it: cloud sessions refuse more than one server replica
+    template: templates/server.yaml
+    set: { cloudSessions.enabled: true, server.replicas: 2 }
+    asserts:
+      - failedTemplate: { errorMessage: "cloudSessions.enabled needs exactly one server replica (server.replicas: 1, no autoscaling): the terminal relay lives in memory" }
   - it: BYOK and OTel settings land in the ConfigMap when set
     template: templates/server-config.yaml
     set:
@@ -64,12 +82,57 @@ tests:
     asserts:
       - equal: { path: 'spec.template.spec.containers[0].image', value: "registry.local/o/ostrom-server:1.2.3" }
       - equal: { path: 'spec.template.spec.imagePullSecrets[0].name', value: ghcr }
-  - it: migrations run in an init container when asked
+  - it: migrations run first, with the owner's credentials, which the serving container never receives
     template: templates/server.yaml
     documentSelector: { path: kind, value: Deployment }
-    set: { migrations.initContainer: true }
     asserts:
       - equal: { path: 'spec.template.spec.initContainers[0].command', value: ["/usr/local/bin/ostrom-server", "migrate"] }
+      - contains:
+          path: 'spec.template.spec.initContainers[0].env'
+          content: { name: OSTROM_DATABASE_MIGRATION_USER, value: ostrom }
+      - contains:
+          path: 'spec.template.spec.initContainers[0].env'
+          content:
+            name: OSTROM_DATABASE_MIGRATION_PASSWORD
+            valueFrom: { secretKeyRef: { name: o-ostrom-postgresql, key: owner-password } }
+      - contains:
+          path: 'spec.template.spec.initContainers[0].env'
+          content:
+            name: OSTROM_DATABASE_MIGRATION_URL
+            value: "postgresql://$(OSTROM_DATABASE_MIGRATION_USER):$(OSTROM_DATABASE_MIGRATION_PASSWORD)@o-ostrom-postgresql:5432/ostrom"
+      - notContains:
+          path: 'spec.template.spec.containers[0].env'
+          content:
+            name: OSTROM_DATABASE_MIGRATION_PASSWORD
+            valueFrom: { secretKeyRef: { name: o-ostrom-postgresql, key: owner-password } }
+      - contains:
+          path: 'spec.template.spec.containers[0].env'
+          content:
+            name: OSTROM_DATABASE_PASSWORD
+            valueFrom: { secretKeyRef: { name: o-ostrom-postgresql, key: password } }
+  - it: an external database takes the migration credentials from its own secret
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set:
+      postgresql.enabled: false
+      externalDatabase: { url: "postgresql://db.example:5432/ostrom", username: app, migrationUsername: owner, existingSecret: db }
+    asserts:
+      - contains:
+          path: 'spec.template.spec.initContainers[0].env'
+          content:
+            name: OSTROM_DATABASE_MIGRATION_URL
+            value: "postgresql://$(OSTROM_DATABASE_MIGRATION_USER):$(OSTROM_DATABASE_MIGRATION_PASSWORD)@db.example:5432/ostrom"
+      - contains:
+          path: 'spec.template.spec.initContainers[0].env'
+          content:
+            name: OSTROM_DATABASE_MIGRATION_PASSWORD
+            valueFrom: { secretKeyRef: { name: db, key: migration-password } }
+  - it: migrations can be turned off
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { migrations.initContainer: false }
+    asserts:
+      - notExists: { path: spec.template.spec.initContainers }
   - it: no replicas field under an autoscaler, rolling update without downtime
     template: templates/server.yaml
     documentSelector: { path: kind, value: Deployment }

@@ -7,30 +7,31 @@ templates:
   - templates/site.yaml
   - templates/polis.yaml
   - templates/postgresql.yaml
+  - templates/tests/test-database.yaml
 tests:
   - it: the session controller gets a namespaced Role, never a ClusterRole
     template: templates/cloud-sessions.yaml
     release: { name: o, namespace: ostrom }
+    set: { cloudSessions.enabled: true, server.replicas: 1 }
     asserts:
-      - hasDocuments: { count: 3 }
+      - hasDocuments: { count: 2 }
       - isKind: { of: Role }
-        documentIndex: 1
-      - notContains: { path: 'rules[*].resources', content: [nodes] }
-        documentIndex: 1
-      - equal: { path: 'subjects[0].namespace', value: ostrom }
-        documentIndex: 2
-      - equal: { path: roleRef.kind, value: Role }
-        documentIndex: 2
-  - it: session pods have no Kubernetes API token
-    template: templates/cloud-sessions.yaml
-    asserts:
-      - equal: { path: automountServiceAccountToken, value: false }
         documentIndex: 0
+      - notContains: { path: 'rules[*].resources', content: [nodes] }
+        documentIndex: 0
+      - notContains: { path: 'rules[*].resources', content: [pods/exec] }
+        documentIndex: 0
+      - contains: { path: rules, content: { apiGroups: [networking.k8s.io], resources: [networkpolicies], verbs: [get, create, update] } }
+        documentIndex: 0
+      - equal: { path: 'subjects[0].namespace', value: ostrom }
+        documentIndex: 1
+      - equal: { path: roleRef.kind, value: Role }
+        documentIndex: 1
   - it: no Role when RBAC creation is off
     template: templates/cloud-sessions.yaml
-    set: { cloudSessions.rbac.create: false }
+    set: { cloudSessions.enabled: true, server.replicas: 1, cloudSessions.rbac.create: false }
     asserts:
-      - hasDocuments: { count: 1 }
+      - hasDocuments: { count: 0 }
   - it: no cloud-session objects when the feature is off, and the server gets no API token
     set: { cloudSessions.enabled: false }
     template: templates/cloud-sessions.yaml
@@ -61,3 +62,20 @@ tests:
     asserts:
       - equal: { path: spec.template.spec.securityContext.runAsUser, value: 999 }
       - equal: { path: 'spec.template.spec.containers[0].securityContext.capabilities.drop', value: [ALL] }
+  - it: helm test checks the database roles with the serving and owner credentials
+    template: templates/tests/test-database.yaml
+    release: { name: o, namespace: ostrom }
+    asserts:
+      - isKind: { of: Pod }
+      - equal: { path: 'metadata.annotations["helm.sh/hook"]', value: test }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: "rolsuper OR rolbypassrls" }
+      - contains:
+          path: spec.containers[0].env
+          content: { name: OWNER_PASSWORD, valueFrom: { secretKeyRef: { name: o-ostrom-postgresql, key: owner-password } } }
+  - it: the database starts with three roles, the serving one without privileges
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: ConfigMap }
+    asserts:
+      - matchRegex: { path: 'data["10-roles.sh"]', pattern: 'CREATE ROLE :"app" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS' }
+      - matchRegex: { path: 'data["10-roles.sh"]', pattern: 'CREATE DATABASE :"db" OWNER :"owner"' }
+      - matchRegex: { path: 'data["10-roles.sh"]', pattern: 'REVOKE ALL ON DATABASE polis FROM PUBLIC' }

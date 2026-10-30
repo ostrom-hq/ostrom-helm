@@ -1,0 +1,65 @@
+{{- if and .Values.tests.enabled .Values.postgresql.enabled }}
+{{- $full := include "ostrom.fullname" . -}}
+{{- $pg := .Values.postgresql -}}
+{{- $host := include "ostrom.postgresql.host" . -}}
+{{- $secret := include "ostrom.postgresql.secretName" . -}}
+# The roles of CONVENTIONS 16.1, checked on the real database: the serving role can neither bypass row-level
+# security nor create or alter anything; the owner can migrate; Ory Polis has its own database.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ $full }}-test-database
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: test
+      image: {{ printf "%s:%s" $pg.image.repository $pg.image.tag }}
+      command: ["/bin/sh", "-ec"]
+      args:
+        - |
+          app() { PGPASSWORD="$APP_PASSWORD" psql -h {{ $host }} -U {{ $pg.username | quote }} -d {{ $pg.database | quote }} -v ON_ERROR_STOP=1 -Atc "$1"; }
+          owner() { PGPASSWORD="$OWNER_PASSWORD" psql -h {{ $host }} -U {{ $pg.ownerUsername | quote }} -d {{ $pg.database | quote }} -v ON_ERROR_STOP=1 -Atc "$1"; }
+          test "$(app "SELECT rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb FROM pg_roles WHERE rolname = current_user")" = f
+          echo "serving role: not superuser, no BYPASSRLS, cannot create roles or databases"
+          if app "CREATE TABLE helm_test_forbidden (id int)" 2>/dev/null; then echo "the serving role created a table"; exit 1; fi
+          echo "serving role: cannot create a table"
+          owner "CREATE TABLE IF NOT EXISTS helm_test_probe (id int)"
+          owner "INSERT INTO helm_test_probe VALUES (1)"
+          test "$(app "SELECT count(*) FROM helm_test_probe")" -ge 1
+          if app "ALTER TABLE helm_test_probe ADD COLUMN x int" 2>/dev/null; then echo "the serving role altered a table"; exit 1; fi
+          if app "ALTER TABLE helm_test_probe DISABLE ROW LEVEL SECURITY" 2>/dev/null; then echo "the serving role changed RLS"; exit 1; fi
+          owner "DROP TABLE helm_test_probe"
+          echo "owner: creates tables the serving role reads and cannot alter"
+          {{- if .Values.polis.enabled }}
+          PGPASSWORD="$POLIS_PASSWORD" psql -h {{ $host }} -U polis -d polis -v ON_ERROR_STOP=1 -Atc "SELECT 1" >/dev/null
+          if PGPASSWORD="$POLIS_PASSWORD" psql -h {{ $host }} -U polis -d {{ $pg.database | quote }} -Atc "SELECT 1" 2>/dev/null; then echo "polis reached the ostrom database"; exit 1; fi
+          echo "polis: its own database only"
+          {{- end }}
+      env:
+        - name: APP_PASSWORD
+          valueFrom: { secretKeyRef: { name: {{ $secret }}, key: password } }
+        - name: OWNER_PASSWORD
+          valueFrom: { secretKeyRef: { name: {{ $secret }}, key: owner-password } }
+        {{- if .Values.polis.enabled }}
+        - name: POLIS_PASSWORD
+          valueFrom: { secretKeyRef: { name: {{ $secret }}, key: polis-password } }
+        {{- end }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { memory: 128Mi }
+{{- end }}

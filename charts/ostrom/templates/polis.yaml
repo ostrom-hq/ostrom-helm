@@ -41,10 +41,10 @@ spec:
             - { name: DB_ENGINE, value: sql }
             - { name: DB_TYPE, value: postgres }
             {{- if .Values.postgresql.enabled }}
-            - { name: PG_USER, value: {{ .Values.postgresql.username | quote }} }
+            - { name: PG_USER, value: polis }
             - name: PG_PASSWORD
               valueFrom:
-                secretKeyRef: { name: {{ include "ostrom.postgresql.secretName" . }}, key: password }
+                secretKeyRef: { name: {{ include "ostrom.postgresql.secretName" . }}, key: polis-password }
             - name: DB_URL
               value: {{ printf "postgres://$(PG_USER):$(PG_PASSWORD)@%s:5432/polis" (include "ostrom.postgresql.host" .) | quote }}
             {{- else if .Values.externalDatabase.polisExistingSecret }}

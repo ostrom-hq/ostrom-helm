@@ -47,7 +47,9 @@ spec:
           podSelector: {{- toYaml $np.ingressController.podSelector | nindent 12 }}
         - {{- include "ostrom.np.peer" (dict "root" $ "component" "test") | nindent 10 }}
         {{- if eq $c "server" }}
-        - {{- include "ostrom.np.peer" (dict "root" $ "component" "runner") | nindent 10 }}
+        {{- if $.Values.cloudSessions.enabled }}
+        - {{- include "ostrom.np.sessions" $ | nindent 10 }}
+        {{- end }}
         - {{- include "ostrom.np.peer" (dict "root" $ "component" "web") | nindent 10 }}
         {{- end }}
         {{- if eq $c "polis" }}
@@ -116,6 +118,10 @@ spec:
         - {{- include "ostrom.np.peer" (dict "root" . "component" "server") | nindent 10 }}
         - {{- include "ostrom.np.peer" (dict "root" . "component" "polis") | nindent 10 }}
         - {{- include "ostrom.np.peer" (dict "root" . "component" "backup") | nindent 10 }}
+        {{- if .Values.tests.enabled }}
+        # `helm test` checks the roles (tests/test-database.yaml).
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "test") | nindent 10 }}
+        {{- end }}
       ports: [{ protocol: TCP, port: 5432 }]
 ---
 apiVersion: networking.k8s.io/v1
@@ -171,24 +177,48 @@ spec:
 {{- if .Values.cloudSessions.enabled }}
 ---
 # Session pods run agent code: the internet (model APIs, Git hosts, package registries) and this release's
-# server only — nothing else in the cluster, no private range, no cloud metadata endpoint.
+# server only — nothing else in the cluster, no private range, no cloud metadata endpoint. The server writes its own
+# policies for them too; NetworkPolicies add up, so the extra denied CIDRs need `ciliumEgressDeny` to hold.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ $full }}-runner
+  name: {{ $full }}-sessions
   labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
 spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/instance: {{ .Release.Name }}
-      app.kubernetes.io/component: runner
+  {{- include "ostrom.np.sessions" . | nindent 2 }}
   policyTypes: [Ingress, Egress]
   ingress: []
   egress:
     - to:
+        - namespaceSelector: {{- toYaml $np.dns.namespaceSelector | nindent 12 }}
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
         - {{- include "ostrom.np.peer" (dict "root" . "component" "server") | nindent 10 }}
       ports: [{ protocol: TCP, port: {{ .Values.server.port }} }]
     {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
+{{- end }}
+{{- if $np.ciliumEgressDeny.enabled }}
+---
+# Every pod of the namespace, session pods included: never the extra denied CIDRs nor the metadata service.
+# A Cilium deny rule wins over every allow rule, whoever wrote it.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ $full }}-egress-deny
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  endpointSelector: {}
+  enableDefaultDeny:
+    egress: false
+    ingress: false
+  egressDeny:
+    - toCIDRSet:
+        - cidr: 169.254.169.254/32
+        {{- range $np.egress.extraDeniedCidrs }}
+        - cidr: {{ . }}
+        {{- end }}
 {{- end }}
 {{- if .Values.tests.enabled }}
 ---

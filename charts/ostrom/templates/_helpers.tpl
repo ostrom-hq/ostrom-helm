@@ -84,18 +84,29 @@ imagePullSecrets:
 {{- if .Values.postgresql.enabled -}}{{ .Values.postgresql.username }}{{- else -}}{{ required "externalDatabase.username is required" .Values.externalDatabase.username }}{{- end -}}
 {{- end -}}
 
-{{/* Secret name and key of the database password used by the server. */}}
+{{/* Owner role of the database: migrations only, never the serving process. */}}
+{{- define "ostrom.database.ownerUser" -}}
+{{- if .Values.postgresql.enabled -}}{{ .Values.postgresql.ownerUsername }}{{- else -}}{{ required "externalDatabase.migrationUsername is required" .Values.externalDatabase.migrationUsername }}{{- end -}}
+{{- end -}}
+
+{{/* Secret holding the database passwords: keys `password` (serving role) and `migration-password` or `owner-password`. */}}
+{{- define "ostrom.database.secretName" -}}
+{{- if .Values.postgresql.enabled -}}{{ include "ostrom.postgresql.secretName" . }}
+{{- else if .Values.externalDatabase.existingSecret -}}{{ .Values.externalDatabase.existingSecret }}
+{{- else -}}{{ include "ostrom.fullname" . }}-external-db
+{{- end -}}
+{{- end -}}
+
+{{/* Secret name and key of the database password used by the server (the serving role). */}}
 {{- define "ostrom.database.passwordRef" -}}
-{{- if .Values.postgresql.enabled -}}
-name: {{ include "ostrom.postgresql.secretName" . }}
-key: password
-{{- else if .Values.externalDatabase.existingSecret -}}
-name: {{ .Values.externalDatabase.existingSecret }}
-key: password
-{{- else -}}
-name: {{ include "ostrom.fullname" . }}-external-db
+name: {{ include "ostrom.database.secretName" . }}
 key: password
 {{- end -}}
+
+{{/* Secret name and key of the owner's password, for `ostrom-server migrate`. */}}
+{{- define "ostrom.database.ownerPasswordRef" -}}
+name: {{ include "ostrom.database.secretName" . }}
+key: {{ if .Values.postgresql.enabled }}owner-password{{ else }}migration-password{{ end }}
 {{- end -}}
 
 {{- define "ostrom.server.secretName" -}}
@@ -134,6 +145,14 @@ podSelector:
   matchLabels:
     app.kubernetes.io/instance: {{ .root.Release.Name }}
     app.kubernetes.io/component: {{ .component }}
+{{- end -}}
+{{/* The session pods the server creates (labels set by ostrom-server's Kubernetes driver). */}}
+{{- define "ostrom.np.sessions" -}}
+podSelector:
+  matchLabels:
+    app.kubernetes.io/managed-by: ostrom
+  matchExpressions:
+    - { key: ostrom.run/session, operator: Exists }
 {{- end -}}
 {{- define "ostrom.np.internet" -}}
 - to:

@@ -7,7 +7,7 @@ a native binary (no JVM): it idles around 20-40 MB of RAM.
 |---|---|---|---|---|
 | up to 50 people | 2 × (50m CPU, 64 Mi request / 256 Mi limit) | 2 × default | 100m / 256 Mi, 10 Gi disk | 250m / 512 Mi each, limit 2 CPU / 2 Gi |
 | 50-500 | 3 × (200m, 128 Mi / 512 Mi), HPA 3-10 | 2-4 | 500m / 1 Gi, 50 Gi, `max_connections` ≥ replicas × `server.database.maxConnections` + 20 | same; set `cloudSessions.runner.maxConcurrent` to what the nodes hold |
-| 500+ | HPA 4-20, external managed PostgreSQL with backups and a replica | 3-6 | managed | dedicated node pool (`cloudSessions.runner.nodeSelector` / `tolerations`) |
+| 500+ | HPA 4-20, external managed PostgreSQL with backups and a replica | 3-6 | managed | dedicated nodes for sessions, a PriorityClass below your workloads (`cloudSessions.runner.priorityClassName`) |
 
 Rules of thumb:
 

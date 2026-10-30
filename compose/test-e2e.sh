@@ -12,22 +12,31 @@ get() { curl -fsS --retry 30 --retry-all-errors --retry-delay 2 -H "Host: $1" "h
 
 rm -f .env
 ./install.sh || fail "install.sh"
-grep -Eq '^POSTGRES_PASSWORD=[A-Za-z0-9]{32}$' .env || fail "no generated database password"
+for k in POSTGRES_PASSWORD OSTROM_OWNER_PASSWORD OSTROM_APP_PASSWORD POLIS_DB_PASSWORD; do
+  grep -Eq "^$k=[A-Za-z0-9]{32}\$" .env || fail "no generated $k"
+done
 [ "$(stat -c %a .env 2>/dev/null || stat -f %Lp .env)" = "600" ] || fail ".env is not private"
 
 get api.localhost /health | grep -q '"status":"ok"' || fail "server through Caddy"
 get app.localhost / >/dev/null || fail "console through Caddy"
 get sso.localhost /api/health | grep -qi 'version\|healthy\|ok' || fail "Ory Polis through Caddy"
 
-before=$(grep POSTGRES_PASSWORD .env)
+before=$(sha256sum .env 2>/dev/null || shasum -a 256 .env)
 ./install.sh --no-start
-[ "$(grep POSTGRES_PASSWORD .env)" = "$before" ] || fail "second install changed the secrets"
+[ "$(sha256sum .env 2>/dev/null || shasum -a 256 .env)" = "$before" ] || fail "second install changed .env"
 
-docker compose exec -T postgres psql -U ostrom -d ostrom -c "CREATE TABLE IF NOT EXISTS e2e_marker(x int); INSERT INTO e2e_marker VALUES (42);" >/dev/null
-docker compose exec -T postgres psql -U ostrom -lqt | cut -d'|' -f1 | grep -qw polis || fail "polis database missing"
+# The roles: the server's cannot bypass row-level security nor create anything; the owner migrates.
+# shellcheck source=/dev/null
+. ./.env
+app() { docker compose exec -T -e PGPASSWORD="$OSTROM_APP_PASSWORD" postgres psql -h 127.0.0.1 -U ostrom_app -d ostrom -v ON_ERROR_STOP=1 -Atc "$1"; }
+owner() { docker compose exec -T -e PGPASSWORD="$OSTROM_OWNER_PASSWORD" postgres psql -h 127.0.0.1 -U ostrom -d ostrom -v ON_ERROR_STOP=1 -Atc "$1"; }
+[ "$(app "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user")" = f ] || fail "serving role too strong"
+if app "CREATE TABLE e2e_forbidden (x int)" 2>/dev/null; then fail "serving role created a table"; fi
+owner "CREATE TABLE IF NOT EXISTS e2e_marker(x int); INSERT INTO e2e_marker VALUES (42);" >/dev/null
+docker compose exec -T postgres psql -U postgres -lqt | cut -d'|' -f1 | grep -qw polis || fail "polis database missing"
 docker compose restart
 docker compose up -d --wait
-[ "$(docker compose exec -T postgres psql -U ostrom -d ostrom -Atc 'SELECT x FROM e2e_marker')" = "42" ] || fail "data lost on restart"
+[ "$(app 'SELECT x FROM e2e_marker')" = "42" ] || fail "data lost on restart"
 get api.localhost /health >/dev/null || fail "server after restart"
 
 echo "compose e2e: ok"

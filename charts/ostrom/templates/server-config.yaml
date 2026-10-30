@@ -17,6 +17,7 @@ data:
   OSTROM_PUBLIC_URL: {{ .Values.global.urls.api | quote }}
   OSTROM_API_URL: {{ .Values.global.urls.api | quote }}
   OSTROM_APP_URL: {{ .Values.global.urls.app | quote }}
+  OSTROM_CONSOLE_URL: {{ .Values.global.urls.app | quote }}
   OSTROM_SITE_URL: {{ .Values.global.urls.site | quote }}
   {{- with .Values.byok.extraction }}
   {{- if .provider }}
@@ -60,20 +61,22 @@ data:
   OSTROM_SAML_POLIS_EXTERNAL_URL: {{ include "ostrom.polis.externalUrl" . | quote }}
   {{- end }}
   {{- if .Values.cloudSessions.enabled }}
-  OSTROM_CLOUD_SESSIONS_ENABLED: "true"
-  OSTROM_CLOUD_NAMESPACE: {{ .Release.Namespace | quote }}
-  OSTROM_CLOUD_RUNNER_IMAGE: {{ include "ostrom.image" (dict "root" . "image" .Values.cloudSessions.runner.image "name" "ostrom-runner") | quote }}
-  OSTROM_CLOUD_RUNNER_SERVICE_ACCOUNT: {{ printf "%s-runner" $full | quote }}
-  OSTROM_CLOUD_RUNNER_LABELS: {{ printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s,app.kubernetes.io/component=runner" (include "ostrom.name" .) .Release.Name | quote }}
-  OSTROM_CLOUD_RUNNER_CPU_REQUEST: {{ .Values.cloudSessions.runner.resources.requests.cpu | quote }}
-  OSTROM_CLOUD_RUNNER_MEMORY_REQUEST: {{ .Values.cloudSessions.runner.resources.requests.memory | quote }}
-  OSTROM_CLOUD_RUNNER_CPU_LIMIT: {{ .Values.cloudSessions.runner.resources.limits.cpu | quote }}
-  OSTROM_CLOUD_RUNNER_MEMORY_LIMIT: {{ .Values.cloudSessions.runner.resources.limits.memory | quote }}
-  OSTROM_CLOUD_RUNNER_DEADLINE_SECONDS: {{ .Values.cloudSessions.runner.activeDeadlineSeconds | quote }}
-  OSTROM_CLOUD_MAX_CONCURRENT: {{ .Values.cloudSessions.runner.maxConcurrent | quote }}
+  {{- $r := .Values.cloudSessions.runner }}
+  OSTROM_RUNNERS_DRIVER: kubernetes
+  OSTROM_RUNNERS_SERVER_URL: {{ printf "http://%s-server.%s.svc:%v" $full .Release.Namespace $s.port | quote }}
+  OSTROM_RUNNERS_IMAGE: {{ include "ostrom.image" (dict "root" . "image" $r.image "name" "ostrom-runner") | quote }}
+  OSTROM_RUNNERS_WORKSPACE_SIZE: {{ $r.workspaceSize | quote }}
+  OSTROM_RUNNERS_KUBERNETES_NAMESPACE: {{ .Release.Namespace | quote }}
+  OSTROM_RUNNERS_KUBERNETES_STORAGE_CLASS: {{ $r.storageClass | quote }}
   {{- with .Values.global.imagePullSecrets }}
-  OSTROM_CLOUD_IMAGE_PULL_SECRETS: {{ join "," . | quote }}
+  OSTROM_RUNNERS_KUBERNETES_IMAGE_PULL_SECRET: {{ first . | quote }}
   {{- end }}
+  {{- with $r.priorityClassName }}
+  OSTROM_RUNNERS_KUBERNETES_PRIORITY_CLASS: {{ . | quote }}
+  {{- end }}
+  # The server pods' labels, for the sessions' NetworkPolicy (the only internal address a session may reach).
+  OSTROM_RUNNERS_KUBERNETES_SERVER_SELECTOR: {{ printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s,app.kubernetes.io/component=server" (include "ostrom.name" .) .Release.Name | quote }}
+  OSTROM_CLOUD_MAX_CONCURRENT: {{ $r.maxConcurrent | quote }}
   {{- end }}
   {{- range $k, $v := $s.config }}
   {{ $k }}: {{ $v | toString | quote }}
