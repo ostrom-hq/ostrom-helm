@@ -98,7 +98,7 @@ observability:
     existingSecret: ""        # key `headers`
     serviceNamePrefix: ostrom
     resourceAttributes: ""    # e.g. deployment.environment.name=production (the dashboards' environment filter)
-    tracesSampleRatio: ""     # 0 to 1, share of new traces kept; default 1. A caller's sampled trace is always kept
+    tracesSampleRatio: ""     # 0 to 1, share of new traces kept; unset: the server's default (all). A caller's sampled trace is always kept
   langfuse:
     enabled: false
     host: https://cloud.langfuse.com
@@ -109,8 +109,7 @@ observability:
     enabled: false
     host: https://eu.i.posthog.com
     apiKey: ""                # project key (public, also given to the web console)
-    # A deployment with its own PostHog links its own privacy policy from the console's consent banner:
-    # web.config.OSTROM_PRIVACY_URL (default https://ostrom.run/privacy).
+    privacyUrl: ""            # the privacy policy the console's consent banner links to; unset: https://ostrom.run/privacy
 
 # --- Web console (static SPA behind nginx) -------------------------------------------------------------------------
 web:

@@ -34,8 +34,13 @@ data:
   {{- if .resourceAttributes }}
   OTEL_RESOURCE_ATTRIBUTES: {{ .resourceAttributes | quote }}
   {{- end }}
-  {{- if .tracesSampleRatio }}
-  OTEL_TRACES_SAMPLER_ARG: {{ .tracesSampleRatio | quote }}
+  {{- /* Not `default`: it would drop a ratio of 0. */}}
+  {{- $ratio := ternary "" (toString .tracesSampleRatio) (kindIs "invalid" .tracesSampleRatio) }}
+  {{- if ne $ratio "" }}
+  {{- if not (regexMatch "^(0(\\.[0-9]+)?|1(\\.0+)?|\\.[0-9]+)$" $ratio) }}
+  {{- fail (printf "observability.otel.tracesSampleRatio must be between 0 and 1, got %s" $ratio) }}
+  {{- end }}
+  OTEL_TRACES_SAMPLER_ARG: {{ $ratio | quote }}
   {{- end }}
   {{- end }}
   {{- end }}
