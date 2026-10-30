@@ -19,4 +19,13 @@ GRANT USAGE ON SCHEMA public TO :"app";
 ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app";
 ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"app";
 ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO :"app";
+-- Same block as the pre-upgrade Job (database-roles-job.yaml), idempotent (S2-43).
+SELECT 'CREATE ROLE ostrom_tenant NOLOGIN NOSUPERUSER NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_tenant') \gexec
+ALTER ROLE :"owner" CREATEROLE;
+GRANT ostrom_tenant TO :"owner" WITH ADMIN OPTION;
+GRANT ostrom_tenant TO :"app";
+\connect :"db"
+GRANT USAGE ON SCHEMA public TO ostrom_tenant;
 SQL
+

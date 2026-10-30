@@ -1,0 +1,101 @@
+suite: S2-43 — database roles before upgrades, serving role, readiness, proxies, Cloudflare origin pulls
+release: { name: o, namespace: ostrom }
+tests:
+  - it: the pre-upgrade Job replays the tenant roles as the superuser, after its two network policies
+    template: templates/database-roles-job.yaml
+    asserts:
+      - hasDocuments: { count: 3 }
+      - isKind: { of: NetworkPolicy }
+        documentIndex: 0
+      - equal: { path: 'metadata.annotations["helm.sh/hook"]', value: pre-upgrade }
+        documentIndex: 0
+      - equal: { path: 'metadata.annotations["helm.sh/hook-weight"]', value: "-20" }
+        documentIndex: 1
+      - equal: { path: 'spec.podSelector.matchLabels["app.kubernetes.io/component"]', value: postgresql }
+        documentIndex: 1
+      - equal: { path: 'spec.ingress[0].from[0].podSelector.matchLabels["app.kubernetes.io/component"]', value: db-roles }
+        documentIndex: 1
+      - isKind: { of: Job }
+        documentIndex: 2
+      - equal: { path: 'metadata.annotations["helm.sh/hook"]', value: pre-upgrade }
+        documentIndex: 2
+      - equal: { path: 'metadata.annotations["helm.sh/hook-weight"]', value: "-10" }
+        documentIndex: 2
+      - equal: { path: 'spec.template.spec.containers[0].env[2].valueFrom.secretKeyRef.key', value: postgres-password }
+        documentIndex: 2
+      - matchRegex:
+          path: spec.template.spec.containers[0].args[0]
+          pattern: WHERE NOT EXISTS \(SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_tenant'\) \\gexec
+        documentIndex: 2
+      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'ALTER ROLE :"owner" CREATEROLE;' }
+        documentIndex: 2
+      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT ostrom_tenant TO :"app";' }
+        documentIndex: 2
+      - notMatchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT :"owner" TO|CREATEROLE.*:"app"' }
+        documentIndex: 2
+      - equal: { path: 'spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem', value: true }
+        documentIndex: 2
+  - it: without NetworkPolicy, only the Job
+    template: templates/database-roles-job.yaml
+    set: { networkPolicy.enabled: false }
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: Job }
+  - it: an external database gets no Job (its administrator plays the SQL, docs/values.md)
+    template: templates/database-roles-job.yaml
+    set: { postgresql.enabled: false, externalDatabase: { url: "postgresql://db:5432/ostrom", username: ostrom_app, migrationUsername: ostrom, existingSecret: db }, polis.enabled: false }
+    asserts:
+      - hasDocuments: { count: 0 }
+  - it: a new database gets the same block at the end of its init script
+    template: templates/postgresql.yaml
+    documentIndex: 0
+    asserts:
+      - matchRegex: { path: 'data["10-roles.sh"]', pattern: 'GRANT ostrom_tenant TO :"owner" WITH ADMIN OPTION;' }
+      - matchRegex: { path: 'data["10-roles.sh"]', pattern: 'GRANT USAGE ON SCHEMA public TO ostrom_tenant;' }
+  - it: the server serves as ostrom_app, migrates in its init container as the owner, and is ready on /ready
+    template: templates/server.yaml
+    documentIndex: 1
+    asserts:
+      - equal: { path: 'spec.template.spec.initContainers[0].name', value: migrate }
+      - equal: { path: 'spec.template.spec.initContainers[0].env[1].value', value: ostrom }
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: { name: OSTROM_DATABASE_MIGRATION_URL }
+          any: true
+      - equal: { path: 'spec.template.spec.containers[0].readinessProbe.httpGet.path', value: /ready }
+      - equal: { path: 'spec.template.spec.containers[0].livenessProbe.httpGet.path', value: /health }
+      - equal: { path: 'spec.template.spec.containers[0].startupProbe.httpGet.path', value: /health }
+  - it: trusted proxies and the shutdown delay reach the server
+    template: templates/server-config.yaml
+    set: { server.trustedProxies: "10.64.0.0/16, 172.21.0.0/16" }
+    asserts:
+      - equal: { path: data.OSTROM_DATABASE_USER, value: ostrom_app }
+      - equal: { path: data.OSTROM_TRUSTED_PROXIES, value: "10.64.0.0/16, 172.21.0.0/16" }
+      - equal: { path: data.OSTROM_SHUTDOWN_DELAY_SECONDS, value: "5" }
+  - it: no trusted proxy by default
+    template: templates/server-config.yaml
+    asserts:
+      - notExists: { path: data.OSTROM_TRUSTED_PROXIES }
+  - it: a shutdown delay above 10 s stops the install
+    template: templates/server.yaml
+    set: { server.shutdownDelaySeconds: 11 }
+    asserts:
+      - failedTemplate: { errorMessage: "server.shutdownDelaySeconds must be between 0 and 10, got 11" }
+  - it: Cloudflare origin pulls are off by default
+    template: templates/ingress.yaml
+    asserts:
+      - hasDocuments: { count: 4 }
+      - notExists: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-secret"]' }
+  - it: on, every Ingress of the release requires Cloudflare's client certificate, from a Secret of the namespace
+    template: templates/ingress.yaml
+    set: { ingress.cloudflareOriginPulls.enabled: true }
+    asserts:
+      - hasDocuments: { count: 5 }
+      - isKind: { of: Secret }
+        documentIndex: 0
+      - isNotEmpty: { path: 'data["ca.crt"]' }
+        documentIndex: 0
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-secret"]', value: ostrom/o-ostrom-cloudflare-origin-pull-ca }
+        documentIndex: 1
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-verify-client"]', value: "on" }
+        documentIndex: 4

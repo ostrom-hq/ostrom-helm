@@ -35,6 +35,8 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_SAML_POLIS_URL`, `OSTROM_SAML_POLIS_EXTERNAL_URL`, `OSTROM_SAML_POLIS_API_KEY` | `polis.*` |
 | `OSTROM_RUNNERS_DRIVER` (`kubernetes`), `OSTROM_RUNNERS_SERVER_URL`, `OSTROM_RUNNERS_IMAGE`, `OSTROM_RUNNERS_WORKSPACE_SIZE`, `OSTROM_RUNNERS_KUBERNETES_{NAMESPACE,STORAGE_CLASS,IMAGE_PULL_SECRET,PRIORITY_CLASS,SERVER_SELECTOR}`, `OSTROM_CLOUD_MAX_CONCURRENT` | `cloudSessions.*`, only when `cloudSessions.enabled` |
 | `OSTROM_POD_NAME` | the pod name (downward API) |
+| `OSTROM_TRUSTED_PROXIES` | `server.trustedProxies`: CIDRs (comma separated) of the ingress controller's pods and of the nodes, whose forwarded client address the server believes; unset by default |
+| `OSTROM_SHUTDOWN_DELAY_SECONDS` | `server.shutdownDelaySeconds` (0 to 10, default 5): after SIGTERM, `/ready` answers 503 this long before the server stops, so the Service drops the pod first; readiness probes `/ready`, liveness and startup `/health` |
 
 Everything else goes through `server.config` (plain) or `server.existingSecret` / `server.secretEnv` (secret),
 whose keys are environment variable names, e.g. `OSTROM_GITHUB_APP_ID`, `OSTROM_GITHUB_CLIENT_SECRET`,
@@ -59,12 +61,33 @@ The built-in PostgreSQL starts with four roles (`templates/postgresql.yaml`, the
 | `ostrom` (`postgresql.ownerUsername`) | owns the `ostrom` database and its tables | `ostrom-server migrate`, in the init container only |
 | `ostrom_app` (`postgresql.username`) | read and write rows; owns nothing, `NOSUPERUSER NOBYPASSRLS` | the server: row-level security always applies |
 | `polis` | its own `polis` database only | Ory Polis |
+| `ostrom_tenant` | `NOLOGIN`: the role the server switches to (`SET LOCAL ROLE`) for row-level security | granted to `ostrom_app`; the owner administers it |
+
+Since server 4e4137d (S2-43) the server does not migrate and refuses to start if the migrations are not applied, or
+if its role is a superuser, `BYPASSRLS`, owns a table or is a member of the owner. The migrations create
+`ostrom_tenant`, so the owner has `CREATEROLE` (since PostgreSQL 16 it only administers the roles it creates). This
+block ends the init script of a new database, and a `pre-upgrade` Job (`templates/database-roles-job.yaml`, as
+`postgres`, idempotent) replays it before every upgrade, for a database created by an older chart:
+
+```sql
+SELECT 'CREATE ROLE ostrom_tenant NOLOGIN NOSUPERUSER NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_tenant') \gexec
+ALTER ROLE :"owner" CREATEROLE;
+GRANT ostrom_tenant TO :"owner" WITH ADMIN OPTION;
+GRANT ostrom_tenant TO :"app";
+\connect :"db"
+GRANT USAGE ON SCHEMA public TO ostrom_tenant;
+```
+
+(`psql -v ON_ERROR_STOP=1 -v owner=ostrom -v app=ostrom_app -v db=ostrom`). Never give the serving role
+`CREATEROLE` nor membership of the owner.
 
 `helm test` checks it on the live database (`templates/tests/test-database.yaml`): the serving role is neither
 superuser nor `BYPASSRLS`, cannot create or alter a table, reads what the owner creates; Polis cannot open
 the `ostrom` database.
 
-With `postgresql.enabled: false`, create the same roles on your server and give both: `externalDatabase.username`
+With `postgresql.enabled: false`, create the same roles on your server (the block above included: the chart runs no
+Job against an external database) and give both: `externalDatabase.username`
 (serving) and `externalDatabase.migrationUsername` (owner), passwords in `externalDatabase.existingSecret` under
 `password` and `migration-password`.
 
@@ -103,3 +126,11 @@ running on the nodes, set `denyNodes: false` before turning cloud sessions on (t
 Checked on a production cluster (Cilium 1.17, 30/10/2026), with a pod of the namespace that no NetworkPolicy
 selects: internet open; metadata service, the extra CIDRs, another namespace's LoadBalancer and ClusterIP Services,
 a node's kubelet: blocked. Without the endpoint rules, the LoadBalancer, the Service and the kubelet were open.
+
+## Cloudflare Authenticated Origin Pulls
+
+`ingress.cloudflareOriginPulls.enabled: true` (ingress-nginx) makes every Ingress of the release require Cloudflare's
+origin-pull client certificate: the chart puts Cloudflare's public CA (`files/cloudflare-origin-pull-ca.pem`) in Secret
+`<release>-cloudflare-origin-pull-ca` and sets the `auth-tls-*` annotations on its own Ingresses only; nothing changes
+on the shared controller. Turn it on once the hosts are proxied by Cloudflare and "Authenticated Origin Pulls" is on
+for the zone (SSL/TLS → Origin Server): until then, every request gets a 400.

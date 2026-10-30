@@ -13,6 +13,14 @@ data:
   OSTROM_DATABASE_URL: {{ include "ostrom.database.url" . | quote }}
   OSTROM_DATABASE_USER: {{ include "ostrom.database.user" . | quote }}
   OSTROM_DATABASE_MAX_CONNECTIONS: {{ $s.database.maxConnections | quote }}
+  {{- if $s.trustedProxies }}
+  OSTROM_TRUSTED_PROXIES: {{ $s.trustedProxies | quote }}
+  {{- end }}
+  {{- $delay := int $s.shutdownDelaySeconds }}
+  {{- if or (lt $delay 0) (gt $delay 10) }}
+  {{- fail (printf "server.shutdownDelaySeconds must be between 0 and 10, got %v" $s.shutdownDelaySeconds) }}
+  {{- end }}
+  OSTROM_SHUTDOWN_DELAY_SECONDS: {{ $delay | quote }}
   OSTROM_SIGNING_KEY_FILE: /var/run/ostrom/signing/instance-key.pem
   OSTROM_PUBLIC_URL: {{ .Values.global.urls.api | quote }}
   OSTROM_API_URL: {{ .Values.global.urls.api | quote }}

@@ -44,6 +44,12 @@ server:
   # finds nothing and a new key would replace the old one at every sync. Never in `secretEnv`.
   secretsKey:
     existingSecret: ""
+  # Proxies whose forwarded client address the server believes (CIDR list, comma separated): the ingress controller's
+  # pods and the nodes. Empty: the server sees every request as coming from the proxy (one rate-limit bucket, S2-02).
+  trustedProxies: ""
+  # Seconds the server keeps answering after SIGTERM while /ready says 503, so the Service drops it first (0 to 10).
+  # With the engine's 15 s stop it stays under terminationGracePeriodSeconds (30).
+  shutdownDelaySeconds: 5
   # Non-secret settings, rendered into a ConfigMap and loaded as environment variables.
   config: {}
   # Secret settings (OAuth, Stripe, Resend…), rendered into a Secret and loaded as environment variables.
@@ -58,7 +64,8 @@ server:
   probes:
     startup: { path: /health, periodSeconds: 2, failureThreshold: 60 }
     liveness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
-    readiness: { path: /health, periodSeconds: 5, failureThreshold: 2 }
+    # /ready answers 503 while the server drains (shutdownDelaySeconds): the pod leaves the Service before it stops.
+    readiness: { path: /ready, periodSeconds: 5, failureThreshold: 2 }
   autoscaling:
     enabled: false            # needs metrics-server in the cluster
     minReplicas: 2
@@ -299,6 +306,12 @@ ingress:
     site: example.com
     siteAliases: []           # e.g. www.example.com
     sso: sso.example.com      # Ory Polis (SAML)
+  # Cloudflare Authenticated Origin Pulls (ingress-nginx): every Ingress of this release accepts only connections that
+  # present Cloudflare's origin-pull client certificate (files/cloudflare-origin-pull-ca.pem, kept in a Secret of the
+  # namespace; nothing on the shared controller). Turn it on only once the hosts are proxied by Cloudflare with
+  # "Authenticated Origin Pulls" enabled on the zone: any other client, Cloudflare unproxied included, gets a 400.
+  cloudflareOriginPulls:
+    enabled: false
   apiAnnotations:
     nginx.ingress.kubernetes.io/proxy-body-size: 16m
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"

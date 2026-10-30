@@ -23,6 +23,14 @@ helm test ostrom -n ostrom
 - Pin images by digest in production (`server.image.digest`…) and verify their signature before
   ([images.md](images.md)).
 
+## 0.2.x → 0.3.x
+
+Needs a server image from main 4e4137d or later (it has `ostrom-server migrate` and no longer migrates itself). Keep
+`migrations.initContainer: true`. Before the upgrade, a `pre-upgrade` Job adds `ostrom_tenant` and `CREATEROLE` for the
+owner on the existing database ([values.md](values.md#database-roles)); no dump nor restore. Readiness moves to
+`/ready`; set `server.trustedProxies` to your ingress pods' and nodes' CIDRs. An external database: play the SQL of
+[values.md](values.md#database-roles) as its administrator first.
+
 ## 0.1.x → 0.2.x
 
 0.2.0 replaces the single PostgreSQL user (a superuser named after `postgresql.username`) by four roles, created by

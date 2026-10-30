@@ -6,6 +6,18 @@
 {{- if .Values.web.enabled }}{{ $routes = append $routes (dict "name" "app" "hosts" (list $i.hosts.app) "svc" (printf "%s-web" $full) "port" .Values.web.service.port "annotations" dict) }}{{ end -}}
 {{- if .Values.site.enabled }}{{ $routes = append $routes (dict "name" "site" "hosts" (concat (list $i.hosts.site) $i.hosts.siteAliases) "svc" (printf "%s-site" $full) "port" .Values.site.service.port "annotations" dict) }}{{ end -}}
 {{- if .Values.polis.enabled }}{{ $routes = append $routes (dict "name" "sso" "hosts" (list $i.hosts.sso) "svc" (printf "%s-polis" $full) "port" .Values.polis.port "annotations" dict) }}{{ end -}}
+{{- if and $i.cloudflareOriginPulls.enabled $routes }}
+---
+# Cloudflare's origin-pull CA (public): the client certificate every Ingress below requires.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $full }}-cloudflare-origin-pull-ca
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "ingress") | nindent 4 }}
+type: Opaque
+data:
+  ca.crt: {{ .Files.Get "files/cloudflare-origin-pull-ca.pem" | b64enc }}
+{{- end }}
 {{- range $r := $routes }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -19,6 +31,11 @@ metadata:
     {{- end }}
     {{- with $i.certManager.clusterIssuer }}
     cert-manager.io/cluster-issuer: {{ . }}
+    {{- end }}
+    {{- if $i.cloudflareOriginPulls.enabled }}
+    nginx.ingress.kubernetes.io/auth-tls-secret: {{ printf "%s/%s-cloudflare-origin-pull-ca" $.Release.Namespace $full | quote }}
+    nginx.ingress.kubernetes.io/auth-tls-verify-client: "on"
+    nginx.ingress.kubernetes.io/auth-tls-verify-depth: "1"
     {{- end }}
     {{- with $i.annotations }}{{ toYaml . | nindent 4 }}{{- end }}
     {{- with $r.annotations }}{{ toYaml . | nindent 4 }}{{- end }}
