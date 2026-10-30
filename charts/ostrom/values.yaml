@@ -72,6 +72,11 @@ server:
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 80
+    # Scale up at once, scale down slowly: one pod a minute after 5 minutes of low load (requests stay spread).
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies: [{ type: Pods, value: 1, periodSeconds: 60 }]
   podDisruptionBudget:
     enabled: true
     minAvailable: 1

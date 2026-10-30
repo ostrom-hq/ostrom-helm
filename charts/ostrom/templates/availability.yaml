@@ -27,8 +27,16 @@ spec:
         name: memory
         target: { type: Utilization, averageUtilization: {{ . }} }
     {{- end }}
+  {{- with $c.autoscaling.behavior }}
+  behavior: {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}
-{{- if and $c.podDisruptionBudget.enabled (or $c.autoscaling.enabled (gt (int $c.replicas) 1)) }}
+{{- /* The fewest replicas that can run: with one, a PDB of minAvailable 1 would block every node drain. */}}
+{{- $fewest := ternary (int $c.autoscaling.minReplicas) (int $c.replicas) (and $c.autoscaling.enabled true) }}
+{{- if and $c.podDisruptionBudget.enabled (gt $fewest 1) }}
+{{- if ge (int $c.podDisruptionBudget.minAvailable) $fewest }}
+{{- fail (printf "%s.podDisruptionBudget.minAvailable (%d) must be below its fewest replicas (%d), or no node could be drained" $name (int $c.podDisruptionBudget.minAvailable) $fewest) }}
+{{- end }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
