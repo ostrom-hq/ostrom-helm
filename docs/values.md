@@ -62,6 +62,7 @@ The built-in PostgreSQL starts with four roles (`templates/postgresql.yaml`, the
 | `ostrom_app` (`postgresql.username`) | read and write rows; owns nothing, `NOSUPERUSER NOBYPASSRLS` | the server: row-level security always applies |
 | `polis` | its own `polis` database only | Ory Polis |
 | `ostrom_tenant` | `NOLOGIN`: the role the server switches to (`SET LOCAL ROLE`) for row-level security | granted to `ostrom_app`; the owner administers it |
+| `ostrom_router` | `NOLOGIN`: owns the cross-organization functions (`SECURITY DEFINER`, ostrom-server `docs/tenancy.md`), no table | the owner administers it; never granted to `ostrom_app` |
 
 Since server 4e4137d (S2-43) the server does not migrate and refuses to start if the migrations are not applied, or
 if its role is a superuser, `BYPASSRLS`, owns a table or is a member of the owner. The migrations create
@@ -75,12 +76,15 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_tenant') \gexec
 ALTER ROLE :"owner" CREATEROLE;
 GRANT ostrom_tenant TO :"owner" WITH ADMIN OPTION;
 GRANT ostrom_tenant TO :"app";
+SELECT 'CREATE ROLE ostrom_router NOLOGIN NOSUPERUSER NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_router') \gexec
+GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
 ```
 
 (`psql -v ON_ERROR_STOP=1 -v owner=ostrom -v app=ostrom_app -v db=ostrom`). Never give the serving role
-`CREATEROLE` nor membership of the owner.
+`CREATEROLE`, membership of the owner nor `ostrom_router`.
 
 `helm test` checks it on the live database (`templates/tests/test-database.yaml`): the serving role is neither
 superuser nor `BYPASSRLS`, cannot create or alter a table, reads what the owner creates; Polis cannot open
@@ -134,3 +138,9 @@ origin-pull client certificate: the chart puts Cloudflare's public CA (`files/cl
 `<release>-cloudflare-origin-pull-ca` and sets the `auth-tls-*` annotations on its own Ingresses only; nothing changes
 on the shared controller. Turn it on once the hosts are proxied by Cloudflare and "Authenticated Origin Pulls" is on
 for the zone (SSL/TLS → Origin Server): until then, every request gets a 400.
+
+## Request body size of the API
+
+The API Ingress allows 16 MiB (`ingress.apiAnnotations`); the server refuses more than 1 MiB on most routes (S2-46).
+Publishing an artifact sends its files base64 in JSON (up to about 27.7 MiB on the server): `/api/v1/artifacts` has its
+own Ingress, `<release>-api-artifacts`, with `ingress.artifactsBodySize` (32m). Set it to "" to drop that Ingress.

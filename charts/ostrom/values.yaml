@@ -312,6 +312,9 @@ ingress:
   # "Authenticated Origin Pulls" enabled on the zone: any other client, Cloudflare unproxied included, gets a 400.
   cloudflareOriginPulls:
     enabled: false
+  # Publishing an artifact carries its files base64 in JSON (server limit ~27.7 MiB, S2-46): `/api/v1/artifacts` gets
+  # its own Ingress with this body size; every other API route keeps apiAnnotations' 16m.
+  artifactsBodySize: 32m
   apiAnnotations:
     nginx.ingress.kubernetes.io/proxy-body-size: 16m
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"

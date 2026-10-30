@@ -3,6 +3,7 @@
 {{- $i := .Values.ingress -}}
 {{- $routes := list -}}
 {{- if .Values.server.enabled }}{{ $routes = append $routes (dict "name" "api" "hosts" (list $i.hosts.api) "svc" (printf "%s-server" $full) "port" .Values.server.service.port "annotations" $i.apiAnnotations) }}{{ end -}}
+{{- if and .Values.server.enabled $i.artifactsBodySize }}{{ $routes = append $routes (dict "name" "api-artifacts" "hosts" (list $i.hosts.api) "path" "/api/v1/artifacts" "svc" (printf "%s-server" $full) "port" .Values.server.service.port "annotations" (merge (dict "nginx.ingress.kubernetes.io/proxy-body-size" $i.artifactsBodySize) $i.apiAnnotations)) }}{{ end -}}
 {{- if .Values.web.enabled }}{{ $routes = append $routes (dict "name" "app" "hosts" (list $i.hosts.app) "svc" (printf "%s-web" $full) "port" .Values.web.service.port "annotations" dict) }}{{ end -}}
 {{- if .Values.site.enabled }}{{ $routes = append $routes (dict "name" "site" "hosts" (concat (list $i.hosts.site) $i.hosts.siteAliases) "svc" (printf "%s-site" $full) "port" .Values.site.service.port "annotations" dict) }}{{ end -}}
 {{- if .Values.polis.enabled }}{{ $routes = append $routes (dict "name" "sso" "hosts" (list $i.hosts.sso) "svc" (printf "%s-polis" $full) "port" .Values.polis.port "annotations" dict) }}{{ end -}}
@@ -53,7 +54,7 @@ spec:
     - host: {{ $h | quote }}
       http:
         paths:
-          - path: /
+          - path: {{ $r.path | default "/" }}
             pathType: Prefix
             backend:
               service:

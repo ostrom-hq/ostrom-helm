@@ -8,13 +8,13 @@ tests:
       ingress.hosts: { api: api.ostrom.run, app: app.ostrom.run, site: ostrom.run, siteAliases: [www.ostrom.run], sso: sso.ostrom.run }
       ingress.tls.secretName: ostrom-origin-tls
     asserts:
-      - hasDocuments: { count: 4 }
+      - hasDocuments: { count: 5 }
       - equal: { path: 'spec.tls[0].secretName', value: ostrom-origin-tls }
       - equal: { path: spec.ingressClassName, value: nginx }
       - equal: { path: 'spec.rules[0].host', value: api.ostrom.run }
         documentIndex: 0
       - equal: { path: 'spec.rules[1].host', value: www.ostrom.run }
-        documentIndex: 2
+        documentIndex: 3
       - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-buffering"]', value: "off" }
         documentIndex: 0
   - it: cert-manager is only an annotation, opt-in
@@ -25,4 +25,22 @@ tests:
   - it: skips disabled parts
     set: { site.enabled: false, polis.enabled: false }
     asserts:
-      - hasDocuments: { count: 2 }
+      - hasDocuments: { count: 3 }
+  - it: artifact publishing has its own Ingress on the API host, 32m, every other API route keeps 16m
+    asserts:
+      - equal: { path: metadata.name, value: o-ostrom-api-artifacts }
+        documentIndex: 1
+      - equal: { path: 'spec.rules[0].http.paths[0].path', value: /api/v1/artifacts }
+        documentIndex: 1
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]', value: 32m }
+        documentIndex: 1
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-buffering"]', value: "off" }
+        documentIndex: 1
+      - equal: { path: 'spec.rules[0].http.paths[0].path', value: / }
+        documentIndex: 0
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]', value: 16m }
+        documentIndex: 0
+  - it: no artifacts Ingress when its body size is unset
+    set: { ingress.artifactsBodySize: "" }
+    asserts:
+      - hasDocuments: { count: 4 }
