@@ -105,7 +105,9 @@ jobs:
       # The local demo stack (compose/demo): its helpers at 100 % of lines, branches and functions, and its Compose
       # files valid on top of the install's. It runs for real, with the real images, in ostrom-server's demo-stack workflow.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with: { node-version: 24 }
+        with:
+          node-version: 24
+          package-manager-cache: false
       - name: Local demo stack (unit tests, coverage, Compose config)
         working-directory: compose
         run: |
