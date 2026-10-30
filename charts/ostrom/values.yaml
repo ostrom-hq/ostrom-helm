@@ -37,6 +37,13 @@ server:
   # by default the chart generates it once and keeps it (lookup); or give your own Secret (key `instance-key.pem`).
   signingKey:
     existingSecret: ""
+  # AES-256 key that seals the org secrets (MCP credentials, provider keys). Must be the SAME for every replica and
+  # survive upgrades, or stored secrets become unreadable: by default the chart generates it once and keeps it
+  # (lookup); or give your own Secret, key `secrets-key`, base64 of 32 random bytes (`openssl rand -base64 32`).
+  # Required when the chart is rendered without cluster access (`helm template`, Argo CD, Flux): `lookup` then
+  # finds nothing and a new key would replace the old one at every sync. Never in `secretEnv`.
+  secretsKey:
+    existingSecret: ""
   # Non-secret settings, rendered into a ConfigMap and loaded as environment variables.
   config: {}
   # Secret settings (OAuth, Stripe, Resend…), rendered into a Secret and loaded as environment variables.
