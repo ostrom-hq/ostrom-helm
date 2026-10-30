@@ -14,9 +14,10 @@ helm test ostrom -n ostrom
 
 - Rolling updates never take a replica away before its replacement is ready (`maxUnavailable: 0`), and the PDBs keep
   one replica up during node drains.
-- **Migrations**: the server applies them at start. Until the server serializes migrations itself, upgrade a
-  release that adds migrations with one replica first (`--set server.replicas=1`, then back), or set
-  `migrations.initContainer: true` once the server ships `ostrom-server migrate`.
+- **Migrations**: `ostrom-server migrate` runs in an init container of each new server pod, with the database
+  owner's credentials, before the server starts (the serving container never receives them). The migrator takes a
+  lock, so concurrent pods wait for each other. `migrations.initContainer: false` turns it off if you migrate
+  another way.
 - Take a backup before any upgrade that changes the database ([backup-restore.md](backup-restore.md)).
 - Rollback: `helm rollback ostrom <revision> -n ostrom`. A rollback does not undo migrations: restore the backup if
   the old version cannot read the new schema.

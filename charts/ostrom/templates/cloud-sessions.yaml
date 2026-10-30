@@ -1,14 +1,6 @@
 {{- if and .Values.server.enabled .Values.cloudSessions.enabled }}
 {{- $full := include "ostrom.fullname" . -}}
-# The identity of the session pods: no Kubernetes API access at all.
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: {{ $full }}-runner
-  labels: {{- include "ostrom.labels" (dict "root" . "component" "runner") | nindent 4 }}
-automountServiceAccountToken: false
 {{- if .Values.cloudSessions.rbac.create }}
----
 # What the server's session controller may do — in this namespace only (a Role, never a ClusterRole).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -18,20 +10,22 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [pods]
-    verbs: [create, get, list, watch, delete, deletecollection]
+    verbs: [get, list, watch, create, delete, deletecollection]
   - apiGroups: [""]
-    resources: [pods/log, pods/status]
+    resources: [pods/log]
     verbs: [get]
   - apiGroups: [""]
-    resources: [pods/attach]
-    verbs: [create, get]
-  - apiGroups: [""]
-    # Per-session credentials (the session token, the repository token), deleted with the session.
+    # Per-session credentials, deleted with the session.
     resources: [secrets]
-    verbs: [create, delete]
-  - apiGroups: [batch]
-    resources: [jobs]
-    verbs: [create, get, list, watch, delete]
+    verbs: [create, delete, deletecollection]
+  - apiGroups: [""]
+    # One workspace volume per session.
+    resources: [persistentvolumeclaims]
+    verbs: [get, create, delete]
+  - apiGroups: [networking.k8s.io]
+    # The sessions' own policies (no ingress; DNS, the server and the public internet only).
+    resources: [networkpolicies]
+    verbs: [get, create, update]
   - apiGroups: [""]
     resources: [events]
     verbs: [get, list, watch]

@@ -1,25 +1,37 @@
 name: CI
 
+# Organisation rules (JOURNAL 03:10): one `ci` job on pull requests, nothing on drafts, the last push cancels the
+# previous run except on main; the real-image install runs off pull requests only.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
+    tags: ['[0-9]*']
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
 
 jobs:
-  lint:
+  ci:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with: { version: v3.17.2 }
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with: { python-version: "3.13" }
+      - uses: helm/chart-testing-action@720270857a28afd41e2426521a7801db09e9b510 # v2.9.0
+      - name: ct lint
+        run: ct lint --config ct.yaml --all
       - name: helm lint (default and alternative values)
         run: |
           helm lint --strict charts/ostrom
@@ -37,13 +49,24 @@ jobs:
             helm template o charts/ostrom -n ostrom --set postgresql.enabled=false \
               --set externalDatabase.url=postgresql://db:5432/o --set externalDatabase.username=u \
               --set externalDatabase.password=p --set externalDatabase.polisUrl=postgres://u:p@db/polis \
+              --set externalDatabase.migrationUsername=o --set externalDatabase.migrationPassword=p \
               --set server.autoscaling.enabled=true --set postgresql.backup.enabled=true \
-              --set networkPolicy.kubeApi.cilium=true \
+              | ./kubeconform -strict -summary -kubernetes-version "$v" -
+            helm template o charts/ostrom -n ostrom --set cloudSessions.enabled=true --set server.replicas=1 \
+              --set networkPolicy.kubeApi.cilium=true --set networkPolicy.ciliumEgressDeny.enabled=true \
               | ./kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version "$v" -
           done
+      - name: The Compose stack creates the same database roles as the chart
+        run: |
+          python3 -m pip install --quiet pyyaml==6.0.2
+          helm template o charts/ostrom -s templates/postgresql.yaml \
+            | python3 -c 'import sys,yaml; d=[x for x in yaml.safe_load_all(sys.stdin) if x and x["kind"]=="ConfigMap"][0]; sys.stdout.write(d["data"]["10-roles.sh"])' \
+            | diff - compose/postgres-init/10-roles.sh
       - name: Nothing cluster-wide in the chart
         run: |
-          out=$(helm template o charts/ostrom -n ostrom --set networkPolicy.kubeApi.cilium=true --set postgresql.backup.enabled=true)
+          out=$(helm template o charts/ostrom -n ostrom --set cloudSessions.enabled=true --set server.replicas=1 \
+            --set networkPolicy.kubeApi.cilium=true --set networkPolicy.ciliumEgressDeny.enabled=true \
+            --set postgresql.backup.enabled=true)
           if echo "$out" | grep -E '^kind: (ClusterRole|ClusterRoleBinding|CustomResourceDefinition|Namespace|MutatingWebhookConfiguration|ValidatingWebhookConfiguration|PriorityClass|StorageClass|IngressClass|CiliumClusterwideNetworkPolicy)$'; then
             echo "the chart must only create namespaced objects"; exit 1
           fi
@@ -53,20 +76,6 @@ jobs:
         run: |
           bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
           ./actionlint -color
-
-  ct-install:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with: { version: v3.17.2 }
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with: { python-version: "3.13" }
-      - uses: helm/chart-testing-action@720270857a28afd41e2426521a7801db09e9b510 # v2.9.0
-      - name: ct lint
-        run: ct lint --config ct.yaml --all
       - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
         with:
           version: v0.29.0
@@ -83,12 +92,6 @@ jobs:
           kubectl get all,netpol,pvc,secrets -n ostrom-ct -o wide || true
           kubectl get events -n ostrom-ct --sort-by=.lastTimestamp | tail -60 || true
           for p in $(kubectl get pods -n ostrom-ct -o name); do echo "== $p"; kubectl logs -n ostrom-ct "$p" --all-containers --tail=60 || true; done
-
-  compose-e2e:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Self-hosting with Docker Compose, end to end
         run: ./compose/test-e2e.sh docker-compose.ci.yml
       - name: Tear down
@@ -99,6 +102,7 @@ jobs:
   # The chart with the REAL Ostrom images (`edge` from each repository's main), once this repository can read
   # them: needs the org secret GHCR_READ_TOKEN (read:packages). Skipped, and says so, without it.
   install-real-images:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
