@@ -28,7 +28,7 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_SIGNING_KEY_FILE` | the mounted instance key, `/var/run/ostrom/signing/instance-key.pem` |
 | `OSTROM_PUBLIC_URL`, `OSTROM_API_URL`, `OSTROM_APP_URL`, `OSTROM_CONSOLE_URL`, `OSTROM_SITE_URL` | `global.urls.*` |
 | `OSTROM_EXTRACTION_PROVIDER`, `OSTROM_EXTRACTION_BASE_URL`, `OSTROM_EXTRACTION_MODEL`, `OSTROM_EXTRACTION_API_KEY` | `byok.extraction.*` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | `observability.otel.*` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` (always `http/protobuf`), `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER_ARG` | `observability.otel.*` (`tracesSampleRatio` for the last) |
 | `OSTROM_LANGFUSE_HOST`, `OSTROM_LANGFUSE_PUBLIC_KEY`, `OSTROM_LANGFUSE_SECRET_KEY` | `observability.langfuse.*` |
 | `OSTROM_POSTHOG_HOST`, `OSTROM_POSTHOG_API_KEY` | `observability.posthog.*` |
 | `OSTROM_SAML_POLIS_URL`, `OSTROM_SAML_POLIS_EXTERNAL_URL`, `OSTROM_SAML_POLIS_API_KEY` | `polis.*` |

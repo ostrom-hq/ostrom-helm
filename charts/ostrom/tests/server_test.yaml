@@ -35,12 +35,40 @@ tests:
     template: templates/server-config.yaml
     set:
       byok.extraction: { provider: openrouter, baseUrl: "https://openrouter.ai/api/v1", model: "x/y" }
-      observability.otel: { enabled: true, endpoint: "https://otlp" }
+      observability.otel:
+        { enabled: true, endpoint: "https://otlp", resourceAttributes: "deployment.environment.name=prod", tracesSampleRatio: "0.25" }
     asserts:
       - equal: { path: data.OSTROM_EXTRACTION_PROVIDER, value: openrouter }
       - equal: { path: data.OTEL_EXPORTER_OTLP_ENDPOINT, value: "https://otlp" }
-      - equal: { path: data.OTEL_SERVICE_NAME, value: ostrom-server }
       - equal: { path: data.OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf }
+      - equal: { path: data.OTEL_SERVICE_NAME, value: ostrom-server }
+      - equal: { path: data.OTEL_RESOURCE_ATTRIBUTES, value: "deployment.environment.name=prod" }
+      - equal: { path: data.OTEL_TRACES_SAMPLER_ARG, value: "0.25" }
+  - it: a sampling ratio of 0 is kept
+    template: templates/server-config.yaml
+    set: { observability.otel: { enabled: true, endpoint: "https://otlp", tracesSampleRatio: 0 } }
+    asserts:
+      - equal: { path: data.OTEL_TRACES_SAMPLER_ARG, value: "0" }
+  - it: an unset sampling ratio leaves the server's default
+    template: templates/server-config.yaml
+    set: { observability.otel: { enabled: true, endpoint: "https://otlp" } }
+    asserts:
+      - notExists: { path: data.OTEL_TRACES_SAMPLER_ARG }
+  - it: a sampling ratio outside 0 to 1 stops the install
+    template: templates/server.yaml
+    set: { observability.otel: { enabled: true, endpoint: "https://otlp", tracesSampleRatio: 25 } }
+    asserts:
+      - failedTemplate: { errorMessage: "observability.otel.tracesSampleRatio must be between 0 and 1, got 25" }
+  - it: nothing is exported when OTel, Langfuse and PostHog are off (self-hosted default)
+    template: templates/server-config.yaml
+    asserts:
+      - notExists: { path: data.OTEL_EXPORTER_OTLP_ENDPOINT }
+      - notExists: { path: data.OTEL_EXPORTER_OTLP_PROTOCOL }
+      - notExists: { path: data.OTEL_SERVICE_NAME }
+      - notExists: { path: data.OTEL_RESOURCE_ATTRIBUTES }
+      - notExists: { path: data.OTEL_TRACES_SAMPLER_ARG }
+      - notExists: { path: data.OSTROM_POSTHOG_API_KEY }
+      - notExists: { path: data.OSTROM_LANGFUSE_HOST }
   - it: a digest pins the image
     template: templates/server.yaml
     documentSelector: { path: kind, value: Deployment }

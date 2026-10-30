@@ -17,6 +17,9 @@ data:
   {{- if .enabled }}
   OSTROM_POSTHOG_HOST: {{ .host | quote }}
   OSTROM_POSTHOG_API_KEY: {{ .apiKey | quote }}
+  {{- with .privacyUrl }}
+  OSTROM_PRIVACY_URL: {{ . | quote }}
+  {{- end }}
   {{- end }}
   {{- end }}
   {{- range $k, $v := $w.config }}

@@ -99,7 +99,8 @@ observability:
     headers: ""               # e.g. Authorization=Basic …  (secret)
     existingSecret: ""        # key `headers`
     serviceNamePrefix: ostrom
-    resourceAttributes: ""    # e.g. deployment.environment=production
+    resourceAttributes: ""    # e.g. deployment.environment.name=production (the dashboards' environment filter)
+    tracesSampleRatio: ""     # 0 to 1, share of new traces kept; unset: the server's default (all). A caller's sampled trace is always kept
   langfuse:
     enabled: false
     host: https://cloud.langfuse.com
@@ -110,6 +111,7 @@ observability:
     enabled: false
     host: https://eu.i.posthog.com
     apiKey: ""                # project key (public, also given to the web console)
+    privacyUrl: ""            # the privacy policy the console's consent banner links to; unset: https://ostrom.run/privacy
 
 # --- Web console (static SPA behind nginx) -------------------------------------------------------------------------
 web:
