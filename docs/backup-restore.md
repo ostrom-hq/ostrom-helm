@@ -3,13 +3,16 @@
 Names below assume the release is called `ostrom` (objects are then `ostrom-…`; another release name `x` gives
 `x-ostrom-…`).
 
-Three things hold the state of an Ostrom instance:
+Four things hold the state of an Ostrom instance:
 
 1. **PostgreSQL** — databases `ostrom` and `polis`;
 2. **the instance signing key** — Secret `<release>-signing-key` (Kubernetes) or the `server-data` volume,
    file `instance-key.pem` (Compose). Every receipt is verified with it: losing it means old receipts can no longer
    be checked against this instance's key;
-3. **the generated secrets** — Secrets `<release>-postgresql` and `<release>-polis` (Kubernetes) or `.env`
+3. **the secrets key** — Secret `<release>-secrets-key` (Kubernetes) or the `server-data` volume, file
+   `data/secrets.key` (Compose). It seals the org secrets (MCP credentials, provider keys) stored in PostgreSQL: losing it
+   makes every stored secret unreadable, so back it up with the database;
+4. **the generated secrets** — Secrets `<release>-postgresql` and `<release>-polis` (Kubernetes) or `.env`
    (Compose). `db-encryption-key` of Polis decrypts the SSO connections stored in its database.
 
 ## Kubernetes
@@ -41,7 +44,7 @@ kubectl -n $NS run backup-copy --rm -i --restart=Never --image=busybox:1.37 \
 ### Keys and secrets
 
 ```sh
-kubectl -n ostrom get secret ostrom-signing-key ostrom-postgresql ostrom-polis -o yaml > ostrom-secrets.yaml
+kubectl -n ostrom get secret ostrom-signing-key ostrom-secrets-key ostrom-postgresql ostrom-polis -o yaml > ostrom-secrets.yaml
 ```
 
 Store that file encrypted (age, sops, a password manager): it contains the keys.
@@ -73,9 +76,11 @@ cd compose
 docker compose exec -T postgres pg_dump -U postgres -Fc ostrom > ostrom-$(date +%F).dump
 docker compose exec -T postgres pg_dump -U postgres -Fc polis  > polis-$(date +%F).dump
 docker compose cp server:/var/lib/ostrom/instance-key.pem ./instance-key.pem   # keep with .env, encrypted
+docker compose cp server:/var/lib/ostrom/data/secrets.key ./secrets.key        # likewise: it opens the org secrets
 cp .env env-backup
 ```
 
 Restore: `docker compose up -d postgres`, then
 `docker compose exec -T postgres pg_restore -U postgres -d ostrom --clean --if-exists --no-owner --role=ostrom < ostrom-….dump`
-(same for `polis`), copy `instance-key.pem` back with `docker compose cp`, and `docker compose up -d`.
+(same for `polis`), copy `instance-key.pem` to `/var/lib/ostrom/` and `secrets.key` to `/var/lib/ostrom/data/` with
+`docker compose cp`, and `docker compose up -d`.

@@ -40,6 +40,35 @@ tests:
       - equal: { path: spec.enableDefaultDeny, value: { egress: false, ingress: false } }
       - contains: { path: 'spec.egressDeny[0].toCIDRSet', content: { cidr: 169.254.169.254/32 } }
       - contains: { path: 'spec.egressDeny[0].toCIDRSet', content: { cidr: 203.0.113.7/32 } }
+  - it: the Cilium deny also covers the pods of other namespaces (cluster DNS excepted) and the nodes
+    release: { namespace: ostrom }
+    set: { networkPolicy.ciliumEgressDeny.enabled: true }
+    documentSelector: { path: metadata.name, value: o-ostrom-egress-deny }
+    asserts:
+      - equal:
+          path: 'spec.egressDeny[1].toEndpoints[0].matchExpressions'
+          value:
+            - { key: 'k8s:io.kubernetes.pod.namespace', operator: Exists }
+            - { key: 'k8s:io.kubernetes.pod.namespace', operator: NotIn, values: [ostrom, kube-system] }
+      - equal: { path: 'spec.egressDeny[1].toEndpoints[1].matchLabels', value: { 'k8s:io.kubernetes.pod.namespace': kube-system } }
+      - equal:
+          path: 'spec.egressDeny[1].toEndpoints[1].matchExpressions[0]'
+          value: { key: 'k8s:k8s-app', operator: NotIn, values: [kube-dns, coredns] }
+      - equal: { path: 'spec.egressDeny[2].toEntities', value: [host, remote-node] }
+  - it: the node deny can be turned off, the namespace deny too
+    set:
+      networkPolicy.ciliumEgressDeny.enabled: true
+      networkPolicy.ciliumEgressDeny.otherNamespaces.denyNodes: false
+    documentSelector: { path: metadata.name, value: o-ostrom-egress-deny }
+    asserts:
+      - lengthEqual: { path: spec.egressDeny, count: 2 }
+  - it: without the namespace deny, only the CIDRs
+    set:
+      networkPolicy.ciliumEgressDeny.enabled: true
+      networkPolicy.ciliumEgressDeny.otherNamespaces.enabled: false
+    documentSelector: { path: metadata.name, value: o-ostrom-egress-deny }
+    asserts:
+      - lengthEqual: { path: spec.egressDeny, count: 1 }
   - it: only the server, Polis, the backup job and the helm test reach PostgreSQL
     documentSelector: { path: metadata.name, value: o-ostrom-postgresql }
     asserts:

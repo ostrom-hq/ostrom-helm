@@ -5,7 +5,7 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 | Group | What |
 |---|---|
 | `global` | image registry, tag and pull secrets; public URLs (`urls.api`, `urls.app`, `urls.site`) |
-| `server` | replicas, resources, probes, HPA, PDB, `config` (non-secret env), `secretEnv` / `existingSecret` (secret env), signing key |
+| `server` | replicas, resources, probes, HPA, PDB, `config` (non-secret env), `secretEnv` / `existingSecret` (secret env), signing key, secrets key |
 | `migrations` | `initContainer: true` runs `ostrom-server migrate` before each pod starts |
 | `byok.extraction` | provider, base URL, model and key of the model that extracts workflows and policies (BYOK) |
 | `observability` | `otel` (OTLP/HTTP endpoint and headers), `langfuse`, `posthog` |
@@ -26,6 +26,7 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_DATABASE_URL`, `OSTROM_DATABASE_USER`, `OSTROM_DATABASE_PASSWORD`, `OSTROM_DATABASE_MAX_CONNECTIONS` | the serving role: `postgresql.username` or `externalDatabase.username` |
 | `OSTROM_DATABASE_MIGRATION_URL`, `OSTROM_DATABASE_MIGRATION_USER`, `OSTROM_DATABASE_MIGRATION_PASSWORD` | the owner, in the `migrate` init container only: `postgresql.ownerUsername` or `externalDatabase.migrationUsername` |
 | `OSTROM_SIGNING_KEY_FILE` | the mounted instance key, `/var/run/ostrom/signing/instance-key.pem` |
+| `OSTROM_SECRETS_KEY` | key `secrets-key` of the generated Secret `<release>-secrets-key`, or of `server.secretsKey.existingSecret` |
 | `OSTROM_PUBLIC_URL`, `OSTROM_API_URL`, `OSTROM_APP_URL`, `OSTROM_CONSOLE_URL`, `OSTROM_SITE_URL` | `global.urls.*` |
 | `OSTROM_EXTRACTION_PROVIDER`, `OSTROM_EXTRACTION_BASE_URL`, `OSTROM_EXTRACTION_MODEL`, `OSTROM_EXTRACTION_API_KEY` | `byok.extraction.*` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` (always `http/protobuf`), `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER_ARG` | `observability.otel.*` (`tracesSampleRatio` for the last) |
@@ -76,7 +77,29 @@ Turn them on only where that is acceptable (dedicated nodes, a sandboxed runtime
 - the server's ServiceAccount gets a **Role** in the release namespace (pods, their logs, per-session Secrets and
   PVCs, the sessions' NetworkPolicies); nothing cluster-wide;
 - session pods (labels `app.kubernetes.io/managed-by: ostrom`, `ostrom.run/session`) reach DNS, the server and the
-  public internet only; with Cilium, `networkPolicy.ciliumEgressDeny.enabled` adds a namespace-wide deny of
-  `networkPolicy.egress.extraDeniedCidrs` and the metadata service that no allow rule can reopen;
+  public internet only; with Cilium, `networkPolicy.ciliumEgressDeny.enabled` adds a namespace-wide deny that no
+  allow rule can reopen (see below);
 - `cloudSessions.runner.priorityClassName` names an existing PriorityClass, lower than your other workloads (the
   chart creates none: it is a cluster-wide object).
+
+## Cilium egress deny (shared clusters)
+
+`networkPolicy.ciliumEgressDeny.enabled: true` renders one namespaced `CiliumNetworkPolicy` that applies to every pod
+of the release namespace, session pods and any pod created later included, and only denies (it allows nothing, and
+turns no default deny on):
+
+| Denied | Value |
+|---|---|
+| The cloud metadata service `169.254.169.254` and `networkPolicy.egress.extraDeniedCidrs` | always |
+| Every pod of another namespace, cluster DNS excepted | `otherNamespaces.enabled` (default `true`) |
+| The nodes (`host`, `remote-node`: kubelet, NodePorts) | `otherNamespaces.denyNodes` (default `true`) |
+
+The endpoint rules matter: Cilium turns the address of a Service or of an in-cluster LoadBalancer into its backend
+pods before applying policy, so a CIDR rule alone does not stop a pod from reaching another tenant's load balancer.
+Cluster DNS is recognised by `otherNamespaces.dns` (namespace `kube-system`, label `k8s-app` in `kube-dns`,
+`coredns`): adjust it if your DNS pods are labelled otherwise, or name resolution stops. With a control plane
+running on the nodes, set `denyNodes: false` before turning cloud sessions on (the server needs the API).
+
+Checked on a production cluster (Cilium 1.17, 30/10/2026), with a pod of the namespace that no NetworkPolicy
+selects: internet open; metadata service, the extra CIDRs, another namespace's LoadBalancer and ClusterIP Services,
+a node's kubelet: blocked. Without the endpoint rules, the LoadBalancer, the Service and the kubelet were open.
