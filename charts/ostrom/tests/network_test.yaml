@@ -1,0 +1,35 @@
+suite: network — deny by default, runners cut from the cluster
+templates:
+  - templates/networkpolicy.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: denies all traffic of the release by default
+    documentSelector: { path: metadata.name, value: o-ostrom-default-deny }
+    asserts:
+      - equal: { path: spec.policyTypes, value: [Ingress, Egress] }
+      - equal: { path: 'spec.podSelector.matchLabels["app.kubernetes.io/instance"]', value: o }
+  - it: runners reach the internet but no private range, metadata endpoint or extra CIDR
+    set: { networkPolicy.egress.extraDeniedCidrs: [203.0.113.7/32] }
+    documentSelector: { path: metadata.name, value: o-ostrom-runner }
+    asserts:
+      - equal: { path: spec.ingress, value: [] }
+      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: 169.254.0.0/16 }
+      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: 10.0.0.0/8 }
+      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: 203.0.113.7/32 }
+  - it: only the server, Polis and the backup job reach PostgreSQL
+    documentSelector: { path: metadata.name, value: o-ostrom-postgresql }
+    asserts:
+      - lengthEqual: { path: 'spec.ingress[0].from', count: 3 }
+  - it: the Cilium policy for the API server is opt-in
+    set: { networkPolicy.kubeApi.cilium: true }
+    documentSelector: { path: kind, value: CiliumNetworkPolicy }
+    asserts:
+      - equal: { path: 'spec.egress[0].toEntities', value: [kube-apiserver] }
+  - it: renders nothing when disabled
+    set: { networkPolicy.enabled: false }
+    asserts:
+      - hasDocuments: { count: 0 }
+  - it: the console reaches the server (it proxies /api/), and the server accepts it
+    documentSelector: { path: metadata.name, value: o-ostrom-web-egress }
+    asserts:
+      - equal: { path: 'spec.egress[0].to[0].podSelector.matchLabels["app.kubernetes.io/component"]', value: server }

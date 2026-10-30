@@ -1,0 +1,28 @@
+suite: ingress — existing controller and TLS secret
+templates:
+  - templates/ingress.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: one Ingress per public part, on the existing TLS secret
+    set:
+      ingress.hosts: { api: api.ostrom.run, app: app.ostrom.run, site: ostrom.run, siteAliases: [www.ostrom.run], sso: sso.ostrom.run }
+      ingress.tls.secretName: ostrom-origin-tls
+    asserts:
+      - hasDocuments: { count: 4 }
+      - equal: { path: 'spec.tls[0].secretName', value: ostrom-origin-tls }
+      - equal: { path: spec.ingressClassName, value: nginx }
+      - equal: { path: 'spec.rules[0].host', value: api.ostrom.run }
+        documentIndex: 0
+      - equal: { path: 'spec.rules[1].host', value: www.ostrom.run }
+        documentIndex: 2
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-buffering"]', value: "off" }
+        documentIndex: 0
+  - it: cert-manager is only an annotation, opt-in
+    set: { ingress.certManager.clusterIssuer: letsencrypt }
+    documentIndex: 0
+    asserts:
+      - equal: { path: 'metadata.annotations["cert-manager.io/cluster-issuer"]', value: letsencrypt }
+  - it: skips disabled parts
+    set: { site.enabled: false, polis.enabled: false }
+    asserts:
+      - hasDocuments: { count: 2 }

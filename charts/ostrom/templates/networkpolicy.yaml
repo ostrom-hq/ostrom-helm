@@ -1,0 +1,210 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $full := include "ostrom.fullname" . -}}
+{{- $np := .Values.networkPolicy -}}
+{{- $denied := concat $np.egress.deniedCidrs $np.egress.extraDeniedCidrs -}}
+{{- $inst := dict "app.kubernetes.io/instance" .Release.Name "app.kubernetes.io/name" (include "ostrom.name" .) -}}
+# Everything of this release is denied by default, in and out; the policies below open what each part needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-default-deny
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- toYaml $inst | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-dns
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- toYaml $inst | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {{- toYaml $np.dns.namespaceSelector | nindent 12 }}
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+{{- range $c := list "server" "web" "site" "polis" }}
+{{- if (index $.Values $c).enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-{{ $c }}-from-ingress
+  labels: {{- include "ostrom.labels" (dict "root" $ "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" $ "component" $c) | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {{- toYaml $np.ingressController.namespaceSelector | nindent 12 }}
+          podSelector: {{- toYaml $np.ingressController.podSelector | nindent 12 }}
+        - {{- include "ostrom.np.peer" (dict "root" $ "component" "test") | nindent 10 }}
+        {{- if eq $c "server" }}
+        - {{- include "ostrom.np.peer" (dict "root" $ "component" "runner") | nindent 10 }}
+        - {{- include "ostrom.np.peer" (dict "root" $ "component" "web") | nindent 10 }}
+        {{- end }}
+        {{- if eq $c "polis" }}
+        - {{- include "ostrom.np.peer" (dict "root" $ "component" "server") | nindent 10 }}
+        {{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.server.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-server-egress
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "server") | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    {{- if .Values.postgresql.enabled }}
+    - to:
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "postgresql") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 5432 }]
+    {{- end }}
+    {{- if .Values.polis.enabled }}
+    - to:
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "polis") | nindent 10 }}
+      ports: [{ protocol: TCP, port: {{ .Values.polis.port }} }]
+    {{- end }}
+    {{- with $np.kubeApi.cidrs }}
+    - to:
+        {{- range . }}
+        - ipBlock: { cidr: {{ . }} }
+        {{- end }}
+      ports: [{ protocol: TCP, port: {{ $np.kubeApi.port }} }]
+    {{- end }}
+    {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
+{{- if and .Values.cloudSessions.enabled $np.kubeApi.cilium }}
+---
+# Cilium: the API server is an entity, not an address; this namespaced policy lets the server reach it.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ $full }}-server-kube-api
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "server") | nindent 6 }}
+  egress:
+    - toEntities: [kube-apiserver]
+{{- end }}
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-postgresql
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "postgresql") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "server") | nindent 10 }}
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "polis") | nindent 10 }}
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "backup") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 5432 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-backup-egress
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "backup") | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "postgresql") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 5432 }]
+{{- end }}
+{{- if .Values.polis.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-polis-egress
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "polis") | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    {{- if .Values.postgresql.enabled }}
+    - to:
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "postgresql") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 5432 }]
+    {{- end }}
+    # Identity providers' metadata and the external database, if any.
+    {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
+{{- end }}
+{{- if and .Values.web.enabled .Values.server.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-web-egress
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "web") | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "server") | nindent 10 }}
+      ports: [{ protocol: TCP, port: {{ .Values.server.port }} }]
+{{- end }}
+{{- if .Values.cloudSessions.enabled }}
+---
+# Session pods run agent code: the internet (model APIs, Git hosts, package registries) and this release's
+# server only — nothing else in the cluster, no private range, no cloud metadata endpoint.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-runner
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: runner
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "server") | nindent 10 }}
+      ports: [{ protocol: TCP, port: {{ .Values.server.port }} }]
+    {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
+{{- end }}
+{{- if .Values.tests.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-test
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "test") | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+{{- end }}
