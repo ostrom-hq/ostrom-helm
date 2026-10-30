@@ -34,8 +34,8 @@ done
 kubectl -n $NS rollout restart deploy/$REL-server deploy/$REL-polis
 kubectl -n $NS rollout status deploy/$REL-server --timeout 5m
 kubectl -n $NS rollout status deploy/$REL-polis --timeout 5m
-# Over TCP the pod asks for the password (scram), as it does for the server.
-if kubectl -n $NS exec $POD -- env PGPASSWORD="$old_app" psql -h 127.0.0.1 -U ostrom_app -d ostrom -Atc "SELECT 1" 2>/dev/null; then
+# Through the Service, as the server connects: the image trusts loopback, and asks every other address for a password.
+if kubectl -n $NS exec $POD -- env PGPASSWORD="$old_app" psql -h $REL-postgresql -U ostrom_app -d ostrom -Atc "SELECT 1" 2>/dev/null; then
   fail "the old serving-role password still works"
 fi
 
