@@ -1,0 +1,36 @@
+suite: monitoring — dashboards and alerts, off by default
+templates:
+  - templates/monitoring.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: renders nothing by default
+    asserts:
+      - hasDocuments: { count: 0 }
+  - it: the dashboards ConfigMap carries the sidecar label and every dashboard of the chart
+    set: { monitoring.dashboards.enabled: true }
+    asserts:
+      - isKind: { of: ConfigMap }
+      - equal: { path: metadata.labels.grafana_dashboard, value: "1" }
+      - exists: { path: 'data["ostrom-api.json"]' }
+      - matchRegex: { path: 'data["ostrom-api.json"]', pattern: 'job=\\"\$job\\"' }
+      - notMatchRegex: { path: 'data["ostrom-api.json"]', pattern: 'grafanacloud' }
+  - it: refuses the PrometheusRule without the Prometheus Operator
+    set: { monitoring.prometheusRule.enabled: true }
+    asserts:
+      - failedTemplate:
+          errorMessage: "monitoring.prometheusRule.enabled needs the PrometheusRule resource (Prometheus Operator) in the cluster; with helm template, pass --api-versions monitoring.coreos.com/v1/PrometheusRule"
+  - it: the rules select the server's job, derived from the service name prefix
+    set: { monitoring.prometheusRule.enabled: true, observability.otel.serviceNamePrefix: acme }
+    capabilities:
+      apiVersions: [monitoring.coreos.com/v1/PrometheusRule]
+    asserts:
+      - isKind: { of: PrometheusRule }
+      - lengthEqual: { path: "spec.groups[0].rules", count: 4 }
+      - matchRegex: { path: "spec.groups[0].rules[0].expr", pattern: 'job="ostrom/acme-server"' }
+      - equal: { path: "spec.groups[0].rules[2].alert", value: OstromServerSilent }
+  - it: an explicit job wins
+    set: { monitoring.prometheusRule.enabled: true, monitoring.job: "prod/ostrom-server" }
+    capabilities:
+      apiVersions: [monitoring.coreos.com/v1/PrometheusRule]
+    asserts:
+      - matchRegex: { path: "spec.groups[0].rules[1].expr", pattern: 'job="prod/ostrom-server"' }

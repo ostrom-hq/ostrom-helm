@@ -86,7 +86,27 @@ jobs:
             helm template o charts/ostrom -n ostrom --set cloudSessions.enabled=true --set server.replicas=1 \
               --set networkPolicy.kubeApi.cilium=true --set networkPolicy.ciliumEgressDeny.enabled=true \
               | ./kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version "$v" -
+            # Dashboards and the PrometheusRule, checked against the operator's schema (CRDs-catalog pinned by commit).
+            helm template o charts/ostrom -n ostrom --set monitoring.dashboards.enabled=true \
+              --set monitoring.prometheusRule.enabled=true --api-versions monitoring.coreos.com/v1/PrometheusRule \
+              | ./kubeconform -strict -summary -kubernetes-version "$v" -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/3eb90d47aba8d61919d4419dd38301536e32a94b/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' -
           done
+      # Only what the server emits today (ostrom-server main: Tracing.kt, ProcessMetrics.kt; ostrom-core telemetry), and their labels.
+      - name: The dashboards and alerts are portable and query only metrics the server emits
+        run: |
+          emitted='http_server_request_duration_seconds_(bucket|count|sum)|http_server_active_requests|process_cpu_time_seconds|process_memory_usage_bytes|ostrom_telemetry_dropped_total|http_route|http_request_method|http_response_status_code'
+          for f in charts/ostrom/dashboards/*.json; do
+            jq -e '.uid and .title and (.panels | length > 0) and ([.panels[].datasource.uid] | unique == ["${datasource}"])' "$f" >/dev/null \
+              || { echo "::error file=$f::not a portable dashboard (uid, title, panels, datasource \${datasource})"; exit 1; }
+          done
+          used=$( { jq -r '.panels[].targets[].expr' charts/ostrom/dashboards/*.json
+                    helm template o charts/ostrom --set monitoring.prometheusRule.enabled=true \
+                      --api-versions monitoring.coreos.com/v1/PrometheusRule -s templates/monitoring.yaml | yq '.spec.groups[].rules[].expr'
+                  } | grep -oE '\b(http|process|ostrom)_[a-z_]+' | sort -u)
+          bad=$(echo "$used" | grep -vxE "$emitted" || true)
+          [ -z "$bad" ] || { echo "::error::queried but not emitted by the server: $bad"; exit 1; }
+          echo "metrics queried: $(echo "$used" | tr '\n' ' ')"
       - name: The Compose stack creates the same database roles as the chart
         run: |
           chart=$(helm template o charts/ostrom -s templates/postgresql.yaml | yq 'select(.kind == "ConfigMap") | .data["10-roles.sh"]')
