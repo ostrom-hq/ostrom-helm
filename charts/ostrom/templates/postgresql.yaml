@@ -9,7 +9,8 @@ metadata:
   labels: {{- include "ostrom.labels" (dict "root" . "component" "postgresql") | nindent 4 }}
 data:
   # Runs once, on an empty data directory. Three roles (CONVENTIONS section 16.1): the owner, who migrates; the
-  # serving role, which owns nothing and cannot bypass row-level security; Ory Polis's own role.
+  # serving role, which owns nothing and cannot bypass row-level security; Ory Polis's own role. Then `ostrom_tenant`
+  # (S2-43), the block the pre-upgrade Job replays on every upgrade.
   10-roles.sh: |
     #!/bin/sh
     set -eu
@@ -32,6 +33,8 @@ data:
     ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app";
     ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"app";
     ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO :"app";
+    -- Same block as the pre-upgrade Job (database-roles-job.yaml), idempotent (S2-43).
+    {{- include "ostrom.postgresql.tenantSql" . | nindent 4 }}
     SQL
 ---
 apiVersion: v1
