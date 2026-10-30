@@ -1,5 +1,8 @@
 # Backup and restore
 
+Names below assume the release is called `ostrom` (objects are then `ostrom-…`; another release name `x` gives
+`x-ostrom-…`).
+
 Three things hold the state of an Ostrom instance:
 
 1. **PostgreSQL** — databases `ostrom` and `polis`;
@@ -24,17 +27,17 @@ Copy them off the cluster too (the PVC lives in the same failure domain):
 
 ```sh
 NS=ostrom; REL=ostrom
-kubectl -n $NS create job --from=cronjob/$REL-ostrom-postgresql-backup backup-now
+kubectl -n $NS create job --from=cronjob/$REL-postgresql-backup backup-now
 kubectl -n $NS wait --for=condition=complete job/backup-now --timeout=10m
 kubectl -n $NS run backup-copy --rm -i --restart=Never --image=busybox:1.37 \
-  --overrides='{"spec":{"securityContext":{"runAsUser":999,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"busybox:1.37","command":["tar","czf","-","-C","/b","."],"stdin":true,"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"b","mountPath":"/b"}]}],"volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"'$REL'-ostrom-postgresql-backup"}}]}}' \
+  --overrides='{"spec":{"securityContext":{"runAsUser":999,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"busybox:1.37","command":["tar","czf","-","-C","/b","."],"stdin":true,"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"b","mountPath":"/b"}]}],"volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"'$REL'-postgresql-backup"}}]}}' \
   > ostrom-backups-$(date +%F).tgz
 ```
 
 ### Keys and secrets
 
 ```sh
-kubectl -n ostrom get secret ostrom-ostrom-signing-key ostrom-ostrom-postgresql ostrom-ostrom-polis -o yaml > ostrom-secrets.yaml
+kubectl -n ostrom get secret ostrom-signing-key ostrom-postgresql ostrom-polis -o yaml > ostrom-secrets.yaml
 ```
 
 Store that file encrypted (age, sops, a password manager): it contains the keys.
@@ -48,7 +51,7 @@ Store that file encrypted (age, sops, a password manager): it contains the keys.
 3. Restore each database:
 
 ```sh
-POD=ostrom-ostrom-postgresql-0
+POD=ostrom-postgresql-0
 kubectl -n ostrom cp ./2026-10-30/ostrom.dump $POD:/tmp/ostrom.dump
 kubectl -n ostrom exec $POD -- pg_restore -U ostrom -d ostrom --clean --if-exists --no-owner /tmp/ostrom.dump
 kubectl -n ostrom cp ./2026-10-30/polis.dump $POD:/tmp/polis.dump
