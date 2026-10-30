@@ -21,7 +21,7 @@ jobs:
   ci:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -56,6 +56,59 @@ jobs:
           node "$t/docs-truth-core/tools/docs-truth/bin/docs-truth.mjs" --routes "$t/docs-truth-core/api/contract/served-routes.txt" \
             --source "$t/docs-truth-server" --source "$t/docs-truth-core/telemetry" --source "$t/docs-truth-web/docker" \
             --source compose README.md docs
+      # The real `ostrom-server migrate` against the chart's roles (ci/migrate-drill.sh): ostrom-server main, already
+      # checked out above, built into its own image. On main, tags and by hand always; on a pull request only when it
+      # touches the database roles or the migrations' wiring, to keep the native build (about 10 minutes) off the rest.
+      - name: Does this change need the real server?
+        id: real
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          changed=$(git diff --name-only "$BASE"...HEAD)
+          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|networkpolicy\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/migrate-drill\.sh|\.github/workflows/ci\.yml)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Real-server migration drill skipped: this change touches neither the database roles nor the migrations." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "core=$(tr -d '[:space:]' < "$RUNNER_TEMP/docs-truth-server/gradle/ostrom-core.ref")" >> "$GITHUB_OUTPUT"
+      - if: steps.real.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ostrom-hq/ostrom-core
+          ref: ${{ steps.real.outputs.core }}
+          ssh-key: ${{ secrets.DEPLOY_KEY_CORE }}
+          path: server-core
+          persist-credentials: false
+      - if: steps.real.outputs.run == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with: { distribution: temurin, java-version: 21 }
+      - if: steps.real.outputs.run == 'true'
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - if: steps.real.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ steps.real.outputs.core }}
+          restore-keys: konan-${{ runner.os }}-${{ runner.arch }}-
+      - name: Build the server image of ostrom-server main (its ci/build-linux.sh and Dockerfile)
+        if: steps.real.outputs.run == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mv server-core "$RUNNER_TEMP/ostrom-core"
+          mkdir -p ~/.gradle && echo "ostrom.core.local=true" >> ~/.gradle/gradle.properties
+          for size in 4G 2G; do
+            if sudo fallocate -l "$size" /native-link.swap; then
+              sudo chmod 600 /native-link.swap && sudo mkswap /native-link.swap && sudo swapon /native-link.swap && break
+            fi
+          done
+          cd "$RUNNER_TEMP/docs-truth-server"
+          ./ci/build-linux.sh
+          docker build -t ostrom-server:chart-ci .
+          echo "Real server for the migration drill: ostrom-server@$(git rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with: { version: v3.17.2 }
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -142,6 +195,11 @@ jobs:
       # docs/secret-rotation.md, end to end: PostgreSQL passwords and the signing key rotated, then helm test.
       - name: Secret rotation drill (docs/secret-rotation.md)
         run: ci/secret-rotation-drill.sh
+      - name: Real ostrom-server migrate against the chart's roles, twice, and over a pre-existing ostrom_router
+        if: steps.real.outputs.run == 'true'
+        run: |
+          kind load docker-image ostrom-server:chart-ci --name chart-testing
+          SERVER_IMAGE=ostrom-server:chart-ci ci/migrate-drill.sh
       - name: Cluster state on failure
         if: failure()
         run: |
