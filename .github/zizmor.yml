@@ -1,6 +1,0 @@
-# Temporary: release.yml (owned by the deploy work) expands github.actor and github.token inside `run:`.
-# Move them to `env:` and delete this file.
-rules:
-  template-injection:
-    ignore:
-      - release.yml
