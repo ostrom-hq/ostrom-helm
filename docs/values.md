@@ -94,6 +94,29 @@ Job against an external database) and give both: `externalDatabase.username`
 (serving) and `externalDatabase.migrationUsername` (owner), passwords in `externalDatabase.existingSecret` under
 `password` and `migration-password`.
 
+## Dashboards and alerts
+
+The server sends its metrics, traces and logs over OTLP (`observability.otel`). Point it at your OpenTelemetry
+Collector or at any OTLP backend; once the metrics reach Prometheus under the usual OTLP names
+(`http_server_request_duration_seconds`, …), the chart can add:
+
+- `monitoring.dashboards.enabled`: a ConfigMap with the dashboard "Ostrom — API" (requests per route, 5xx ratio,
+  p50/p95/p99, requests in flight, CPU, memory, dropped telemetry). It has a `datasource` variable and a `job` variable.
+  The `grafana_dashboard: "1"` label is the one the Grafana sidecar of kube-prometheus-stack watches.
+- `monitoring.prometheusRule.enabled`: a PrometheusRule (Prometheus Operator) with four alerts, matching the API budget of
+  50 ms at p95:
+  - 5xx above 2 % for 5 minutes;
+  - p95 above 250 ms for 10 minutes;
+  - no metric from the server for 10 minutes;
+  - dropped telemetry (`info`).
+  Without the operator the chart refuses it; with `helm template`, pass
+  `--api-versions monitoring.coreos.com/v1/PrometheusRule`.
+
+The series are selected by `job="ostrom/<prefix>-server"`: the server's `service.namespace` is `ostrom`, and the
+`service.name` comes from `observability.otel.serviceNamePrefix`. Set `monitoring.job` if your collector labels them
+otherwise. Gates, sessions and inference cost are declared by the server but not recorded yet in this version, so
+neither the dashboard nor the alerts use them.
+
 ## Cloud sessions
 
 Off by default (`cloudSessions.enabled: false`): a session runs code its user chose, in a pod of your cluster.

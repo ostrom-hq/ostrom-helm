@@ -1,0 +1,75 @@
+{{- /*
+Dashboards and alerts for the metrics the server sends over OTLP (observability.otel), once your collector writes
+them to Prometheus with the usual OTLP → Prometheus names (http_server_request_duration_seconds, …). Off by
+default; nothing here is cluster-wide.
+*/}}
+{{- $full := include "ostrom.fullname" . -}}
+{{- $m := .Values.monitoring -}}
+{{- if $m.dashboards.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-dashboards
+  labels:
+    {{- include "ostrom.labels" (dict "root" . "component" "monitoring") | nindent 4 }}
+    {{- with $m.dashboards.labels }}{{ toYaml . | nindent 4 }}{{- end }}
+  {{- with $m.dashboards.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  {{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+  {{ base $path }}: |-
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if $m.prometheusRule.enabled }}
+{{- if not (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule") }}
+{{- fail "monitoring.prometheusRule.enabled needs the PrometheusRule resource (Prometheus Operator) in the cluster; with helm template, pass --api-versions monitoring.coreos.com/v1/PrometheusRule" }}
+{{- end }}
+{{- $job := $m.job | default (printf "ostrom/%s-server" .Values.observability.otel.serviceNamePrefix) }}
+{{- $sel := printf "job=%q" $job }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "ostrom.labels" (dict "root" . "component" "monitoring") | nindent 4 }}
+    {{- with $m.prometheusRule.labels }}{{ toYaml . | nindent 4 }}{{- end }}
+spec:
+  groups:
+    - name: ostrom
+      rules:
+        - alert: OstromApi5xx
+          expr: |
+            sum(rate(http_server_request_duration_seconds_count{ {{- $sel }}, http_response_status_code=~"5.."}[5m]))
+              / clamp_min(sum(rate(http_server_request_duration_seconds_count{ {{- $sel -}} }[5m])), 1e-9) > 0.02
+          for: 5m
+          labels: { severity: critical, service: ostrom }
+          annotations:
+            summary: More than 2 % of Ostrom API requests answer 5xx.
+            description: A 5xx is always unforeseen (expected refusals are 4xx). Look at the failing route and the server logs.
+        - alert: OstromApiLatencyP95
+          expr: |
+            histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{ {{- $sel -}} }[5m]))) > 0.25
+          for: 10m
+          labels: { severity: warning, service: ostrom }
+          annotations:
+            summary: Ostrom API p95 above 250 ms (five times the 50 ms budget).
+            description: One slow route points to a query or an external call; every route points to the pods' CPU or PostgreSQL.
+        - alert: OstromServerSilent
+          expr: |
+            absent_over_time(http_server_active_requests{ {{- $sel -}} }[10m])
+          for: 5m
+          labels: { severity: critical, service: ostrom }
+          annotations:
+            summary: No metric from the Ostrom server for 10 minutes.
+            description: The server is down, or its OTLP export (observability.otel) no longer reaches the collector.
+        - alert: OstromTelemetryDropped
+          expr: |
+            sum(increase(ostrom_telemetry_dropped_total{ {{- $sel -}} }[15m])) > 0
+          labels: { severity: info, service: ostrom }
+          annotations:
+            summary: The Ostrom server dropped telemetry.
+            description: The reason label says why (queue_full, rejected, retries_exhausted). Telemetry never slows a request.
+{{- end }}

@@ -116,6 +116,21 @@ observability:
     apiKey: ""                # project key (public, also given to the web console)
     privacyUrl: ""            # the privacy policy the console's consent banner links to; unset: https://ostrom.run/privacy
 
+# Dashboards and alerts for the server's metrics (sent by observability.otel; your collector writes them to Prometheus).
+# Only what the server of this version emits: HTTP traffic, latency, process CPU and memory, dropped telemetry.
+monitoring:
+  # The `job` label of the server's series, `<service.namespace>/<service.name>`. The server's service.namespace is
+  # `ostrom`; empty: ostrom/<observability.otel.serviceNamePrefix>-server.
+  job: ""
+  dashboards:
+    enabled: false
+    # Grafana's dashboard sidecar picks ConfigMaps by label (kube-prometheus-stack: grafana_dashboard: "1").
+    labels: { grafana_dashboard: "1" }
+    annotations: {}
+  prometheusRule:
+    enabled: false            # needs the Prometheus Operator's PrometheusRule resource
+    labels: {}                # e.g. release: kube-prometheus-stack, if your Prometheus selects rules by label
+
 # --- Web console (static SPA behind nginx) -------------------------------------------------------------------------
 web:
   enabled: true
