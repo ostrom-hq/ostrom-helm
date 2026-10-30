@@ -1,0 +1,16 @@
+suite: web — public runtime settings of the console
+templates:
+  - templates/web.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: gives the console PostHog and its own privacy policy when analytics are on
+    documentSelector: { path: kind, value: ConfigMap }
+    set: { observability.posthog: { enabled: true, apiKey: phc_1, privacyUrl: "https://corp.example/privacy" } }
+    asserts:
+      - equal: { path: data.OSTROM_POSTHOG_API_KEY, value: phc_1 }
+      - equal: { path: data.OSTROM_PRIVACY_URL, value: "https://corp.example/privacy" }
+  - it: gives the console no analytics setting by default
+    documentSelector: { path: kind, value: ConfigMap }
+    asserts:
+      - notExists: { path: data.OSTROM_POSTHOG_API_KEY }
+      - notExists: { path: data.OSTROM_PRIVACY_URL }
