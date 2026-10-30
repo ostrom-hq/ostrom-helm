@@ -58,10 +58,9 @@ jobs:
           done
       - name: The Compose stack creates the same database roles as the chart
         run: |
-          python3 -m pip install --quiet pyyaml==6.0.2
-          helm template o charts/ostrom -s templates/postgresql.yaml \
-            | python3 -c 'import sys,yaml; d=[x for x in yaml.safe_load_all(sys.stdin) if x and x["kind"]=="ConfigMap"][0]; sys.stdout.write(d["data"]["10-roles.sh"])' \
-            | diff - compose/postgres-init/10-roles.sh
+          chart=$(helm template o charts/ostrom -s templates/postgresql.yaml | yq 'select(.kind == "ConfigMap") | .data["10-roles.sh"]')
+          compose=$(cat compose/postgres-init/10-roles.sh)
+          [ "$chart" = "$compose" ] || { diff <(echo "$chart") <(echo "$compose"); exit 1; }
       - name: Nothing cluster-wide in the chart
         run: |
           out=$(helm template o charts/ostrom -n ostrom --set cloudSessions.enabled=true --set server.replicas=1 \
