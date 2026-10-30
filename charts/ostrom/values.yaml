@@ -58,8 +58,11 @@ server:
   existingSecret: ""
   extraEnv: []
   extraEnvFrom: []
+  # Measured in kind through the ingress (ostrom-e2e chart-load.yml, runs 41053122493 and 41055002838): about 50 req/s per replica
+  # peaks at 130-194m CPU and 90-114 MiB; at rest a few millicores and under 10 MiB. Requests cover that peak,
+  # the limit keeps twice its memory.
   resources:
-    requests: { cpu: 50m, memory: 64Mi }
+    requests: { cpu: 100m, memory: 128Mi }
     limits: { memory: 256Mi }
   probes:
     startup: { path: /health, periodSeconds: 2, failureThreshold: 60 }
