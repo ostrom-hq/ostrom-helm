@@ -67,7 +67,10 @@ helm test ostrom -n ostrom
 
 The chart generates once, and keeps across upgrades and uninstalls (`helm.sh/resource-policy: keep`): the
 PostgreSQL password, the **instance signing key** (Secret `ostrom-signing-key`, signs every receipt — back it up),
-and the Ory Polis keys.
+the **secrets key** (Secret `ostrom-secrets-key`, seals the org secrets, the same for every replica — back it up),
+and the Ory Polis keys. A chart rendered without cluster access (`helm template`, Argo CD, Flux) cannot find the kept
+Secrets: create the signing key and the secrets key yourself and set `server.signingKey.existingSecret` and
+`server.secretsKey.existingSecret`.
 
 ## 6. DNS
 

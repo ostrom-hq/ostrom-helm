@@ -5,7 +5,7 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 | Group | What |
 |---|---|
 | `global` | image registry, tag and pull secrets; public URLs (`urls.api`, `urls.app`, `urls.site`) |
-| `server` | replicas, resources, probes, HPA, PDB, `config` (non-secret env), `secretEnv` / `existingSecret` (secret env), signing key |
+| `server` | replicas, resources, probes, HPA, PDB, `config` (non-secret env), `secretEnv` / `existingSecret` (secret env), signing key, secrets key |
 | `migrations` | `initContainer: true` runs `ostrom-server migrate` before each pod starts |
 | `byok.extraction` | provider, base URL, model and key of the model that extracts workflows and policies (BYOK) |
 | `observability` | `otel` (OTLP/HTTP endpoint and headers), `langfuse`, `posthog` |
@@ -26,6 +26,7 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_DATABASE_URL`, `OSTROM_DATABASE_USER`, `OSTROM_DATABASE_PASSWORD`, `OSTROM_DATABASE_MAX_CONNECTIONS` | the serving role: `postgresql.username` or `externalDatabase.username` |
 | `OSTROM_DATABASE_MIGRATION_URL`, `OSTROM_DATABASE_MIGRATION_USER`, `OSTROM_DATABASE_MIGRATION_PASSWORD` | the owner, in the `migrate` init container only: `postgresql.ownerUsername` or `externalDatabase.migrationUsername` |
 | `OSTROM_SIGNING_KEY_FILE` | the mounted instance key, `/var/run/ostrom/signing/instance-key.pem` |
+| `OSTROM_SECRETS_KEY` | key `secrets-key` of the generated Secret `<release>-secrets-key`, or of `server.secretsKey.existingSecret` |
 | `OSTROM_PUBLIC_URL`, `OSTROM_API_URL`, `OSTROM_APP_URL`, `OSTROM_CONSOLE_URL`, `OSTROM_SITE_URL` | `global.urls.*` |
 | `OSTROM_EXTRACTION_PROVIDER`, `OSTROM_EXTRACTION_BASE_URL`, `OSTROM_EXTRACTION_MODEL`, `OSTROM_EXTRACTION_API_KEY` | `byok.extraction.*` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` (always `http/protobuf`), `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER_ARG` | `observability.otel.*` (`tracesSampleRatio` for the last) |
