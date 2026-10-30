@@ -38,10 +38,13 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_SHUTDOWN_DELAY_SECONDS` | `server.shutdownDelaySeconds` (0 to 10, default 5): after SIGTERM, `/ready` answers 503 this long before the server stops, so the Service drops the pod first; readiness probes `/ready`, liveness and startup `/health` |
 
 Everything else goes through `server.config` (plain) or `server.existingSecret` / `server.secretEnv` (secret),
-whose keys are environment variable names, e.g. `OSTROM_GITHUB_APP_ID`, `OSTROM_GITHUB_CLIENT_SECRET`,
-`OSTROM_GITHUB_WEBHOOK_SECRET`, `OSTROM_GITHUB_APP_PRIVATE_KEY`, `OSTROM_GOOGLE_CLIENT_ID`,
-`OSTROM_GOOGLE_CLIENT_SECRET`, `OSTROM_RESEND_API_KEY`, `OSTROM_EMAIL_FROM`, `OSTROM_STRIPE_SECRET_KEY`,
-`OSTROM_STRIPE_WEBHOOK_SECRET`. The server documents its own keys in `ostrom-server/docs/MODULES.md`.
+whose keys are environment variable names, e.g. `OSTROM_GITHUB_CLIENT_ID`, `OSTROM_GITHUB_CLIENT_SECRET`,
+`OSTROM_GOOGLE_CLIENT_ID`, `OSTROM_GOOGLE_CLIENT_SECRET`, `OSTROM_RESEND_API_KEY`, `OSTROM_MAIL_FROM`,
+`OSTROM_STRIPE_SECRET_KEY`, `OSTROM_STRIPE_WEBHOOK_SECRET`, `OSTROM_LICENSE_KEY`. The server documents its own keys in
+`ostrom-server/docs/MODULES.md`.
+
+The GitHub App's keys (its id, private key and webhook secret) are coming soon: the server of `main` does not read
+them yet (ostrom-server#44).
 
 ## Web console runtime settings
 
