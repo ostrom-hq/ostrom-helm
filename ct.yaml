@@ -3,3 +3,4 @@ target-branch: main
 validate-maintainers: false
 check-version-increment: false
 helm-extra-args: --timeout 600s
+lint-conf: lintconf.yaml
