@@ -70,7 +70,7 @@ jobs:
             echo "the chart must only create namespaced objects"; exit 1
           fi
       - name: Shell scripts
-        run: shellcheck compose/*.sh
+        run: shellcheck compose/*.sh ci/*.sh
       - name: Workflows
         run: |
           bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
@@ -85,6 +85,9 @@ jobs:
           kubectl label namespace ostrom-ct pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=latest
       - name: ct install (install, helm test, upgrade, uninstall) on kind
         run: ct install --config ct.yaml --all --namespace ostrom-ct --upgrade
+      # docs/secret-rotation.md, end to end: PostgreSQL passwords and the signing key rotated, then helm test.
+      - name: Secret rotation drill (docs/secret-rotation.md)
+        run: ci/secret-rotation-drill.sh
       - name: Cluster state on failure
         if: failure()
         run: |
