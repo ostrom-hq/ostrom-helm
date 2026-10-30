@@ -37,9 +37,11 @@ echo "== 2. Backup now (the page's commands)"
 NS=$A
 kubectl -n $NS create job --from=cronjob/$REL-postgresql-backup backup-now
 kubectl -n $NS wait --for=condition=complete job/backup-now --timeout=10m || fail "backup job"
-kubectl -n $NS run backup-copy --rm -i --restart=Never --image=busybox:1.37 \
-  --overrides='{"spec":{"securityContext":{"runAsUser":999,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"busybox:1.37","command":["tar","czf","-","-C","/b","."],"stdin":true,"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"b","mountPath":"/b"}]}],"volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"'$REL'-postgresql-backup"}}]}}' \
-  > "$work/ostrom-backups.tgz" || fail "copy of the backups off the cluster"
+kubectl -n $NS run backup-copy --restart=Never --image=busybox:1.37 \
+  --overrides='{"spec":{"securityContext":{"runAsUser":999,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"busybox:1.37","command":["sleep","3600"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"b","mountPath":"/b","readOnly":true}]}],"volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"'$REL'-postgresql-backup","readOnly":true}}]}}'
+kubectl -n $NS wait --for=condition=Ready pod/backup-copy --timeout=5m || fail "backup copy pod"
+kubectl -n $NS exec backup-copy -- tar czf - -C /b . > "$work/ostrom-backups.tgz" || fail "copy of the backups off the cluster"
+kubectl -n $NS delete pod backup-copy --wait=false
 mkdir -p "$work/backups" && tar xzf "$work/ostrom-backups.tgz" -C "$work/backups"
 run=$(find "$work/backups" -mindepth 1 -maxdepth 1 -type d | sort | tail -1)
 ls -la "$run"

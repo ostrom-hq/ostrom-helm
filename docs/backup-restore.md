@@ -30,15 +30,18 @@ With a StorageClass in `WaitForFirstConsumer` mode (kind, many clouds), the back
 first backup runs, and `helm install --wait` waits for it: run the first backup right after installing
 (`kubectl create job --from=cronjob/…`, below), or enable backups in a second `helm upgrade`.
 
-Copy them off the cluster too (the PVC lives in the same failure domain):
+Copy them off the cluster too (the PVC lives in the same failure domain). The copy goes through `kubectl exec`,
+whose output is the archive alone (`kubectl run --rm -i` adds its own messages to it):
 
 ```sh
 NS=ostrom; REL=ostrom
 kubectl -n $NS create job --from=cronjob/$REL-postgresql-backup backup-now
 kubectl -n $NS wait --for=condition=complete job/backup-now --timeout=10m
-kubectl -n $NS run backup-copy --rm -i --restart=Never --image=busybox:1.37 \
-  --overrides='{"spec":{"securityContext":{"runAsUser":999,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"busybox:1.37","command":["tar","czf","-","-C","/b","."],"stdin":true,"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"b","mountPath":"/b"}]}],"volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"'$REL'-postgresql-backup"}}]}}' \
-  > ostrom-backups-$(date +%F).tgz
+kubectl -n $NS run backup-copy --restart=Never --image=busybox:1.37 \
+  --overrides='{"spec":{"securityContext":{"runAsUser":999,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"busybox:1.37","command":["sleep","3600"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"b","mountPath":"/b","readOnly":true}]}],"volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"'$REL'-postgresql-backup","readOnly":true}}]}}'
+kubectl -n $NS wait --for=condition=Ready pod/backup-copy --timeout=5m
+kubectl -n $NS exec backup-copy -- tar czf - -C /b . > ostrom-backups-$(date +%F).tgz
+kubectl -n $NS delete pod backup-copy
 ```
 
 ### Keys and secrets
