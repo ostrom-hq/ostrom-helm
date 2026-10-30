@@ -28,6 +28,7 @@
 	}
 }
 
+# Ory Polis, only with the `sso` profile (coming soon); without it this host answers 502.
 {$OSTROM_SITE_SCHEME}://{$OSTROM_SSO_HOST} {
 	reverse_proxy polis:5225
 }
