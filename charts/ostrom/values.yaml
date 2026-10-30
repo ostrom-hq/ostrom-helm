@@ -142,7 +142,7 @@ web:
     type: ClusterIP
     port: 8080
 
-# --- Site (Next.js standalone) -------------------------------------------------------------------------------------
+# --- Site (Next.js static export behind nginx; no egress at all) ---------------------------------------------------
 site:
   enabled: true
   image:
@@ -152,13 +152,13 @@ site:
   command: []
   args: []
   replicas: 2
-  port: 3000
+  port: 8080
   env: {}
   resources:
-    requests: { cpu: 20m, memory: 96Mi }
-    limits: { memory: 384Mi }
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { memory: 64Mi }
   probes:
-    path: /
+    path: /healthz
   autoscaling:
     enabled: false
     minReplicas: 2
@@ -173,7 +173,7 @@ site:
   affinity: {}
   service:
     type: ClusterIP
-    port: 3000
+    port: 8080
 
 # --- PostgreSQL -----------------------------------------------------------------------------------------------------
 # Either the chart runs PostgreSQL itself (StatefulSet in the release namespace), or you point it at yours.

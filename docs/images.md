@@ -4,7 +4,7 @@
 |---|---|---|
 | `ghcr.io/ostrom-hq/ostrom-server` | the native server binary | `gcr.io/distroless/cc-debian12:nonroot` |
 | `ghcr.io/ostrom-hq/ostrom-web` | the console (static files + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
-| `ghcr.io/ostrom-hq/ostrom-site` | the site (Next.js standalone) | `gcr.io/distroless/nodejs24-debian12:nonroot` |
+| `ghcr.io/ostrom-hq/ostrom-site` | the site (Next.js static export + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
 | `ghcr.io/ostrom-hq/ostrom-runner` | cloud sessions: the `ostrom` CLI, Claude Code, Codex, git | `debian:12-slim` |
 
 All are built for `linux/amd64` and `linux/arm64`, tagged `<version>`, `<major>.<minor>` and `latest` on a release
