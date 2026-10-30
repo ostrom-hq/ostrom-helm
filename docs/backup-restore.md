@@ -23,6 +23,10 @@ postgresql:
 
 A CronJob dumps every database (`pg_dump -Fc`) and the roles (`pg_dumpall --globals-only`) to the PVC
 `<release>-postgresql-backup` (kept on uninstall), in a folder per run, and deletes runs older than `keep` days.
+With a StorageClass in `WaitForFirstConsumer` mode (kind, many clouds), the backup PVC stays `Pending` until the
+first backup runs, and `helm install --wait` waits for it: run the first backup right after installing
+(`kubectl create job --from=cronjob/…`, below), or enable backups in a second `helm upgrade`.
+
 Copy them off the cluster too (the PVC lives in the same failure domain):
 
 ```sh

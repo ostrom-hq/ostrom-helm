@@ -21,7 +21,8 @@ site:
   args: ["-listen=:8080", "-text=ok"]
 postgresql:
   persistence: { size: 1Gi }
-  backup: { enabled: true, persistence: { size: 1Gi } }
+  # kind's StorageClass binds on first use: an unused backup PVC would hold `helm install --wait` (docs/backup-restore.md).
+  backup: { enabled: false }
 ingress:
   hosts: { api: api.ostrom.test, app: app.ostrom.test, site: ostrom.test, sso: sso.ostrom.test }
 networkPolicy:
