@@ -76,7 +76,7 @@ async function mailTo(to, marker) {
   for (let i = 0; i < 40; i++) {
     const list = await fetch(`${MAIL}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`).then((r) => r.json()).catch(() => ({}));
     for (const m of list.messages ?? []) {
-      const full = await fetch(`${MAIL}/api/v1/message/${m.ID}`).then((r) => r.json());
+      const full = await fetch(`${MAIL}/api/v1/message/${m.ID}`).then((r) => r.json()).catch(() => ({}));
       if ((full.Text ?? '').includes(marker)) return full;
     }
     await sleep(500);
@@ -99,6 +99,15 @@ async function signInByMail(p, email) {
 }
 
 async function main() {
+  try {
+    await journey();
+  } catch (e) {
+    record('X', 'Le parcours s’est arrêté sur une erreur', RED, `${e.message}${e.cause ? ` (${e.cause.message ?? e.cause})` : ''}`);
+  }
+  writeReport();
+}
+
+async function journey() {
   // 0. The stack answers through Caddy.
   const health = await fetch(`${API}/health`).then((r) => r.json()).catch((e) => ({ error: e.message }));
   const appHealth = await fetch(`${APP}/api/v1/health`).then((r) => r.status).catch(() => 0);
@@ -235,7 +244,7 @@ async function main() {
     record('H1', 'Page d’abonnement (plan gratuit)', overview.status === 200 ? GREEN : RED, `GET billing → ${brief(overview)}`);
     const checkout = await owner.call('POST', `/api/v1/orgs/${orgId}/billing/checkout`, { plan: 'team', interval: 'month' });
     const url = checkout.json.url ?? '';
-    const state = url.startsWith('https://checkout.stripe.com/') ? GREEN : /not configured|billing_not_configured/i.test(checkout.text) ? NOT_YET : RED;
+    const state = url.startsWith('https://checkout.stripe.com/') ? GREEN : /not configured|not enabled on this instance/i.test(checkout.text) ? NOT_YET : RED;
     record('H2', 'Checkout Stripe (mode test)', state, url ? `session Checkout ouverte (${url.slice(0, 48)}…) : payer avec 4242 4242 4242 4242 dans le navigateur` : `checkout → ${brief(checkout)}`);
   }
 
@@ -251,6 +260,10 @@ async function main() {
     record('D3', 'Session cloud arrêtée et supprimée', status === 'deleted' ? GREEN : RED, `DELETE → ${stopped.status}, puis ${status}`);
   }
 
+}
+
+/** The Markdown report (REPORT), written whatever happened; exit code 1 on a red step. */
+function writeReport() {
   const red = results.filter((r) => r.state === RED).length;
   const lines = [
     `# Démo locale d'Ostrom : parcours (${new Date().toISOString()})`,
@@ -259,7 +272,7 @@ async function main() {
     '',
     '| Étape | Ce qui est prouvé | État | Ce qui a été vu |',
     '|---|---|---|---|',
-    ...results.map((r) => `| ${r.id} | ${r.title} | ${r.state} | ${r.detail.replaceAll('|', '\\|')} |`),
+    ...results.map((r) => `| ${r.id} | ${r.title} | ${r.state} | ${r.detail.replaceAll('|', '\\|').replace(/\s*\n\s*/g, ' · ')} |`),
     '',
     `${results.filter((r) => r.state === GREEN).length} vertes, ${red} rouges, ${results.filter((r) => r.state === NOT_YET).length} pas encore possibles.`,
     '',
@@ -277,14 +290,19 @@ function terminalEcho(sessionId, ticket) {
     const ws = new WebSocket(`${API.replace(/^http/, 'ws')}/api/v1/cloud/sessions/${sessionId}/terminal?ticket=${encodeURIComponent(ticket)}`);
     ws.binaryType = 'arraybuffer';
     let output = '';
-    let typed = false;
+    let connected = false;
+    let typed = 0;
+    // Typed when the runner says it is connected, then again every 5 s until the shell answers: a line typed before
+    // the agent's terminal has a peer is lost.
     const type = () => {
-      if (typed) return;
-      typed = true;
+      if (ws.readyState !== WebSocket.OPEN) return;
+      typed += 1;
       ws.send(new TextEncoder().encode(`echo ${marker}-$((6*7))\r`));
     };
+    const retype = setInterval(type, 5000);
     const end = (ok, detail) => {
       clearTimeout(timer);
+      clearInterval(retype);
       try {
         ws.close();
       } catch {
@@ -292,11 +310,13 @@ function terminalEcho(sessionId, ticket) {
       }
       resolve({ ok, detail });
     };
-    const timer = setTimeout(() => end(false, `no echo within 60 s; runner ${typed ? 'connected' : 'not connected'}; output « ${output.slice(-200)} »`), 60_000);
-    ws.addEventListener('open', () => setTimeout(type, 3000));
+    const timer = setTimeout(() => end(false, `no echo within 60 s; runner ${connected ? 'connected' : 'never said connected'}, typed ${typed} times; output « ${output.slice(-200)} »`), 60_000);
     ws.addEventListener('message', (e) => {
       if (typeof e.data === 'string') {
-        if (/"connected"\s*:\s*true/.test(e.data)) setTimeout(type, 500);
+        if (/"connected"\s*:\s*true/.test(e.data)) {
+          connected = true;
+          setTimeout(type, 500);
+        }
         return;
       }
       output += new TextDecoder().decode(e.data);

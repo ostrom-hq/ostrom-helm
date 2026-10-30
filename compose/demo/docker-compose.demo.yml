@@ -6,7 +6,8 @@
 #   - a fake GitHub for « Continue with GitHub » (fake-github.mjs), at http://github.localtest.me;
 #   - cloud sessions on this machine's Docker (OSTROM_RUNNERS_DRIVER=docker): the server reaches the engine through a
 #     socket proxy on a network of its own, and each session's two containers (the agent host and the runner, S2-49)
-#     join `ostrom-sessions`, where they reach the server and nothing else of the stack (no database, no engine).
+#     join `ostrom-sessions`, an internal network where they reach the server and nothing else: no database, no engine,
+#     no published port of this machine (Caddy, so the Mailpit inbox and its sign-in links), no internet.
 # The Docker socket proxy can create containers: never run this file on a shared or exposed machine.
 services:
   server:
@@ -40,9 +41,6 @@ services:
   mailpit:
     image: docker.io/axllent/mailpit:v1.32.0
     restart: unless-stopped
-    environment:
-      MP_SMTP_AUTH_ACCEPT_ANY: "1"
-      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
       interval: 3s
@@ -124,6 +122,8 @@ networks:
   default:
   docker-api:
     internal: true
-  # Named as is: the server gives this name to the Docker engine for each session's containers.
+  # Named as is: the server gives this name to the Docker engine for each session's containers. Internal: no route
+  # out, to this machine (host-gateway) or the internet; only the server, which also joins `default`, is on it.
   sessions:
     name: ostrom-sessions
+    internal: true

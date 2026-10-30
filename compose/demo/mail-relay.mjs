@@ -3,7 +3,7 @@
 // (http://mail.localhost). The server writes each mail as a file in OSTROM_MAIL_DIR (`To: …`, `Subject: …`, a blank
 // line, the text: DirectoryMailSender); this relay sends each new file once through Mailpit's API (POST
 // /api/v1/send), then renames it `*.sent`. Nothing ever leaves the machine.
-import { readdir, readFile, rename } from 'node:fs/promises';
+import { readdir, readFile, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -29,14 +29,22 @@ export const mailpitMessage = (mail, from) => ({
   Text: mail.text,
 });
 
-/** One pass over the directory: every unsent mail file is sent, then renamed. Returns the files sent. */
-export async function relayOnce({ dir, mailpitUrl, from, fetchImpl = fetch, log = () => {} }) {
+/** How long a file that does not read as a mail is left alone: the server may still be writing it. */
+export const SETTLE_MS = 2000;
+
+/**
+ * One pass over the directory: every unsent mail file is sent, then renamed. A file that does not read as a mail is
+ * retried while it is younger than SETTLE_MS (the server creates it, then writes it), then renamed `*.invalid`.
+ * Returns the files sent.
+ */
+export async function relayOnce({ dir, mailpitUrl, from, fetchImpl = fetch, log = () => {}, now = Date.now }) {
   const sent = [];
   for (const name of (await readdir(dir)).sort()) {
     if (!name.endsWith('.txt')) continue;
     const path = join(dir, name);
     const mail = parseMail(await readFile(path, 'utf8'));
     if (!mail) {
+      if (now() - (await stat(path)).mtimeMs < SETTLE_MS) continue;
       await rename(path, `${path}.invalid`);
       log(`skipped ${name}: not a mail file`);
       continue;

@@ -52,7 +52,9 @@ export function createFakeGitHub({ clientId, clientSecret }) {
     }
     if (method === 'POST' && path === '/login/oauth/authorize') {
       const login = String(form.login ?? '').trim();
-      if (!LOGIN.test(login) || form.client_id !== clientId || !form.redirect_uri) return send(res, 400, { message: 'bad login or client' });
+      if (!LOGIN.test(login) || form.client_id !== clientId || !URL.canParse(String(form.redirect_uri ?? ''))) {
+        return send(res, 400, { message: 'bad login, client or redirect_uri' });
+      }
       const code = randomBytes(16).toString('hex');
       codes.set(code, { login, challenge: form.code_challenge ?? '', redirectUri: form.redirect_uri });
       const back = new URL(form.redirect_uri);
@@ -96,6 +98,8 @@ export function createFakeGitHub({ clientId, clientSecret }) {
       } catch {
         return send(res, 400, { message: 'Problems parsing JSON' });
       }
+      // A JSON body that is not an object (null, an array, a number) is a bad request, never a crash.
+      if (form === null || typeof form !== 'object' || Array.isArray(form)) return send(res, 400, { message: 'Body must be an object' });
       handle(req.method, url.pathname, url.searchParams, form, req.headers.authorization ?? '', res);
     });
   };

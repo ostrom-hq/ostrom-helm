@@ -84,3 +84,12 @@ test('edge bodies: no content type, an empty JSON body, an authorize without log
   const noVerifier = await fetch(`${base}/login/oauth/access_token`, form({ code, client_id: 'cid', client_secret: 'csec' })).then((r) => r.json());
   assert.equal(noVerifier.error, 'bad_verification_code');
 });
+
+test('bodies that would crash a careless fake: a redirect_uri that is no URL, JSON that is not an object', async () => {
+  assert.equal((await fetch(`${base}/login/oauth/authorize`, form({ login: 'ok', client_id: 'cid', redirect_uri: 'notaurl' }))).status, 400);
+  for (const body of ['null', '[1]', '7']) {
+    const r = await fetch(`${base}/login/oauth/access_token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+    assert.equal(r.status, 400, body);
+  }
+  assert.deepEqual(await fetch(`${base}/health`).then((r) => r.json()), { status: 'ok' });
+});

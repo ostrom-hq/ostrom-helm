@@ -25,14 +25,17 @@ case "${1:-up}" in
     dc logs --no-color --tail "${2:-200}" $(dc config --services | grep -v '^stripe-')
     ;;
   down)
-    dc down --volumes --remove-orphans
-    # The cloud sessions' containers and volumes, which the server created through the engine (label managed-by).
+    # First the cloud sessions' containers, which the server created through the engine (label managed-by): they sit
+    # on ostrom-sessions, which Compose cannot remove while they are attached.
     ids=$(docker ps -aq --filter label=app.kubernetes.io/managed-by=ostrom)
     # shellcheck disable=SC2086 # one id per word
     [ -z "$ids" ] || docker rm -f $ids > /dev/null
+    dc down --volumes --remove-orphans
     vols=$(docker volume ls -q --filter label=app.kubernetes.io/managed-by=ostrom)
     # shellcheck disable=SC2086 # one name per word
     [ -z "$vols" ] || docker volume rm $vols > /dev/null
+    # The Stripe volume (the test key and webhook secret) even when this down runs without the Stripe file.
+    docker volume rm -f ostrom_stripe > /dev/null
     ;;
   *) echo "usage: demo/demo.sh up|journey|down|logs" >&2; exit 2 ;;
 esac

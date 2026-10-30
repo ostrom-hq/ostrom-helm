@@ -77,11 +77,13 @@ demo/demo.sh down      # removes everything it created, cloud sessions included
 - **Mail**: the server writes its sign-in and invitation mails to a directory (`OSTROM_MAIL_DIR`). A relay hands them
   to [Mailpit](https://mailpit.axllent.org), whose inbox is at `http://mail.localhost`.
 - **GitHub**: « Continue with GitHub » goes to a fake GitHub at `http://github.localtest.me`. You pick the login to sign
-  in as; no real account is involved.
+  in as; no real account is involved. `github.localtest.me` is a public DNS name that answers `127.0.0.1`: offline, or
+  behind a resolver that refuses such answers, add `127.0.0.1 github.localtest.me` to `/etc/hosts`. The demo needs
+  Caddy on port 80 (`OSTROM_HTTP_PORT`, the default).
 - **Cloud sessions**: they run on this machine's Docker (`OSTROM_RUNNERS_DRIVER=docker`). The server reaches the engine
   through a socket proxy, on a network only the server joins. Each session's two containers, the agent host and the
-  runner, join the `ostrom-sessions` network. There they reach the server, and no other part of the stack: neither
-  the database nor the engine. The session image is `OSTROM_RUNNER_IMAGE` (default
+  runner, join the `ostrom-sessions` network, which is internal. There they reach the server and nothing else: not
+  the database, not the engine, not this machine's published ports, not the internet. The session image is `OSTROM_RUNNER_IMAGE` (default
   `ghcr.io/ostrom-hq/ostrom-runner:latest`).
 - **Billing, optional**: set `OSTROM_DEMO_STRIPE_KEY_FILE` to a file holding a Stripe **test** key (mode 600, outside
   git) before `demo/demo.sh up`. The Stripe CLI forwards the test events to the server. Checkout opens Stripe's hosted
