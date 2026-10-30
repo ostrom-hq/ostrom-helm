@@ -21,7 +21,8 @@ done
 get api.localhost /health | grep -q '"status":"ok"' || fail "server through Caddy"
 get app.localhost / >/dev/null || fail "console through Caddy"
 get app.localhost /api/v1/health | grep -q '"status":"ok"' || fail "API on the console's origin through Caddy"
-get sso.localhost /api/health | grep -qi 'version\|healthy\|ok' || fail "Ory Polis through Caddy"
+# Ory Polis is off by default (SAML coming soon): not even created without the `sso` profile.
+if docker compose ps -a --format '{{.Service}}' | grep -qx polis; then fail "Polis runs without the sso profile"; fi
 
 before=$(sha256sum .env 2>/dev/null || shasum -a 256 .env)
 ./install.sh --no-start
@@ -40,5 +41,9 @@ docker compose restart
 docker compose up -d --wait
 [ "$(app 'SELECT x FROM e2e_marker')" = "42" ] || fail "data lost on restart"
 get api.localhost /health >/dev/null || fail "server after restart"
+
+# The option: the `sso` profile starts Polis behind its own host.
+COMPOSE_PROFILES=sso docker compose up -d --wait || fail "up with the sso profile"
+get sso.localhost /api/health | grep -qi 'version\|healthy\|ok' || fail "Ory Polis through Caddy (sso profile)"
 
 echo "compose e2e: ok"

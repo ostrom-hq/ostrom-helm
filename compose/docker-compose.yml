@@ -89,8 +89,11 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
+  # Ory Polis, the SAML bridge: coming soon, the server has no SAML code yet. Off unless the `sso` profile is on
+  # (`COMPOSE_PROFILES=sso` in .env, or `docker compose --profile sso up -d`), like polis.enabled in the chart.
   polis:
     <<: *restart
+    profiles: [sso]
     image: docker.io/boxyhq/jackson:26.2.0
     depends_on:
       postgres: { condition: service_healthy }

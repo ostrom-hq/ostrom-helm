@@ -13,12 +13,23 @@ then runs `docker compose up -d --wait`. Run it again any time: it keeps the val
 the missing ones. A one-shot `migrate` service applies the schema with the owner's credentials before the server
 starts; the server itself connects as `ostrom_app`, which owns nothing and cannot bypass row-level security.
 
-By default everything answers on plain HTTP under `*.localhost`: console `http://app.localhost`, API
-`http://api.localhost`, SAML bridge `http://sso.localhost`.
+By default everything answers on plain HTTP under `*.localhost`: console `http://app.localhost` (which also serves
+the API under `/api/v1`, one origin for the browser), API `http://api.localhost`.
+
+## SAML single sign-on (coming soon)
+
+The server has no SAML code yet, so Ory Polis, the SAML bridge, does not start by default. It is ready for when it
+lands: the `sso` profile starts it behind `http://sso.localhost` (its database, role and keys are already created).
+
+```sh
+echo COMPOSE_PROFILES=sso >> .env && docker compose up -d --wait
+# or once: docker compose --profile sso up -d --wait
+```
 
 ## On a real domain, with HTTPS
 
-Point three DNS records at the machine (`api.`, `app.`, `sso.`), then before the first `./install.sh`:
+Point the DNS records at the machine (`api.`, `app.`, and `sso.` with the `sso` profile), then before the first
+`./install.sh`:
 
 ```sh
 export OSTROM_SCHEME=https OSTROM_API_HOST=api.example.com OSTROM_APP_HOST=app.example.com OSTROM_SSO_HOST=sso.example.com

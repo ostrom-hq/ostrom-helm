@@ -96,7 +96,7 @@ jobs:
       - name: Tear down
         if: always()
         working-directory: compose
-        run: COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml docker compose down -v || true
+        run: COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml COMPOSE_PROFILES=sso docker compose down -v || true
 
   # The chart with the REAL Ostrom images (`edge` from each repository's main), once this repository can read
   # them: needs the org secret GHCR_READ_TOKEN (read:packages). Skipped, and says so, without it.
