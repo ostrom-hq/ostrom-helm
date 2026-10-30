@@ -1,0 +1,64 @@
+suite: server — configuration, images, migrations, probes
+templates:
+  - templates/server.yaml
+  - templates/server-config.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: wires the database, the URLs and cloud sessions into the ConfigMap
+    template: templates/server-config.yaml
+    set: { global.urls.api: "https://api.ostrom.run" }
+    asserts:
+      - equal: { path: data.OSTROM_DATABASE_URL, value: "postgresql://o-ostrom-postgresql:5432/ostrom" }
+      - equal: { path: data.OSTROM_PUBLIC_URL, value: "https://api.ostrom.run" }
+      - equal: { path: data.OSTROM_CLOUD_NAMESPACE, value: ostrom }
+      - equal: { path: data.OSTROM_CLOUD_RUNNER_IMAGE, value: "ghcr.io/ostrom-hq/ostrom-runner:0.1.0" }
+      - equal: { path: data.OSTROM_SAML_POLIS_URL, value: "http://o-ostrom-polis:5225" }
+  - it: BYOK and OTel settings land in the ConfigMap when set
+    template: templates/server-config.yaml
+    set:
+      byok.extraction: { provider: openrouter, baseUrl: "https://openrouter.ai/api/v1", model: "x/y" }
+      observability.otel: { enabled: true, endpoint: "https://otlp" }
+    asserts:
+      - equal: { path: data.OSTROM_EXTRACTION_PROVIDER, value: openrouter }
+      - equal: { path: data.OTEL_EXPORTER_OTLP_ENDPOINT, value: "https://otlp" }
+      - equal: { path: data.OTEL_SERVICE_NAME, value: ostrom-server }
+  - it: a digest pins the image
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { server.image.digest: "sha256:abc" }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "ghcr.io/ostrom-hq/ostrom-server@sha256:abc" }
+  - it: global tag and registry apply
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { global.imageTag: "1.2.3", global.imageRegistry: "registry.local/o", global.imagePullSecrets: [ghcr] }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "registry.local/o/ostrom-server:1.2.3" }
+      - equal: { path: 'spec.template.spec.imagePullSecrets[0].name', value: ghcr }
+  - it: migrations run in an init container when asked
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { migrations.initContainer: true }
+    asserts:
+      - equal: { path: 'spec.template.spec.initContainers[0].command', value: ["/usr/local/bin/ostrom-server", "migrate"] }
+  - it: no replicas field under an autoscaler, rolling update without downtime
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { server.autoscaling.enabled: true }
+    asserts:
+      - notExists: { path: spec.replicas }
+      - equal: { path: spec.strategy.rollingUpdate.maxUnavailable, value: 0 }
+  - it: the signing key is mounted read-only
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content: { name: signing-key, mountPath: /var/run/ostrom/signing, readOnly: true }
+  - it: the server user can read the signing key (fsGroup, group-readable mode)
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: spec.template.spec.securityContext.fsGroup, value: 65532 }
+      - equal: { path: spec.template.spec.securityContext.runAsNonRoot, value: true }
+      - equal: { path: 'spec.template.spec.volumes[0].secret.defaultMode', value: 0440 }

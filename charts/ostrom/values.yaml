@@ -1,0 +1,337 @@
+# Ostrom — chart values. Every key is documented in docs/values.md.
+
+global:
+  # Registry prefix of the Ostrom images (server, web, site, runner).
+  imageRegistry: ghcr.io/ostrom-hq
+  # Version of every Ostrom image when an image tag is not set; defaults to the chart appVersion.
+  imageTag: ""
+  imagePullPolicy: IfNotPresent
+  # Names of existing docker-registry Secrets (GHCR is private until the public release).
+  imagePullSecrets: []
+  # Public URLs. The server builds links, OAuth callbacks and e-mails from them.
+  urls:
+    api: https://api.example.com
+    app: https://app.example.com
+    site: https://example.com
+
+nameOverride: ""
+fullnameOverride: ""
+commonLabels: {}
+
+# --- Server (native binary, Ktor CIO) -----------------------------------------------------------------------------
+server:
+  enabled: true
+  image:
+    repository: ""            # default: <global.imageRegistry>/ostrom-server
+    tag: ""                   # default: global.imageTag, then appVersion
+    digest: ""                # pins the image (sha256:…); wins over the tag
+  command: []
+  args: []
+  replicas: 2
+  port: 8080
+  runAsUser: 65532            # distroless nonroot, the user of the server image
+  logLevel: info
+  database:
+    maxConnections: 10
+  # Ed25519 instance key that signs receipts. Must be the SAME for every replica and survive upgrades:
+  # by default the chart generates it once and keeps it (lookup); or give your own Secret (key `instance-key.pem`).
+  signingKey:
+    existingSecret: ""
+  # Non-secret settings, rendered into a ConfigMap and loaded as environment variables.
+  config: {}
+  # Secret settings (OAuth, Stripe, Resend…), rendered into a Secret and loaded as environment variables.
+  # Prefer `existingSecret` in production: a Secret you create yourself, whose keys are environment variable names.
+  secretEnv: {}
+  existingSecret: ""
+  extraEnv: []
+  extraEnvFrom: []
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+  probes:
+    startup: { path: /health, periodSeconds: 2, failureThreshold: 60 }
+    liveness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
+    readiness: { path: /health, periodSeconds: 5, failureThreshold: 2 }
+  autoscaling:
+    enabled: false            # needs metrics-server in the cluster
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  service:
+    type: ClusterIP
+    port: 8080
+
+# Database migrations. The server applies them at start; with `initContainer: true` every pod runs
+# `<command>` (the server's `migrate` subcommand) before starting, which is the safe mode for several replicas
+# once the server takes a lock for it.
+migrations:
+  initContainer: false
+  command: ["/usr/local/bin/ostrom-server", "migrate"]
+
+# --- BYOK: the model used to extract workflows and policies from text (server side) --------------------------------
+# The organisation settings can override it later (inference). The key goes into the server Secret.
+byok:
+  extraction:
+    provider: ""              # openrouter | openai | anthropic | openai-compatible
+    baseUrl: ""
+    model: ""
+    apiKey: ""                # or existingSecret + key below
+    existingSecret: ""
+    existingSecretKey: api-key
+
+# --- Observability (OpenTelemetry, Langfuse, PostHog) ---------------------------------------------------------------
+observability:
+  otel:
+    enabled: false
+    endpoint: ""              # OTLP/HTTP, e.g. https://otlp-gateway-prod-eu-west-2.grafana.net/otlp
+    headers: ""               # e.g. Authorization=Basic …  (secret)
+    existingSecret: ""        # key `headers`
+    serviceNamePrefix: ostrom
+    resourceAttributes: ""    # e.g. deployment.environment=production
+  langfuse:
+    enabled: false
+    host: https://cloud.langfuse.com
+    publicKey: ""
+    secretKey: ""
+    existingSecret: ""        # keys `public-key`, `secret-key`
+  posthog:
+    enabled: false
+    host: https://eu.i.posthog.com
+    apiKey: ""                # project key (public, also given to the web console)
+
+# --- Web console (static SPA behind nginx) -------------------------------------------------------------------------
+web:
+  enabled: true
+  image:
+    repository: ""            # default: <global.imageRegistry>/ostrom-web
+    tag: ""
+    digest: ""
+  command: []
+  args: []
+  replicas: 2
+  port: 8080
+  # Extra runtime settings exposed to the SPA as window.__OSTROM_CONFIG__ (never secrets).
+  config: {}
+  resources:
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { memory: 64Mi }
+  probes:
+    path: /healthz
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  service:
+    type: ClusterIP
+    port: 8080
+
+# --- Site (Next.js static export behind nginx; no egress at all) ---------------------------------------------------
+site:
+  enabled: true
+  image:
+    repository: ""            # default: <global.imageRegistry>/ostrom-site
+    tag: ""
+    digest: ""
+  command: []
+  args: []
+  replicas: 2
+  port: 8080
+  env: {}
+  resources:
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { memory: 64Mi }
+  probes:
+    path: /healthz
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  service:
+    type: ClusterIP
+    port: 8080
+
+# --- PostgreSQL -----------------------------------------------------------------------------------------------------
+# Either the chart runs PostgreSQL itself (StatefulSet in the release namespace), or you point it at yours.
+postgresql:
+  enabled: true
+  image:
+    repository: docker.io/library/postgres
+    tag: "17.6"
+  database: ostrom
+  username: ostrom
+  # Leave empty to generate a password once and keep it across upgrades.
+  password: ""
+  existingSecret: ""          # key `password`
+  # A second database for Ory Polis is created at first start when polis.enabled.
+  persistence:
+    size: 20Gi
+    storageClass: ""
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  parameters:
+    max_connections: "200"
+    shared_buffers: 128MB
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Logical backups (pg_dump of every database) to a PVC, kept `keep` days.
+  backup:
+    enabled: false
+    schedule: "17 3 * * *"
+    keep: 14
+    persistence:
+      size: 20Gi
+      storageClass: ""
+
+externalDatabase:
+  # Used when postgresql.enabled is false. URL without credentials: postgresql://host:5432/db
+  url: ""
+  username: ""
+  password: ""
+  existingSecret: ""          # key `password`
+  # Ory Polis database URL with credentials (postgres://user:pass@host:5432/polis) when polis.enabled.
+  polisUrl: ""
+  polisExistingSecret: ""     # key `url`
+
+# --- Ory Polis (SAML ↔ OIDC bridge) ---------------------------------------------------------------------------------
+polis:
+  enabled: true
+  image:
+    repository: docker.io/boxyhq/jackson
+    tag: "26.2.0"
+  replicas: 1
+  port: 5225
+  # The server talks to Polis inside the cluster; browsers and identity providers reach it on its own host
+  # (SAML ACS: <externalUrl>/api/oauth/saml).
+  externalUrl: ""             # default: https://<ingress.hosts.sso>
+  samlAudience: https://saml.ostrom.run
+  # Generated once and kept when empty: API key, NextAuth secret, DB encryption key.
+  apiKey: ""
+  existingSecret: ""          # keys `api-key`, `nextauth-secret`, `db-encryption-key`
+  resources:
+    requests: { cpu: 50m, memory: 192Mi }
+    limits: { memory: 512Mi }
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# --- Cloud sessions: agent runs in pods of this namespace ----------------------------------------------------------
+cloudSessions:
+  enabled: true
+  runner:
+    image:
+      repository: ""          # default: <global.imageRegistry>/ostrom-runner
+      tag: ""
+      digest: ""
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "2", memory: 2Gi }
+    # Hard limits the controller must apply to every session.
+    activeDeadlineSeconds: 21600
+    maxConcurrent: 20
+    nodeSelector: {}
+    tolerations: []
+  # Role given to the server's ServiceAccount, limited to the release namespace.
+  rbac:
+    create: true
+
+# --- Ingress (uses the cluster's ingress controller; creates nothing cluster-wide) ---------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  # cert-manager is optional: set an issuer here, or give an existing TLS Secret.
+  certManager:
+    issuer: ""
+    clusterIssuer: ""
+  tls:
+    enabled: true
+    secretName: ""            # existing Secret (e.g. a Cloudflare origin certificate); default: <release>-tls
+  hosts:
+    api: api.example.com
+    app: app.example.com
+    site: example.com
+    siteAliases: []           # e.g. www.example.com
+    sso: sso.example.com      # Ory Polis (SAML)
+  apiAnnotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 16m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+
+# --- NetworkPolicy --------------------------------------------------------------------------------------------------
+networkPolicy:
+  enabled: true
+  # Where the ingress controller runs, allowed to reach server, web, site and Polis.
+  ingressController:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: ingress-nginx
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: ingress-nginx
+  dns:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kube-system
+  # Internet egress for the server and the runners, with private ranges and any extra CIDR denied
+  # (runners execute agent code: they must not reach anything inside the cluster or the provider's network).
+  egress:
+    deniedCidrs:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+      - 100.64.0.0/10
+    extraDeniedCidrs: []
+  # The server needs the Kubernetes API for cloud sessions. With Cilium, a CiliumNetworkPolicy
+  # (namespaced) allows the kube-apiserver entity; otherwise give the API server CIDR.
+  kubeApi:
+    cilium: false
+    cidrs: []
+    port: 443
+
+serviceAccount:
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+tests:
+  enabled: true
+  image: docker.io/curlimages/curl:8.11.1

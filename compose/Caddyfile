@@ -1,0 +1,18 @@
+# Plain HTTP while the hosts are *.localhost (OSTROM_SCHEME=http); automatic HTTPS once they are real names
+# and OSTROM_SCHEME=https.
+{$OSTROM_SITE_SCHEME}://{$OSTROM_API_HOST} {
+	reverse_proxy server:8080 {
+		flush_interval -1
+	}
+	request_body {
+		max_size 16MB
+	}
+}
+
+{$OSTROM_SITE_SCHEME}://{$OSTROM_APP_HOST} {
+	reverse_proxy web:8080
+}
+
+{$OSTROM_SITE_SCHEME}://{$OSTROM_SSO_HOST} {
+	reverse_proxy polis:5225
+}

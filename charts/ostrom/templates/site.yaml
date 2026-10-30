@@ -1,0 +1,84 @@
+{{- if .Values.site.enabled }}
+{{- $full := include "ostrom.fullname" . -}}
+{{- $st := .Values.site -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-site
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "site") | nindent 4 }}
+spec:
+  {{- if not $st.autoscaling.enabled }}
+  replicas: {{ $st.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "site") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ostrom.labels" (dict "root" . "component" "site") | nindent 8 }}
+      {{- with $st.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "ostrom.imagePullSecrets" . | nindent 6 }}
+      {{- include "ostrom.podSecurityContext" . | nindent 6 }}
+      enableServiceLinks: false
+      containers:
+        - name: site
+          image: {{ include "ostrom.image" (dict "root" . "image" $st.image "name" "ostrom-site") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          {{- with $st.command }}
+          command: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $st.args }}
+          args: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $st.port }}
+          env:
+            - { name: OSTROM_API_URL, value: {{ .Values.global.urls.api | quote }} }
+            - { name: OSTROM_APP_URL, value: {{ .Values.global.urls.app | quote }} }
+            {{- range $k, $v := $st.env }}
+            - { name: {{ $k }}, value: {{ $v | toString | quote }} }
+            {{- end }}
+          livenessProbe:
+            httpGet: { path: {{ $st.probes.path }}, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: {{ $st.probes.path }}, port: http }
+            periodSeconds: 5
+          {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
+          resources: {{- toYaml $st.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+      {{- with $st.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $st.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $st.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-site
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "site") | nindent 4 }}
+spec:
+  type: {{ $st.service.type }}
+  selector: {{- include "ostrom.selectorLabels" (dict "root" . "component" "site") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $st.service.port }}
+      targetPort: http
+{{- end }}
