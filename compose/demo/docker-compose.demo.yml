@@ -38,7 +38,7 @@ services:
       - mail:/mail
 
   mailpit:
-    image: docker.io/axllent/mailpit:v1.27
+    image: docker.io/axllent/mailpit:v1.32.0
     restart: unless-stopped
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
@@ -90,14 +90,15 @@ services:
   # The Docker Engine API, limited to what the runtime driver calls (containers, volumes, image pulls), on a network
   # only the server joins.
   docker-api:
-    image: docker.io/tecnativa/docker-socket-proxy:v0.3.0
+    image: docker.io/tecnativa/docker-socket-proxy:v0.5.0
     restart: unless-stopped
     environment:
       CONTAINERS: "1"
       VOLUMES: "1"
       IMAGES: "1"
       POST: "1"
-      DELETE: "1"
+      ALLOW_START: "1"
+      ALLOW_STOP: "1"
       INFO: "0"
       NETWORKS: "0"
       EXEC: "0"

@@ -10,7 +10,7 @@ secrets:
 
 services:
   stripe-init:
-    image: docker.io/stripe/stripe-cli:v1.30.0
+    image: docker.io/stripe/stripe-cli:v1.55.3
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -28,7 +28,7 @@ services:
       - stripe:/stripe
 
   stripe-listen:
-    image: docker.io/stripe/stripe-cli:v1.30.0
+    image: docker.io/stripe/stripe-cli:v1.55.3
     restart: unless-stopped
     depends_on:
       stripe-init: { condition: service_completed_successfully }
