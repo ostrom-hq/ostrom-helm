@@ -1,0 +1,50 @@
+# Local demo, optional: billing on Stripe's test mode. The key is read from a file outside git (OSTROM_DEMO_STRIPE_KEY_FILE,
+# for example ~/.config/ostrom/stripe-test.key, mode 600, a sk_test_ or rk_test_ key: never a live one), copied once
+# into a volume only the server and the Stripe CLI read. The Stripe CLI forwards the test events to the server
+# (`stripe listen`), signed with the secret it prints, which the server reads as its webhook secret. Checkout opens
+# Stripe's hosted test page: pay with 4242 4242 4242 4242.
+#   docker compose -f docker-compose.yml -f demo/docker-compose.demo.yml -f demo/docker-compose.demo-stripe.yml up -d --wait
+secrets:
+  stripe_key:
+    file: ${OSTROM_DEMO_STRIPE_KEY_FILE:?set OSTROM_DEMO_STRIPE_KEY_FILE to a Stripe test key file}
+
+services:
+  stripe-init:
+    image: docker.io/stripe/stripe-cli:v1.30.0
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        key=$$(cat /run/secrets/stripe_key)
+        case "$$key" in sk_test_*|rk_test_*) ;; *) echo "not a Stripe test key: refused" >&2; exit 1;; esac
+        umask 077
+        printf %s "$$key" > /stripe/secret-key
+        stripe listen --api-key "$$key" --print-secret > /stripe/webhook-secret
+        chown 65532:65532 /stripe/secret-key /stripe/webhook-secret
+        chmod 0400 /stripe/secret-key /stripe/webhook-secret
+    secrets: [stripe_key]
+    volumes:
+      - stripe:/stripe
+
+  stripe-listen:
+    image: docker.io/stripe/stripe-cli:v1.30.0
+    restart: unless-stopped
+    depends_on:
+      stripe-init: { condition: service_completed_successfully }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - exec stripe listen --api-key "$$(cat /run/secrets/stripe_key)" --forward-to http://server:8080/webhooks/stripe
+    secrets: [stripe_key]
+
+  server:
+    depends_on:
+      stripe-init: { condition: service_completed_successfully }
+    environment:
+      OSTROM_STRIPE_SECRET_KEY_FILE: /var/lib/ostrom-stripe/secret-key
+      OSTROM_STRIPE_WEBHOOK_SECRET_FILE: /var/lib/ostrom-stripe/webhook-secret
+    volumes:
+      - stripe:/var/lib/ostrom-stripe:ro
+
+volumes:
+  stripe:

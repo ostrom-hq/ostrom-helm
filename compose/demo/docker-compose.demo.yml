@@ -1,0 +1,128 @@
+# Local demo stack: Ostrom whole on one machine, with no real outside service. Started on top of the install's file:
+#   docker compose -f docker-compose.yml -f demo/docker-compose.demo.yml up -d --wait     (demo/demo.sh does it)
+# It adds, for the demo only:
+#   - Mailpit and a relay, in place of Resend: the server writes its mails to a directory (OSTROM_MAIL_DIR), the relay
+#     hands them to Mailpit, read at http://mail.localhost;
+#   - a fake GitHub for « Continue with GitHub » (fake-github.mjs), at http://github.localtest.me;
+#   - cloud sessions on this machine's Docker (OSTROM_RUNNERS_DRIVER=docker): the server reaches the engine through a
+#     socket proxy on a network of its own, and each session's two containers (the agent host and the runner, S2-49)
+#     join `ostrom-sessions`, where they reach the server and nothing else of the stack (no database, no engine).
+# The Docker socket proxy can create containers: never run this file on a shared or exposed machine.
+services:
+  server:
+    depends_on:
+      mail-init: { condition: service_completed_successfully }
+    environment:
+      OSTROM_MAIL_DIR: /var/lib/ostrom-mail
+      OSTROM_GITHUB_CLIENT_ID: Iv1.ostromdemo
+      # Not a secret: the fake GitHub's own value, known to it and the server only, on this machine.
+      OSTROM_GITHUB_CLIENT_SECRET: demo-client-secret-of-the-fake-github
+      OSTROM_GITHUB_WEB_URL: http://github.localtest.me
+      OSTROM_GITHUB_API_URL: http://github.localtest.me/api
+      OSTROM_RUNNERS_DRIVER: docker
+      OSTROM_RUNNERS_DOCKER_API_URL: http://docker-api:2375
+      OSTROM_RUNNERS_DOCKER_NETWORK: ostrom-sessions
+      OSTROM_RUNNERS_SERVER_URL: http://server:8080
+      OSTROM_RUNNERS_IMAGE: ${OSTROM_RUNNER_IMAGE:-ghcr.io/ostrom-hq/ostrom-runner:latest}
+      OSTROM_RUNNERS_ALLOWED_ORGS: "*"
+    volumes:
+      - mail:/var/lib/ostrom-mail
+    networks: [default, docker-api, sessions]
+
+  # The mail directory belongs to the server's user (65532) before the server starts.
+  mail-init:
+    image: docker.io/library/busybox:1.37
+    command: ["sh", "-c", "chown 65532:65532 /mail && chmod 0770 /mail"]
+    restart: "no"
+    volumes:
+      - mail:/mail
+
+  mailpit:
+    image: docker.io/axllent/mailpit:v1.27
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  mail-relay:
+    image: docker.io/library/node:24-alpine
+    restart: unless-stopped
+    user: "65532:65532"
+    command: ["node", "/demo/mail-relay.mjs"]
+    depends_on:
+      mail-init: { condition: service_completed_successfully }
+      mailpit: { condition: service_healthy }
+    environment:
+      MAIL_DIR: /mail
+      MAILPIT_URL: http://mailpit:8025
+    volumes:
+      - mail:/mail
+      - ./demo:/demo:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  fake-github:
+    image: docker.io/library/node:24-alpine
+    restart: unless-stopped
+    user: "1000:1000"
+    command: ["node", "/demo/fake-github.mjs"]
+    environment:
+      PORT: "8080"
+      FAKE_GITHUB_CLIENT_ID: Iv1.ostromdemo
+      FAKE_GITHUB_CLIENT_SECRET: demo-client-secret-of-the-fake-github
+    volumes:
+      - ./demo:/demo:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  # The Docker Engine API, limited to what the runtime driver calls (containers, volumes, image pulls), on a network
+  # only the server joins.
+  docker-api:
+    image: docker.io/tecnativa/docker-socket-proxy:v0.3.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      VOLUMES: "1"
+      IMAGES: "1"
+      POST: "1"
+      DELETE: "1"
+      INFO: "0"
+      NETWORKS: "0"
+      EXEC: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [docker-api]
+
+  caddy:
+    depends_on: [server, web, fake-github, mailpit]
+    environment:
+      OSTROM_MAIL_HOST: ${OSTROM_MAIL_HOST:-mail.localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile.install:ro
+      - ./demo/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      default:
+        aliases: [github.localtest.me]
+
+volumes:
+  mail:
+
+networks:
+  default:
+  docker-api:
+    internal: true
+  # Named as is: the server gives this name to the Docker engine for each session's containers.
+  sessions:
+    name: ostrom-sessions
