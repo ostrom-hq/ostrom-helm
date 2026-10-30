@@ -48,6 +48,7 @@ spec:
         - {{- include "ostrom.np.peer" (dict "root" $ "component" "test") | nindent 10 }}
         {{- if eq $c "server" }}
         - {{- include "ostrom.np.peer" (dict "root" $ "component" "runner") | nindent 10 }}
+        - {{- include "ostrom.np.peer" (dict "root" $ "component" "web") | nindent 10 }}
         {{- end }}
         {{- if eq $c "polis" }}
         - {{- include "ostrom.np.peer" (dict "root" $ "component" "server") | nindent 10 }}
@@ -150,6 +151,22 @@ spec:
     {{- end }}
     # Identity providers' metadata and the external database, if any.
     {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
+{{- end }}
+{{- if and .Values.web.enabled .Values.server.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-web-egress
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "web") | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "server") | nindent 10 }}
+      ports: [{ protocol: TCP, port: {{ .Values.server.port }} }]
 {{- end }}
 {{- if .Values.site.enabled }}
 ---

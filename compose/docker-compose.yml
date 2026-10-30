@@ -60,10 +60,14 @@ services:
     <<: *restart
     image: ${OSTROM_WEB_IMAGE:-ghcr.io/ostrom-hq/ostrom-web:${OSTROM_VERSION:-latest}}
     environment:
+      OSTROM_API_UPSTREAM: http://server:8080
       OSTROM_API_URL: ${OSTROM_SCHEME:-http}://${OSTROM_API_HOST:-api.localhost}
       OSTROM_APP_URL: ${OSTROM_SCHEME:-http}://${OSTROM_APP_HOST:-app.localhost}
     read_only: true
-    tmpfs: [/tmp, /var/run/ostrom]
+    tmpfs:
+      - /tmp:uid=101,gid=101
+      - /var/run/ostrom:uid=101,gid=101
+      - /etc/nginx/conf.d:uid=101,gid=101
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 

@@ -29,3 +29,7 @@ tests:
     set: { networkPolicy.enabled: false }
     asserts:
       - hasDocuments: { count: 0 }
+  - it: the console reaches the server (it proxies /api/), and the server accepts it
+    documentSelector: { path: metadata.name, value: o-ostrom-web-egress }
+    asserts:
+      - equal: { path: 'spec.egress[0].to[0].podSelector.matchLabels["app.kubernetes.io/component"]', value: server }

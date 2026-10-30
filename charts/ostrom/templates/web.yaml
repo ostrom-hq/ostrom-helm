@@ -9,6 +9,8 @@ metadata:
 data:
   # Read by the image entrypoint, written to /config.js as window.__OSTROM_CONFIG__ (public values only).
   OSTROM_API_URL: {{ .Values.global.urls.api | quote }}
+  # The console proxies /api/ to the server on its own origin (no CORS, first-party cookies).
+  OSTROM_API_UPSTREAM: {{ printf "http://%s-server:%v" $full .Values.server.service.port | quote }}
   OSTROM_APP_URL: {{ .Values.global.urls.app | quote }}
   OSTROM_SITE_URL: {{ .Values.global.urls.site | quote }}
   {{- with .Values.observability.posthog }}
@@ -73,10 +75,13 @@ spec:
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
             - { name: runtime, mountPath: /var/run/ostrom }
+            - { name: nginx-conf, mountPath: /etc/nginx/conf.d }
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 64Mi }
         - name: runtime
+          emptyDir: { sizeLimit: 1Mi }
+        - name: nginx-conf
           emptyDir: { sizeLimit: 1Mi }
       {{- with $w.nodeSelector }}
       nodeSelector: {{- toYaml . | nindent 8 }}
