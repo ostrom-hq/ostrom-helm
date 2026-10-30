@@ -31,3 +31,6 @@ ingress:
 networkPolicy:
   ingressController:
     namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+# Off by default until the server speaks SAML ("Coming soon"); kept on here so its support stays installed and tested.
+polis:
+  enabled: true

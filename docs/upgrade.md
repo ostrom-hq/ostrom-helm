@@ -40,6 +40,8 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
 - `cloudSessions.allowedOrgs` (S2-10): with sessions on, list the organizations they are open to; empty refuses all.
 - The console's host serves `/api/v1` from the server (one origin for the browser), and `/api/v1/artifacts` takes
   32m on both hosts. A pre-upgrade Job adds the `ostrom_router` role.
+- Ory Polis is off by default (SAML is coming soon; the server has no SAML code yet): the upgrade removes its
+  Deployment, Service and `sso.` Ingress. Its database and Secret stay; set `polis.enabled: true` to keep it running.
 
 ## 0.1.x → 0.2.x
 

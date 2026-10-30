@@ -33,7 +33,7 @@ for a single machine. Your code, your agents' work and your receipts stay on you
 
 | | |
 |---|---|
-| [`charts/ostrom`](charts/ostrom) | Server, web console, site, PostgreSQL, Ory Polis (SAML), cloud-session controller RBAC, ingress, NetworkPolicy, HPA, PDB |
+| [`charts/ostrom`](charts/ostrom) | Server, web console, site, PostgreSQL, Ory Polis (SAML, coming soon: off by default), cloud-session controller RBAC, ingress, NetworkPolicy, HPA, PDB |
 | [`compose/`](compose) | Self-hosting in one command: `./compose/install.sh` |
 | [`docs/`](docs) | [Docker](docs/install-docker.md) · [Kubernetes](docs/install-kubernetes.md) · [Values](docs/values.md) · [Backup and restore](docs/backup-restore.md) · [Upgrade](docs/upgrade.md) · [Sizing](docs/sizing.md) · [Images and signatures](docs/images.md) |
 
