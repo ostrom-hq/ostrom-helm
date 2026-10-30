@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # Ostrom self-hosted: writes .env with fresh secrets (once), then starts everything.
 # Usage: ./install.sh [--no-start]
 set -eu
