@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # End-to-end test of the Compose install: fresh .env, everything up, each host answers through Caddy,
 # secrets are kept on a second run, and the data survives a restart.
 # Usage: ./test-e2e.sh [extra compose file]   (CI passes docker-compose.ci.yml while the images are private)
