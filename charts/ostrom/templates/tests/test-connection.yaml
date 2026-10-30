@@ -1,0 +1,47 @@
+{{- if .Values.tests.enabled }}
+{{- $full := include "ostrom.fullname" . -}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ $full }}-test
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: test
+      image: {{ .Values.tests.image }}
+      command: ["/bin/sh", "-ec"]
+      args:
+        - |
+          {{- if .Values.server.enabled }}
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 3 http://{{ $full }}-server:{{ .Values.server.service.port }}{{ .Values.server.probes.readiness.path }}
+          echo " server ok"
+          {{- end }}
+          {{- if .Values.web.enabled }}
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 3 -o /dev/null http://{{ $full }}-web:{{ .Values.web.service.port }}{{ .Values.web.probes.path }}
+          echo "web ok"
+          {{- end }}
+          {{- if .Values.site.enabled }}
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 3 -o /dev/null http://{{ $full }}-site:{{ .Values.site.service.port }}{{ .Values.site.probes.path }}
+          echo "site ok"
+          {{- end }}
+          {{- if .Values.polis.enabled }}
+          curl -fsS --retry 20 --retry-all-errors --retry-delay 3 http://{{ $full }}-polis:{{ .Values.polis.port }}/api/health
+          echo " polis ok"
+          {{- end }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { memory: 64Mi }
+{{- end }}

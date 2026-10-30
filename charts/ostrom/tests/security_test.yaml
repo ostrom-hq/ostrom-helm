@@ -1,0 +1,63 @@
+suite: security — nothing cluster-wide, least privilege
+templates:
+  - templates/cloud-sessions.yaml
+  - templates/server.yaml
+  - templates/server-config.yaml
+  - templates/web.yaml
+  - templates/site.yaml
+  - templates/polis.yaml
+  - templates/postgresql.yaml
+tests:
+  - it: the session controller gets a namespaced Role, never a ClusterRole
+    template: templates/cloud-sessions.yaml
+    release: { name: o, namespace: ostrom }
+    asserts:
+      - hasDocuments: { count: 3 }
+      - isKind: { of: Role }
+        documentIndex: 1
+      - notContains: { path: 'rules[*].resources', content: [nodes] }
+        documentIndex: 1
+      - equal: { path: 'subjects[0].namespace', value: ostrom }
+        documentIndex: 2
+      - equal: { path: roleRef.kind, value: Role }
+        documentIndex: 2
+  - it: session pods have no Kubernetes API token
+    template: templates/cloud-sessions.yaml
+    asserts:
+      - equal: { path: automountServiceAccountToken, value: false }
+        documentIndex: 0
+  - it: no Role when RBAC creation is off
+    template: templates/cloud-sessions.yaml
+    set: { cloudSessions.rbac.create: false }
+    asserts:
+      - hasDocuments: { count: 1 }
+  - it: no cloud-session objects when the feature is off, and the server gets no API token
+    set: { cloudSessions.enabled: false }
+    template: templates/cloud-sessions.yaml
+    asserts:
+      - hasDocuments: { count: 0 }
+  - it: the server ServiceAccount token is mounted only for cloud sessions
+    template: templates/server.yaml
+    set: { cloudSessions.enabled: false }
+    asserts:
+      - equal: { path: automountServiceAccountToken, value: false }
+        documentIndex: 0
+  - it: every container drops all capabilities and runs read-only
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].securityContext.capabilities.drop', value: [ALL] }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem', value: true }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation', value: false }
+      - equal: { path: spec.template.spec.securityContext.runAsNonRoot, value: true }
+  - it: web and site do not mount a service account token
+    template: templates/web.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: spec.template.spec.automountServiceAccountToken, value: false }
+  - it: postgres runs as the postgres user, not root
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - equal: { path: spec.template.spec.securityContext.runAsUser, value: 999 }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext.capabilities.drop', value: [ALL] }

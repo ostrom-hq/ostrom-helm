@@ -1,0 +1,29 @@
+# ct install on kind before the Ostrom images are readable by this repository's CI: server, web and site are
+# replaced by a tiny HTTP server answering 200 on every path, so the chart's wiring (PostgreSQL, Ory Polis,
+# secrets, probes, NetworkPolicy, helm test) is exercised for real. Polis and PostgreSQL are the real images.
+global:
+  urls: { api: http://api.ostrom.test, app: http://app.ostrom.test, site: http://ostrom.test }
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  seccompProfile: { type: RuntimeDefault }
+server:
+  replicas: 1
+  image: { repository: docker.io/hashicorp/http-echo, tag: "1.0" }
+  args: ["-listen=:8080", "-text=ok"]
+web:
+  replicas: 1
+  image: { repository: docker.io/hashicorp/http-echo, tag: "1.0" }
+  args: ["-listen=:8080", "-text=ok"]
+site:
+  replicas: 1
+  image: { repository: docker.io/hashicorp/http-echo, tag: "1.0" }
+  args: ["-listen=:3000", "-text=ok"]
+postgresql:
+  persistence: { size: 1Gi }
+  backup: { enabled: true, persistence: { size: 1Gi } }
+ingress:
+  hosts: { api: api.ostrom.test, app: app.ostrom.test, site: ostrom.test, sso: sso.ostrom.test }
+networkPolicy:
+  ingressController:
+    namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }

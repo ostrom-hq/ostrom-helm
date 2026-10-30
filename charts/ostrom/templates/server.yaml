@@ -1,0 +1,176 @@
+{{- if .Values.server.enabled }}
+{{- $full := include "ostrom.fullname" . -}}
+{{- $s := .Values.server -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}-server
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "server") | nindent 4 }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+# The token is mounted only when the server drives cloud sessions through the Kubernetes API.
+automountServiceAccountToken: {{ .Values.cloudSessions.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-server
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "server") | nindent 4 }}
+spec:
+  {{- if not $s.autoscaling.enabled }}
+  replicas: {{ $s.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "server") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ostrom.labels" (dict "root" . "component" "server") | nindent 8 }}
+        {{- with $s.podLabels }}{{ toYaml . | nindent 8 }}{{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/server-config.yaml") . | sha256sum | trunc 16 }}
+        checksum/secrets: {{ toYaml (dict "env" $s.secretEnv "byok" .Values.byok "obs" .Values.observability) | sha256sum | trunc 16 }}
+        {{- with $s.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ $full }}-server
+      {{- include "ostrom.imagePullSecrets" . | nindent 6 }}
+      {{- include "ostrom.podSecurityContext" . | nindent 6 }}
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      {{- if .Values.migrations.initContainer }}
+      initContainers:
+        - name: migrate
+          image: {{ include "ostrom.image" (dict "root" . "image" $s.image "name" "ostrom-server") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: {{- toYaml .Values.migrations.command | nindent 12 }}
+          envFrom:
+            - configMapRef: { name: {{ $full }}-server }
+          env:
+            - name: OSTROM_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef: {{- include "ostrom.database.passwordRef" . | nindent 18 }}
+          {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
+          resources: {{- toYaml $s.resources | nindent 12 }}
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ include "ostrom.image" (dict "root" . "image" $s.image "name" "ostrom-server") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          {{- with $s.command }}
+          command: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $s.args }}
+          args: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $s.port }}
+          envFrom:
+            - configMapRef: { name: {{ $full }}-server }
+            - secretRef: { name: {{ include "ostrom.server.secretName" . }} }
+            {{- with $s.extraEnvFrom }}{{ toYaml . | nindent 12 }}{{- end }}
+          env:
+            - name: OSTROM_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef: {{- include "ostrom.database.passwordRef" . | nindent 18 }}
+            - name: OSTROM_POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            {{- if .Values.polis.enabled }}
+            - name: OSTROM_SAML_POLIS_API_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "ostrom.polis.secretName" . }}, key: api-key }
+            {{- end }}
+            {{- with .Values.byok.extraction }}
+            {{- if .existingSecret }}
+            - name: OSTROM_EXTRACTION_API_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .existingSecret }}, key: {{ .existingSecretKey }} }
+            {{- end }}
+            {{- end }}
+            {{- with .Values.observability.otel }}
+            {{- if and .enabled .existingSecret }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef: { name: {{ .existingSecret }}, key: headers }
+            {{- end }}
+            {{- end }}
+            {{- with .Values.observability.langfuse }}
+            {{- if and .enabled .existingSecret }}
+            - name: OSTROM_LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .existingSecret }}, key: public-key }
+            - name: OSTROM_LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .existingSecret }}, key: secret-key }
+            {{- end }}
+            {{- end }}
+            {{- with $s.extraEnv }}{{ toYaml . | nindent 12 }}{{- end }}
+          startupProbe:
+            httpGet: { path: {{ $s.probes.startup.path }}, port: http }
+            periodSeconds: {{ $s.probes.startup.periodSeconds }}
+            failureThreshold: {{ $s.probes.startup.failureThreshold }}
+          livenessProbe:
+            httpGet: { path: {{ $s.probes.liveness.path }}, port: http }
+            periodSeconds: {{ $s.probes.liveness.periodSeconds }}
+            failureThreshold: {{ $s.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet: { path: {{ $s.probes.readiness.path }}, port: http }
+            periodSeconds: {{ $s.probes.readiness.periodSeconds }}
+            failureThreshold: {{ $s.probes.readiness.failureThreshold }}
+          {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
+          resources: {{- toYaml $s.resources | nindent 12 }}
+          volumeMounts:
+            - name: signing-key
+              mountPath: /var/run/ostrom/signing
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: signing-key
+          secret:
+            secretName: {{ include "ostrom.signingKey.secretName" . }}
+            defaultMode: 0400
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+      {{- with $s.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $s.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $s.affinity }}
+      affinity: {{- toYaml $s.affinity | nindent 8 }}
+      {{- else }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "server") | nindent 20 }}
+      {{- end }}
+      {{- with $s.topologySpreadConstraints }}
+      topologySpreadConstraints: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-server
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "server") | nindent 4 }}
+spec:
+  type: {{ $s.service.type }}
+  selector: {{- include "ostrom.selectorLabels" (dict "root" . "component" "server") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $s.service.port }}
+      targetPort: http
+{{- end }}

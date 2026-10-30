@@ -1,0 +1,44 @@
+{{- $full := include "ostrom.fullname" . -}}
+{{- range $name := list "server" "web" "site" }}
+{{- $c := index $.Values $name }}
+{{- if $c.enabled }}
+{{- if $c.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels: {{- include "ostrom.labels" (dict "root" $ "component" $name) | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $full }}-{{ $name }}
+  minReplicas: {{ $c.autoscaling.minReplicas }}
+  maxReplicas: {{ $c.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ $c.autoscaling.targetCPUUtilizationPercentage }} }
+    {{- with $c.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target: { type: Utilization, averageUtilization: {{ . }} }
+    {{- end }}
+{{- end }}
+{{- if and $c.podDisruptionBudget.enabled (or $c.autoscaling.enabled (gt (int $c.replicas) 1)) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels: {{- include "ostrom.labels" (dict "root" $ "component" $name) | nindent 4 }}
+spec:
+  minAvailable: {{ $c.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" $ "component" $name) | nindent 6 }}
+{{- end }}
+{{- end }}
+{{- end }}

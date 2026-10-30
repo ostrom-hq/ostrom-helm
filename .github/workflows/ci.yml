@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with: { version: v3.17.2 }
+      - name: helm lint (default and alternative values)
+        run: |
+          helm lint --strict charts/ostrom
+          helm lint --strict charts/ostrom -f charts/ostrom/ci/standin-values.yaml
+      - name: Unit tests (helm-unittest)
+        run: |
+          helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.0.3
+          helm unittest --strict charts/ostrom
+      - name: Schema validation (kubeconform, Kubernetes 1.29 and 1.31)
+        run: |
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          for v in 1.29.0 1.31.0; do
+            helm template o charts/ostrom -n ostrom | ./kubeconform -strict -summary -kubernetes-version "$v" -
+            helm template o charts/ostrom -n ostrom -f charts/ostrom/ci/standin-values.yaml | ./kubeconform -strict -summary -kubernetes-version "$v" -
+            helm template o charts/ostrom -n ostrom --set postgresql.enabled=false \
+              --set externalDatabase.url=postgresql://db:5432/o --set externalDatabase.username=u \
+              --set externalDatabase.password=p --set externalDatabase.polisUrl=postgres://u:p@db/polis \
+              --set server.autoscaling.enabled=true --set postgresql.backup.enabled=true \
+              --set networkPolicy.kubeApi.cilium=true \
+              | ./kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version "$v" -
+          done
+      - name: Nothing cluster-wide in the chart
+        run: |
+          out=$(helm template o charts/ostrom -n ostrom --set networkPolicy.kubeApi.cilium=true --set postgresql.backup.enabled=true)
+          if echo "$out" | grep -E '^kind: (ClusterRole|ClusterRoleBinding|CustomResourceDefinition|Namespace|MutatingWebhookConfiguration|ValidatingWebhookConfiguration|PriorityClass|StorageClass|IngressClass|CiliumClusterwideNetworkPolicy)$'; then
+            echo "the chart must only create namespaced objects"; exit 1
+          fi
+      - name: Shell scripts
+        run: shellcheck compose/*.sh
+      - name: Workflows
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          ./actionlint -color
+
+  ct-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: azure/setup-helm@v4
+        with: { version: v3.17.2 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - uses: helm/chart-testing-action@v2.7.0
+      - name: ct lint
+        run: ct lint --config ct.yaml --all
+      - uses: helm/kind-action@v1.12.0
+        with:
+          version: v0.29.0
+          node_image: kindest/node:v1.31.9
+      - name: Enforce the restricted Pod Security standard, like a hardened namespace
+        run: |
+          kubectl create namespace ostrom-ct
+          kubectl label namespace ostrom-ct pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=latest
+      - name: ct install (install, helm test, upgrade, uninstall) on kind
+        run: ct install --config ct.yaml --all --namespace ostrom-ct --upgrade
+      - name: Cluster state on failure
+        if: failure()
+        run: |
+          kubectl get all,netpol,pvc,secrets -n ostrom-ct -o wide || true
+          kubectl get events -n ostrom-ct --sort-by=.lastTimestamp | tail -60 || true
+          for p in $(kubectl get pods -n ostrom-ct -o name); do echo "== $p"; kubectl logs -n ostrom-ct "$p" --all-containers --tail=60 || true; done
+
+  compose-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Self-hosting with Docker Compose, end to end
+        run: ./compose/test-e2e.sh docker-compose.ci.yml
+      - name: Tear down
+        if: always()
+        working-directory: compose
+        run: COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml docker compose down -v || true

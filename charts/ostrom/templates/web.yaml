@@ -1,0 +1,103 @@
+{{- if .Values.web.enabled }}
+{{- $full := include "ostrom.fullname" . -}}
+{{- $w := .Values.web -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-web
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "web") | nindent 4 }}
+data:
+  # Read by the image entrypoint, written to /config.js as window.__OSTROM_CONFIG__ (public values only).
+  OSTROM_API_URL: {{ .Values.global.urls.api | quote }}
+  OSTROM_APP_URL: {{ .Values.global.urls.app | quote }}
+  OSTROM_SITE_URL: {{ .Values.global.urls.site | quote }}
+  {{- with .Values.observability.posthog }}
+  {{- if .enabled }}
+  OSTROM_POSTHOG_HOST: {{ .host | quote }}
+  OSTROM_POSTHOG_API_KEY: {{ .apiKey | quote }}
+  {{- end }}
+  {{- end }}
+  {{- range $k, $v := $w.config }}
+  {{ $k }}: {{ $v | toString | quote }}
+  {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-web
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "web") | nindent 4 }}
+spec:
+  {{- if not $w.autoscaling.enabled }}
+  replicas: {{ $w.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "web") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ostrom.labels" (dict "root" . "component" "web") | nindent 8 }}
+      annotations:
+        checksum/config: {{ toYaml $w.config | cat .Values.global.urls.api .Values.global.urls.app (toYaml .Values.observability.posthog) | sha256sum | trunc 16 }}
+        {{- with $w.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "ostrom.imagePullSecrets" . | nindent 6 }}
+      {{- include "ostrom.podSecurityContext" . | nindent 6 }}
+      enableServiceLinks: false
+      containers:
+        - name: web
+          image: {{ include "ostrom.image" (dict "root" . "image" $w.image "name" "ostrom-web") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          {{- with $w.command }}
+          command: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $w.args }}
+          args: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $w.port }}
+          envFrom:
+            - configMapRef: { name: {{ $full }}-web }
+          livenessProbe:
+            httpGet: { path: {{ $w.probes.path }}, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: {{ $w.probes.path }}, port: http }
+            periodSeconds: 5
+          {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
+          resources: {{- toYaml $w.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: runtime, mountPath: /var/run/ostrom }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+        - name: runtime
+          emptyDir: { sizeLimit: 1Mi }
+      {{- with $w.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $w.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $w.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-web
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "web") | nindent 4 }}
+spec:
+  type: {{ $w.service.type }}
+  selector: {{- include "ostrom.selectorLabels" (dict "root" . "component" "web") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $w.service.port }}
+      targetPort: http
+{{- end }}

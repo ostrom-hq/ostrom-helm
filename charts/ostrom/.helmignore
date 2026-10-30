@@ -1,0 +1,5 @@
+.git/
+/ci/
+/tests/
+*.orig
+*.tmp
