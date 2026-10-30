@@ -29,7 +29,7 @@ helm test ostrom -n ostrom
 an init script that only runs on an empty data directory. Go through a dump and a restore:
 
 1. Dump both databases with the 0.1.x user (`pg_dump -U ostrom -Fc ostrom`, same for `polis`), and keep the Secrets
-   (`<release>-signing-key`, `<release>-polis`) as in [backup-restore.md](backup-restore.md).
+   (`<release>-signing-key`, `<release>-secrets-key`, `<release>-polis`) as in [backup-restore.md](backup-restore.md).
 2. Scale the StatefulSet to 0, empty its volume (or delete the PVC `data-<release>-postgresql-0`), delete Secret
    `<release>-postgresql` (its `password` was the superuser's), then `helm upgrade` to 0.2.x: initdb creates the roles
    and new passwords.
