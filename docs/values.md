@@ -77,7 +77,29 @@ Turn them on only where that is acceptable (dedicated nodes, a sandboxed runtime
 - the server's ServiceAccount gets a **Role** in the release namespace (pods, their logs, per-session Secrets and
   PVCs, the sessions' NetworkPolicies); nothing cluster-wide;
 - session pods (labels `app.kubernetes.io/managed-by: ostrom`, `ostrom.run/session`) reach DNS, the server and the
-  public internet only; with Cilium, `networkPolicy.ciliumEgressDeny.enabled` adds a namespace-wide deny of
-  `networkPolicy.egress.extraDeniedCidrs` and the metadata service that no allow rule can reopen;
+  public internet only; with Cilium, `networkPolicy.ciliumEgressDeny.enabled` adds a namespace-wide deny that no
+  allow rule can reopen (see below);
 - `cloudSessions.runner.priorityClassName` names an existing PriorityClass, lower than your other workloads (the
   chart creates none: it is a cluster-wide object).
+
+## Cilium egress deny (shared clusters)
+
+`networkPolicy.ciliumEgressDeny.enabled: true` renders one namespaced `CiliumNetworkPolicy` that applies to every pod
+of the release namespace, session pods and any pod created later included, and only denies (it allows nothing, and
+turns no default deny on):
+
+| Denied | Value |
+|---|---|
+| The cloud metadata service `169.254.169.254` and `networkPolicy.egress.extraDeniedCidrs` | always |
+| Every pod of another namespace, cluster DNS excepted | `otherNamespaces.enabled` (default `true`) |
+| The nodes (`host`, `remote-node`: kubelet, NodePorts) | `otherNamespaces.denyNodes` (default `true`) |
+
+The endpoint rules matter: Cilium turns the address of a Service or of an in-cluster LoadBalancer into its backend
+pods before applying policy, so a CIDR rule alone does not stop a pod from reaching another tenant's load balancer.
+Cluster DNS is recognised by `otherNamespaces.dns` (namespace `kube-system`, label `k8s-app` in `kube-dns`,
+`coredns`): adjust it if your DNS pods are labelled otherwise, or name resolution stops. With a control plane
+running on the nodes, set `denyNodes: false` before turning cloud sessions on (the server needs the API).
+
+Checked on a production cluster (Cilium 1.17, 30/10/2026), with a pod of the namespace that no NetworkPolicy
+selects: internet open; metadata service, the extra CIDRs, another namespace's LoadBalancer and ClusterIP Services,
+a node's kubelet: blocked. Without the endpoint rules, the LoadBalancer, the Service and the kubelet were open.
