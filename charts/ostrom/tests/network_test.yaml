@@ -8,20 +8,49 @@ tests:
     asserts:
       - equal: { path: spec.policyTypes, value: [Ingress, Egress] }
       - equal: { path: 'spec.podSelector.matchLabels["app.kubernetes.io/instance"]', value: o }
-  - it: runners reach the internet but no private range, metadata endpoint or extra CIDR
-    set: { networkPolicy.egress.extraDeniedCidrs: [203.0.113.7/32] }
-    documentSelector: { path: metadata.name, value: o-ostrom-runner }
+  - it: session pods reach DNS, the server and the internet, no private range, metadata endpoint or extra CIDR
+    set: { cloudSessions.enabled: true, server.replicas: 1, networkPolicy.egress.extraDeniedCidrs: [203.0.113.7/32] }
+    documentSelector: { path: metadata.name, value: o-ostrom-sessions }
     asserts:
+      - equal: { path: 'spec.podSelector.matchLabels["app.kubernetes.io/managed-by"]', value: ostrom }
       - equal: { path: spec.ingress, value: [] }
-      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: 169.254.0.0/16 }
-      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: 10.0.0.0/8 }
-      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: 203.0.113.7/32 }
-  - it: only the server, Polis and the backup job reach PostgreSQL
+      - equal: { path: 'spec.egress[1].ports[0].port', value: 8080 }
+      - contains: { path: 'spec.egress[2].to[0].ipBlock.except', content: 169.254.0.0/16 }
+      - contains: { path: 'spec.egress[2].to[0].ipBlock.except', content: 10.0.0.0/8 }
+      - contains: { path: 'spec.egress[2].to[0].ipBlock.except', content: 203.0.113.7/32 }
+  - it: the server accepts the session pods only when cloud sessions are on
+    set: { cloudSessions.enabled: true, server.replicas: 1 }
+    documentSelector: { path: metadata.name, value: o-ostrom-server-from-ingress }
+    asserts:
+      - contains:
+          path: 'spec.ingress[0].from'
+          content:
+            podSelector:
+              matchLabels: { app.kubernetes.io/managed-by: ostrom }
+              matchExpressions: [{ key: ostrom.run/session, operator: Exists }]
+  - it: no session policy by default
+    asserts:
+      - notExists: { path: 'metadata.name' }
+    documentSelector: { path: metadata.name, value: o-ostrom-sessions, skipEmptyTemplates: true }
+  - it: the Cilium deny keeps every pod of the namespace off the extra CIDRs and the metadata service
+    set: { networkPolicy.ciliumEgressDeny.enabled: true, networkPolicy.egress.extraDeniedCidrs: [203.0.113.7/32] }
+    documentSelector: { path: metadata.name, value: o-ostrom-egress-deny }
+    asserts:
+      - equal: { path: spec.endpointSelector, value: {} }
+      - equal: { path: spec.enableDefaultDeny, value: { egress: false, ingress: false } }
+      - contains: { path: 'spec.egressDeny[0].toCIDRSet', content: { cidr: 169.254.169.254/32 } }
+      - contains: { path: 'spec.egressDeny[0].toCIDRSet', content: { cidr: 203.0.113.7/32 } }
+  - it: only the server, Polis, the backup job and the helm test reach PostgreSQL
+    documentSelector: { path: metadata.name, value: o-ostrom-postgresql }
+    asserts:
+      - lengthEqual: { path: 'spec.ingress[0].from', count: 4 }
+  - it: without helm tests, only the server, Polis and the backup job reach PostgreSQL
+    set: { tests.enabled: false }
     documentSelector: { path: metadata.name, value: o-ostrom-postgresql }
     asserts:
       - lengthEqual: { path: 'spec.ingress[0].from', count: 3 }
   - it: the Cilium policy for the API server is opt-in
-    set: { networkPolicy.kubeApi.cilium: true }
+    set: { networkPolicy.kubeApi.cilium: true, cloudSessions.enabled: true, server.replicas: 1 }
     documentSelector: { path: kind, value: CiliumNetworkPolicy }
     asserts:
       - equal: { path: 'spec.egress[0].toEntities', value: [kube-apiserver] }

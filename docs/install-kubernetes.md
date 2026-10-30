@@ -79,8 +79,9 @@ Point `api.`, `app.`, `sso.` and the site host at the ingress controller's addre
 postgresql: { enabled: false }
 externalDatabase:
   url: postgresql://db.example.com:5432/ostrom
-  username: ostrom
-  existingSecret: ostrom-db          # key `password`
+  username: ostrom_app               # owns nothing, NOSUPERUSER NOBYPASSRLS
+  migrationUsername: ostrom          # owner of the database, for `ostrom-server migrate`
+  existingSecret: ostrom-db          # keys `password` and `migration-password`
   polisExistingSecret: ostrom-polis-db  # key `url`: postgres://user:pass@db.example.com:5432/polis
 ```
 
@@ -90,7 +91,7 @@ Add the database's address to nothing: the server's egress allows the internet, 
 
 ## Cloud sessions
 
-With `cloudSessions.enabled` (default), the server's ServiceAccount gets a **Role** in the release namespace
-(pods, pods/log, pods/attach, secrets create/delete, jobs, events) and creates one pod per session from the
-`ostrom-runner` image. Session pods have no Kubernetes token and a NetworkPolicy that lets them reach the
-internet and this release's server, nothing else in the cluster (no private range, no metadata endpoint).
+Off by default. With `cloudSessions.enabled: true` (and `server.replicas: 1`), the server's ServiceAccount gets a
+**Role** in the release namespace (pods, pods/log, per-session Secrets and PVCs, the sessions' NetworkPolicies, events)
+and creates one pod per session from the `ostrom-runner` image. Session pods have no Kubernetes token and reach DNS,
+this release's server and the public internet only. Read [values.md](values.md#cloud-sessions) before turning them on.

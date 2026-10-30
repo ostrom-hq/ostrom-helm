@@ -57,9 +57,9 @@ Store that file encrypted (age, sops, a password manager): it contains the keys.
 ```sh
 POD=ostrom-postgresql-0
 kubectl -n ostrom cp ./2026-10-30/ostrom.dump $POD:/tmp/ostrom.dump
-kubectl -n ostrom exec $POD -- pg_restore -U ostrom -d ostrom --clean --if-exists --no-owner /tmp/ostrom.dump
+kubectl -n ostrom exec $POD -- pg_restore -U postgres -d ostrom --clean --if-exists --no-owner --role=ostrom /tmp/ostrom.dump
 kubectl -n ostrom cp ./2026-10-30/polis.dump $POD:/tmp/polis.dump
-kubectl -n ostrom exec $POD -- pg_restore -U ostrom -d polis --clean --if-exists --no-owner /tmp/polis.dump
+kubectl -n ostrom exec $POD -- pg_restore -U postgres -d polis --clean --if-exists --no-owner --role=polis /tmp/polis.dump
 ```
 
 4. `helm upgrade ostrom … --reuse-values` (scales back up), then `helm test ostrom -n ostrom`.
@@ -70,12 +70,12 @@ Restore test: CI restores nothing yet; do a restore drill into a scratch namespa
 
 ```sh
 cd compose
-docker compose exec -T postgres pg_dump -U ostrom -Fc ostrom > ostrom-$(date +%F).dump
-docker compose exec -T postgres pg_dump -U ostrom -Fc polis  > polis-$(date +%F).dump
+docker compose exec -T postgres pg_dump -U postgres -Fc ostrom > ostrom-$(date +%F).dump
+docker compose exec -T postgres pg_dump -U postgres -Fc polis  > polis-$(date +%F).dump
 docker compose cp server:/var/lib/ostrom/instance-key.pem ./instance-key.pem   # keep with .env, encrypted
 cp .env env-backup
 ```
 
 Restore: `docker compose up -d postgres`, then
-`docker compose exec -T postgres pg_restore -U ostrom -d ostrom --clean --if-exists --no-owner < ostrom-….dump`
+`docker compose exec -T postgres pg_restore -U postgres -d ostrom --clean --if-exists --no-owner --role=ostrom < ostrom-….dump`
 (same for `polis`), copy `instance-key.pem` back with `docker compose cp`, and `docker compose up -d`.

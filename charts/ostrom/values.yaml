@@ -74,8 +74,10 @@ server:
 # Database migrations. The server applies them at start; with `initContainer: true` every pod runs
 # `<command>` (the server's `migrate` subcommand) before starting, which is the safe mode for several replicas
 # once the server takes a lock for it.
+# `ostrom-server migrate` runs before the server starts, with the database owner's credentials, which the serving
+# container never receives (CONVENTIONS 16.1). One replica at a time migrates: the migrator takes a lock.
 migrations:
-  initContainer: false
+  initContainer: true
   command: ["/usr/local/bin/ostrom-server", "migrate"]
 
 # --- BYOK: the model used to extract workflows and policies from text (server side) --------------------------------
@@ -184,11 +186,15 @@ postgresql:
     repository: docker.io/library/postgres
     tag: "17.6"
   database: ostrom
-  username: ostrom
+  # The serving role: owns nothing, NOSUPERUSER NOBYPASSRLS, so row-level security always applies to it.
+  username: ostrom_app
+  # The owner of the database, used by `ostrom-server migrate` only.
+  ownerUsername: ostrom
   # Leave empty to generate a password once and keep it across upgrades.
   password: ""
-  existingSecret: ""          # key `password`
-  # A second database for Ory Polis is created at first start when polis.enabled.
+  # Keys `postgres-password` (superuser), `owner-password`, `password` (serving role), `polis-password`.
+  existingSecret: ""
+  # Roles and databases (ostrom, polis) are created at first start, on an empty data directory.
   persistence:
     size: 20Gi
     storageClass: ""
@@ -213,9 +219,13 @@ postgresql:
 externalDatabase:
   # Used when postgresql.enabled is false. URL without credentials: postgresql://host:5432/db
   url: ""
+  # The serving role: must own nothing and be neither superuser nor BYPASSRLS (the server refuses to start otherwise).
   username: ""
   password: ""
-  existingSecret: ""          # key `password`
+  # The owner of the database, for migrations.
+  migrationUsername: ""
+  migrationPassword: ""
+  existingSecret: ""          # keys `password` and `migration-password`
   # Ory Polis database URL with credentials (postgres://user:pass@host:5432/polis) when polis.enabled.
   polisUrl: ""
   polisExistingSecret: ""     # key `url`
@@ -244,20 +254,20 @@ polis:
 
 # --- Cloud sessions: agent runs in pods of this namespace ----------------------------------------------------------
 cloudSessions:
-  enabled: true
+  # Off by default: a session runs code chosen by its user. Turn it on only on a cluster where that is acceptable
+  # (dedicated nodes, or a sandboxed runtime). The server then needs exactly one replica (terminal relay in memory).
+  enabled: false
   runner:
     image:
       repository: ""          # default: <global.imageRegistry>/ostrom-runner
       tag: ""
       digest: ""
-    resources:
-      requests: { cpu: 250m, memory: 512Mi }
-      limits: { cpu: "2", memory: 2Gi }
-    # Hard limits the controller must apply to every session.
-    activeDeadlineSeconds: 21600
+    # Volume of each session's workspace (one PVC per session, deleted with it).
+    workspaceSize: 10Gi
+    storageClass: ""          # empty: the cluster's default
+    # An existing PriorityClass for session pods (the chart creates none: it is cluster-wide).
+    priorityClassName: ""
     maxConcurrent: 20
-    nodeSelector: {}
-    tolerations: []
   # Role given to the server's ServiceAccount, limited to the release namespace.
   rbac:
     create: true
@@ -317,6 +327,11 @@ networkPolicy:
     cilium: false
     cidrs: []
     port: 443
+  # With Cilium: a namespaced CiliumNetworkPolicy that DENIES egress from every pod of the namespace, session pods
+  # created by the server included, to `extraDeniedCidrs` and the metadata service. A deny wins over any allow, so
+  # it holds whatever NetworkPolicy the server writes for its sessions.
+  ciliumEgressDeny:
+    enabled: false
 
 serviceAccount:
   annotations: {}

@@ -10,36 +10,60 @@ services:
   postgres:
     <<: *restart
     image: docker.io/library/postgres:17.6
+    # Roles (postgres-init/10-roles.sh, the same script as the Helm chart): the superuser; `ostrom`, owner of the
+    # database, for migrations only; `ostrom_app`, the server's role, which owns nothing and cannot bypass
+    # row-level security; `polis`, with its own database.
     environment:
-      POSTGRES_DB: ostrom
-      POSTGRES_USER: ostrom
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./install.sh first, it writes .env}
+      OSTROM_DB: ostrom
+      OSTROM_OWNER: ostrom
+      OSTROM_OWNER_PASSWORD: ${OSTROM_OWNER_PASSWORD:?run ./install.sh first}
+      OSTROM_APP: ostrom_app
+      OSTROM_APP_PASSWORD: ${OSTROM_APP_PASSWORD:?run ./install.sh first}
+      OSTROM_POLIS_PASSWORD: ${POLIS_DB_PASSWORD:?run ./install.sh first}
     volumes:
       - postgres:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "ostrom", "-d", "ostrom"]
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "postgres"]
       interval: 3s
       timeout: 3s
       retries: 40
+
+  # Migrations, once per `up`, with the owner's credentials: the server never receives them.
+  migrate:
+    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server:${OSTROM_VERSION:-latest}}
+    command: ["/usr/local/bin/ostrom-server", "migrate"]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      OSTROM_DATABASE_MIGRATION_URL: postgresql://ostrom:${OSTROM_OWNER_PASSWORD}@postgres:5432/ostrom
+      OSTROM_DATABASE_MIGRATION_USER: ostrom
+      OSTROM_DATABASE_MIGRATION_PASSWORD: ${OSTROM_OWNER_PASSWORD}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
 
   server:
     <<: *restart
     image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server:${OSTROM_VERSION:-latest}}
     depends_on:
-      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       OSTROM_DATABASE_URL: postgresql://postgres:5432/ostrom
-      OSTROM_DATABASE_USER: ostrom
-      OSTROM_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      OSTROM_DATABASE_USER: ostrom_app
+      OSTROM_DATABASE_PASSWORD: ${OSTROM_APP_PASSWORD}
       OSTROM_SIGNING_KEY_FILE: /var/lib/ostrom/instance-key.pem
       OSTROM_PUBLIC_URL: ${OSTROM_SCHEME:-http}://${OSTROM_API_HOST:-api.localhost}
       OSTROM_API_URL: ${OSTROM_SCHEME:-http}://${OSTROM_API_HOST:-api.localhost}
       OSTROM_APP_URL: ${OSTROM_SCHEME:-http}://${OSTROM_APP_HOST:-app.localhost}
+      OSTROM_CONSOLE_URL: ${OSTROM_SCHEME:-http}://${OSTROM_APP_HOST:-app.localhost}
       OSTROM_SAML_POLIS_URL: http://polis:5225
       OSTROM_SAML_POLIS_EXTERNAL_URL: ${OSTROM_SCHEME:-http}://${OSTROM_SSO_HOST:-sso.localhost}
       OSTROM_SAML_POLIS_API_KEY: ${POLIS_API_KEY}
-      OSTROM_CLOUD_SESSIONS_ENABLED: "false"
       # BYOK (extraction): openrouter | openai | anthropic | openai-compatible
       OSTROM_EXTRACTION_PROVIDER: ${OSTROM_EXTRACTION_PROVIDER:-}
       OSTROM_EXTRACTION_BASE_URL: ${OSTROM_EXTRACTION_BASE_URL:-}
@@ -47,6 +71,7 @@ services:
       OSTROM_EXTRACTION_API_KEY: ${OSTROM_EXTRACTION_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
     env_file:
       - path: ./server.env
         required: false
@@ -86,7 +111,7 @@ services:
       SAML_AUDIENCE: ${POLIS_SAML_AUDIENCE:-https://saml.ostrom.run}
       DB_ENGINE: sql
       DB_TYPE: postgres
-      DB_URL: postgres://ostrom:${POSTGRES_PASSWORD}@postgres:5432/polis
+      DB_URL: postgres://polis:${POLIS_DB_PASSWORD}@postgres:5432/polis
       JACKSON_API_KEYS: ${POLIS_API_KEY:?run ./install.sh first}
       NEXTAUTH_SECRET: ${POLIS_NEXTAUTH_SECRET:?run ./install.sh first}
       DB_ENCRYPTION_KEY: ${POLIS_DB_ENCRYPTION_KEY:?run ./install.sh first}
