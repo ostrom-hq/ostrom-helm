@@ -4,7 +4,7 @@ description: Ostrom — the server, the web console, the site, PostgreSQL, Ory P
 type: application
 version: 0.3.1
 appVersion: "0.1.0"
-kubeVersion: ">=1.27.0-0"
+kubeVersion: ">=1.29.0-0"
 home: https://ostrom.run
 sources:
   - https://github.com/ostrom-hq/ostrom-helm

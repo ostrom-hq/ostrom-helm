@@ -1,6 +1,6 @@
 # Install on Kubernetes with Helm
 
-Requirements: Kubernetes 1.27+, Helm 3.14+, an ingress controller (the chart defaults to the `nginx` class), a
+Requirements: Kubernetes 1.29+ (native sidecars, used by cloud sessions), Helm 3.14+, an ingress controller (the chart defaults to the `nginx` class), a
 default StorageClass (or `postgresql.persistence.storageClass`), and a CNI that enforces NetworkPolicy (Cilium,
 Calico, kindnet ≥ 0.24…). cert-manager is optional.
 

@@ -2,11 +2,26 @@
 {{- $full := include "ostrom.fullname" . -}}
 {{- $i := .Values.ingress -}}
 {{- $routes := list -}}
-{{- if .Values.server.enabled }}{{ $routes = append $routes (dict "name" "api" "hosts" (list $i.hosts.api) "svc" (printf "%s-server" $full) "port" .Values.server.service.port "annotations" $i.apiAnnotations) }}{{ end -}}
-{{- if and .Values.server.enabled $i.artifactsBodySize }}{{ $routes = append $routes (dict "name" "api-artifacts" "hosts" (list $i.hosts.api) "path" "/api/v1/artifacts" "svc" (printf "%s-server" $full) "port" .Values.server.service.port "annotations" (merge (dict "nginx.ingress.kubernetes.io/proxy-body-size" $i.artifactsBodySize) $i.apiAnnotations)) }}{{ end -}}
-{{- if .Values.web.enabled }}{{ $routes = append $routes (dict "name" "app" "hosts" (list $i.hosts.app) "svc" (printf "%s-web" $full) "port" .Values.web.service.port "annotations" dict) }}{{ end -}}
-{{- if .Values.site.enabled }}{{ $routes = append $routes (dict "name" "site" "hosts" (concat (list $i.hosts.site) $i.hosts.siteAliases) "svc" (printf "%s-site" $full) "port" .Values.site.service.port "annotations" dict) }}{{ end -}}
-{{- if .Values.polis.enabled }}{{ $routes = append $routes (dict "name" "sso" "hosts" (list $i.hosts.sso) "svc" (printf "%s-polis" $full) "port" .Values.polis.port "annotations" dict) }}{{ end -}}
+{{- $server := printf "%s-server" $full -}}
+{{- $sport := .Values.server.service.port -}}
+{{- /* One origin for the browser (the session cookie and its CSRF token are read on the console's origin): the
+       console's host serves /api/v1 from the server too. The API host serves everything for non-browser clients
+       (CLI, tokens, webhooks). */ -}}
+{{- $apiRules := list (dict "host" $i.hosts.api "path" "/") -}}
+{{- if .Values.web.enabled }}{{ $apiRules = append $apiRules (dict "host" $i.hosts.app "path" "/api/v1") }}{{ end -}}
+{{- if .Values.server.enabled }}{{ $routes = append $routes (dict "name" "api" "rules" $apiRules "svc" $server "port" $sport "annotations" $i.apiAnnotations) }}{{ end -}}
+{{- if and .Values.server.enabled $i.artifactsBodySize }}
+{{- $artRules := list (dict "host" $i.hosts.api "path" "/api/v1/artifacts") -}}
+{{- if .Values.web.enabled }}{{ $artRules = append $artRules (dict "host" $i.hosts.app "path" "/api/v1/artifacts") }}{{ end -}}
+{{- $routes = append $routes (dict "name" "api-artifacts" "rules" $artRules "svc" $server "port" $sport "annotations" (merge (dict "nginx.ingress.kubernetes.io/proxy-body-size" $i.artifactsBodySize) $i.apiAnnotations)) }}
+{{- end -}}
+{{- if .Values.web.enabled }}{{ $routes = append $routes (dict "name" "app" "rules" (list (dict "host" $i.hosts.app "path" "/")) "svc" (printf "%s-web" $full) "port" .Values.web.service.port "annotations" dict) }}{{ end -}}
+{{- if .Values.site.enabled }}
+{{- $siteRules := list -}}
+{{- range $h := concat (list $i.hosts.site) $i.hosts.siteAliases }}{{ $siteRules = append $siteRules (dict "host" $h "path" "/") }}{{ end -}}
+{{- $routes = append $routes (dict "name" "site" "rules" $siteRules "svc" (printf "%s-site" $full) "port" .Values.site.service.port "annotations" dict) }}
+{{- end -}}
+{{- if .Values.polis.enabled }}{{ $routes = append $routes (dict "name" "sso" "rules" (list (dict "host" $i.hosts.sso "path" "/")) "svc" (printf "%s-polis" $full) "port" .Values.polis.port "annotations" dict) }}{{ end -}}
 {{- if and $i.cloudflareOriginPulls.enabled $routes }}
 ---
 # Cloudflare's origin-pull CA (public): the client certificate every Ingress below requires.
@@ -46,15 +61,18 @@ spec:
   {{- end }}
   {{- if $i.tls.enabled }}
   tls:
-    - hosts: {{- toYaml $r.hosts | nindent 8 }}
+    - hosts:
+        {{- range $h := $r.rules | uniq }}
+        - {{ $h.host | quote }}
+        {{- end }}
       secretName: {{ include "ostrom.tls.secretName" $ }}
   {{- end }}
   rules:
-    {{- range $h := $r.hosts }}
-    - host: {{ $h | quote }}
+    {{- range $rule := $r.rules }}
+    - host: {{ $rule.host | quote }}
       http:
         paths:
-          - path: {{ $r.path | default "/" }}
+          - path: {{ $rule.path }}
             pathType: Prefix
             backend:
               service:

@@ -44,3 +44,32 @@ tests:
     set: { ingress.artifactsBodySize: "" }
     asserts:
       - hasDocuments: { count: 4 }
+  - it: one origin for the browser, the console's host serves the console and /api/v1 from the server; the API host serves all of the API
+    set: { ingress.hosts: { api: api.ostrom.run, app: app.ostrom.run, site: ostrom.run, sso: sso.ostrom.run } }
+    asserts:
+      # o-ostrom-api: the API host whole, and the console's host for /api/v1 only
+      - equal: { path: metadata.name, value: o-ostrom-api }
+        documentIndex: 0
+      - equal: { path: 'spec.rules[0]', value: { host: api.ostrom.run, http: { paths: [{ path: /, pathType: Prefix, backend: { service: { name: o-ostrom-server, port: { number: 8080 } } } }] } } }
+        documentIndex: 0
+      - equal: { path: 'spec.rules[1]', value: { host: app.ostrom.run, http: { paths: [{ path: /api/v1, pathType: Prefix, backend: { service: { name: o-ostrom-server, port: { number: 8080 } } } }] } } }
+        documentIndex: 0
+      - equal: { path: 'spec.tls[0].hosts', value: [api.ostrom.run, app.ostrom.run] }
+        documentIndex: 0
+      # artifact publishing at 32m on both hosts
+      - equal: { path: 'spec.rules[1].host', value: app.ostrom.run }
+        documentIndex: 1
+      - equal: { path: 'spec.rules[1].http.paths[0].path', value: /api/v1/artifacts }
+        documentIndex: 1
+      - equal: { path: 'spec.rules[1].http.paths[0].backend.service.name', value: o-ostrom-server }
+        documentIndex: 1
+      # o-ostrom-app: everything else on the console's host goes to the console
+      - equal: { path: 'spec.rules', value: [{ host: app.ostrom.run, http: { paths: [{ path: /, pathType: Prefix, backend: { service: { name: o-ostrom-web, port: { number: 8080 } } } }] } }] }
+        documentIndex: 2
+  - it: without the console, the API Ingress serves only the API host
+    set: { web.enabled: false }
+    asserts:
+      - lengthEqual: { path: spec.rules, count: 1 }
+        documentIndex: 0
+      - equal: { path: 'spec.rules[0].host', value: api.example.com }
+        documentIndex: 0

@@ -1,16 +1,31 @@
 # Plain HTTP while the hosts are *.localhost (OSTROM_SCHEME=http); automatic HTTPS once they are real names
 # and OSTROM_SCHEME=https.
+# The API host, for non-browser clients (CLI, tokens, webhooks). 32 MB: artifact publishing (the server refuses
+# more than 1 MiB on every other route).
 {$OSTROM_SITE_SCHEME}://{$OSTROM_API_HOST} {
 	reverse_proxy server:8080 {
 		flush_interval -1
 	}
 	request_body {
-		max_size 16MB
+		max_size 32MB
 	}
 }
 
+# One origin for the browser: the console's host serves /api/v1 from the server (session cookie, CSRF token), and
+# the console for everything else.
 {$OSTROM_SITE_SCHEME}://{$OSTROM_APP_HOST} {
-	reverse_proxy web:8080
+	@api path /api/v1 /api/v1/*
+	handle @api {
+		request_body {
+			max_size 32MB
+		}
+		reverse_proxy server:8080 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy web:8080
+	}
 }
 
 {$OSTROM_SITE_SCHEME}://{$OSTROM_SSO_HOST} {

@@ -33,11 +33,6 @@ export OSTROM_SCHEME=https OSTROM_API_HOST=api.example.com OSTROM_APP_HOST=app.e
 Anything the server reads (`OSTROM_*`) can go in `compose/server.env` (optional, `KEY=value` lines), for example:
 
 ```sh
-# BYOK: the model that extracts workflows and policies from text
-OSTROM_EXTRACTION_PROVIDER=openrouter
-OSTROM_EXTRACTION_BASE_URL=https://openrouter.ai/api/v1
-OSTROM_EXTRACTION_MODEL=anthropic/claude-sonnet-4.5
-OSTROM_EXTRACTION_API_KEY=sk-or-...
 # OpenTelemetry (OTLP/HTTP)
 OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.example.com
 OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic ...
@@ -47,7 +42,10 @@ The full list of server keys is in [values.md](values.md#server-environment).
 
 ## Version
 
-`OSTROM_VERSION` in `.env` picks the image tag (`latest` by default). Pin it in production, e.g. `OSTROM_VERSION=<version>`,
-then `docker compose pull && docker compose up -d`. See [upgrade.md](upgrade.md).
+No release tag exists yet: `docker-compose.yml` pins the server and the console by digest, to a signed multi-arch build
+of `main`. To run another build, set `OSTROM_SERVER_IMAGE` and `OSTROM_WEB_IMAGE` in `.env` (by digest, e.g.
+`ghcr.io/ostrom-hq/ostrom-server@sha256:…`), then `docker compose pull && docker compose up -d`. To build the server
+yourself instead, in a clone of `ostrom-server`: `ci/build-linux.sh` (it leaves the native binary in
+`dist/ostrom-server`), then `docker build -t ostrom-server:local .`, and `OSTROM_SERVER_IMAGE=ostrom-server:local`. See [upgrade.md](upgrade.md).
 
 Cloud sessions (agents running on the server) need Kubernetes: they are off in the Compose install.

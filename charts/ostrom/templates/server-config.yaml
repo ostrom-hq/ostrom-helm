@@ -23,17 +23,9 @@ data:
   OSTROM_SHUTDOWN_DELAY_SECONDS: {{ $delay | quote }}
   OSTROM_SIGNING_KEY_FILE: /var/run/ostrom/signing/instance-key.pem
   OSTROM_PUBLIC_URL: {{ .Values.global.urls.api | quote }}
-  OSTROM_API_URL: {{ .Values.global.urls.api | quote }}
-  OSTROM_APP_URL: {{ .Values.global.urls.app | quote }}
+  # The console's origin: device-login page, sign-in redirects, and the only origin a browser session may change
+  # state from (the console serves /api/v1 on its own host, see the Ingress).
   OSTROM_CONSOLE_URL: {{ .Values.global.urls.app | quote }}
-  OSTROM_SITE_URL: {{ .Values.global.urls.site | quote }}
-  {{- with .Values.byok.extraction }}
-  {{- if .provider }}
-  OSTROM_EXTRACTION_PROVIDER: {{ .provider | quote }}
-  OSTROM_EXTRACTION_BASE_URL: {{ .baseUrl | quote }}
-  OSTROM_EXTRACTION_MODEL: {{ .model | quote }}
-  {{- end }}
-  {{- end }}
   {{- with .Values.observability.otel }}
   {{- if .enabled }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ required "observability.otel.endpoint is required when otel is enabled" .endpoint | quote }}
@@ -64,10 +56,6 @@ data:
   OSTROM_POSTHOG_API_KEY: {{ .apiKey | quote }}
   {{- end }}
   {{- end }}
-  {{- if .Values.polis.enabled }}
-  OSTROM_SAML_POLIS_URL: {{ printf "http://%s-polis:%v" $full .Values.polis.port | quote }}
-  OSTROM_SAML_POLIS_EXTERNAL_URL: {{ include "ostrom.polis.externalUrl" . | quote }}
-  {{- end }}
   {{- if .Values.cloudSessions.enabled }}
   {{- $r := .Values.cloudSessions.runner }}
   OSTROM_RUNNERS_DRIVER: kubernetes
@@ -84,7 +72,17 @@ data:
   {{- end }}
   # The server pods' labels, for the sessions' NetworkPolicy (the only internal address a session may reach).
   OSTROM_RUNNERS_KUBERNETES_SERVER_SELECTOR: {{ printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s,app.kubernetes.io/component=server" (include "ostrom.name" .) .Release.Name | quote }}
-  OSTROM_CLOUD_MAX_CONCURRENT: {{ $r.maxConcurrent | quote }}
+  # Audit S2-10: the organizations sessions are open to. Empty = none (every organization gets 403), "*" = all.
+  {{- $orgs := .Values.cloudSessions.allowedOrgs | default list }}
+  {{- range $o := $orgs }}
+  {{- if not (or (eq (toString $o) "*") (regexMatch "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" (toString $o))) }}
+  {{- fail (printf "cloudSessions.allowedOrgs lists organization ids (UUID) or \"*\", not %v" $o) }}
+  {{- end }}
+  {{- end }}
+  {{- if and (has "*" $orgs) (gt (len $orgs) 1) }}
+  {{- fail "cloudSessions.allowedOrgs: \"*\" stands alone" }}
+  {{- end }}
+  OSTROM_RUNNERS_ALLOWED_ORGS: {{ join "," $orgs | quote }}
   {{- end }}
   {{- range $k, $v := $s.config }}
   {{ $k }}: {{ $v | toString | quote }}
