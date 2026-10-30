@@ -51,8 +51,16 @@ Store that file encrypted (age, sops, a password manager): it contains the keys.
 
 ### Restore
 
-1. Fresh namespace: apply `ostrom-secrets.yaml` first (strip `resourceVersion`, `uid`, `creationTimestamp`), then
-   `helm install` with the same release name: the chart reuses the existing Secrets.
+1. Fresh namespace: apply `ostrom-secrets.yaml` first, stripped of `resourceVersion`, `uid`, `creationTimestamp` and
+   `namespace`, and with the Helm annotation `meta.helm.sh/release-namespace` set to the new namespace (otherwise
+   `helm install` refuses to take the Secrets over), then `helm install` with the same release name: the chart reuses
+   the existing Secrets, so the instance key and the secrets key are the old ones.
+
+```sh
+NS=ostrom yq 'del(.items[].metadata.resourceVersion, .items[].metadata.uid, .items[].metadata.creationTimestamp, .items[].metadata.namespace)
+  | .items[].metadata.annotations["meta.helm.sh/release-namespace"] = strenv(NS)' ostrom-secrets.yaml | kubectl -n ostrom apply -f -
+```
+
 2. Stop writers: `kubectl -n ostrom scale deploy -l app.kubernetes.io/instance=ostrom --replicas=0`
    (the PostgreSQL StatefulSet stays up).
 3. Restore each database:
@@ -67,7 +75,10 @@ kubectl -n ostrom exec $POD -- pg_restore -U postgres -d polis --clean --if-exis
 
 4. `helm upgrade ostrom … --reuse-values` (scales back up), then `helm test ostrom -n ostrom`.
 
-Restore test: CI restores nothing yet; do a restore drill into a scratch namespace once per quarter.
+Restore test: every CI run of this repository plays this page on kind (`ci/backup-restore-drill.sh`): data written,
+backup by the CronJob, copy off the cluster, namespace deleted, restore into a fresh namespace, then the data, the
+table owner, the instance key, the secrets key and the serving role's limits are checked. Do the same drill on your
+own cluster once per quarter.
 
 ## Docker Compose
 
