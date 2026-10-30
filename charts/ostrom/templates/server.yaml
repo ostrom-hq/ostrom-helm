@@ -90,6 +90,10 @@ spec:
                 secretKeyRef: {{- include "ostrom.database.passwordRef" . | nindent 18 }}
             - name: OSTROM_POD_NAME
               valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            # One key for every replica, kept across upgrades (SECURITY-AUDIT S2-11): never a per-pod key file.
+            - name: OSTROM_SECRETS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "ostrom.secretsKey.secretName" . }}, key: secrets-key }
             {{- if .Values.polis.enabled }}
             - name: OSTROM_SAML_POLIS_API_KEY
               valueFrom:

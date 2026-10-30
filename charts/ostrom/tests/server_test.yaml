@@ -126,3 +126,22 @@ tests:
       - equal: { path: spec.template.spec.securityContext.fsGroup, value: 65532 }
       - equal: { path: spec.template.spec.securityContext.runAsNonRoot, value: true }
       - equal: { path: 'spec.template.spec.volumes[0].secret.defaultMode', value: 0440 }
+  - it: every replica reads the same secrets key from its Secret (SECURITY-AUDIT S2-11)
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OSTROM_SECRETS_KEY
+            valueFrom: { secretKeyRef: { name: o-ostrom-secrets-key, key: secrets-key } }
+  - it: an existing Secret replaces the generated secrets key
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { server.secretsKey.existingSecret: sealing }
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OSTROM_SECRETS_KEY
+            valueFrom: { secretKeyRef: { name: sealing, key: secrets-key } }
