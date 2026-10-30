@@ -33,8 +33,11 @@ services:
     depends_on:
       stripe-init: { condition: service_completed_successfully }
     entrypoint: ["/bin/sh", "-c"]
+    # The events the server handles (modules/billing), the only ones forwarded.
     command:
-      - exec stripe listen --api-key "$$(cat /run/secrets/stripe_key)" --forward-to http://server:8080/webhooks/stripe
+      - >-
+        exec stripe listen --api-key "$$(cat /run/secrets/stripe_key)" --forward-to http://server:8080/webhooks/stripe
+        --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,customer.subscription.paused,customer.subscription.resumed,invoice.finalized,invoice.paid,invoice.payment_failed,invoice.payment_action_required
     secrets: [stripe_key]
 
   server:
