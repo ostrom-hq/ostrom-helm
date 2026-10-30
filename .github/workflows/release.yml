@@ -36,7 +36,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "chart-v${{ steps.pkg.outputs.version }}" >/dev/null 2>&1; then
+          if gh release view "${{ steps.pkg.outputs.version }}" >/dev/null 2>&1; then
             echo "published=true" >> "$GITHUB_OUTPUT"
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
@@ -61,5 +61,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.pkg.outputs.version }}
         run: |
-          gh release create "chart-v${VERSION}" "dist/ostrom-${VERSION}.tgz" "dist/ostrom-${VERSION}.tgz.sig" \
-            --title "Chart ostrom ${VERSION}" --notes "oci://ghcr.io/ostrom-hq/charts/ostrom --version ${VERSION}"
+          gh release create "${VERSION}" "dist/ostrom-${VERSION}.tgz" "dist/ostrom-${VERSION}.tgz.sig" \
+            --target "$GITHUB_SHA" --title "Chart ostrom ${VERSION}" --notes "oci://ghcr.io/ostrom-hq/charts/ostrom --version ${VERSION}"
