@@ -30,15 +30,18 @@ With a StorageClass in `WaitForFirstConsumer` mode (kind, many clouds), the back
 first backup runs, and `helm install --wait` waits for it: run the first backup right after installing
 (`kubectl create job --from=cronjob/…`, below), or enable backups in a second `helm upgrade`.
 
-Copy them off the cluster too (the PVC lives in the same failure domain):
+Copy them off the cluster too (the PVC lives in the same failure domain). The copy goes through `kubectl exec`,
+whose output is the archive alone (`kubectl run --rm -i` adds its own messages to it):
 
 ```sh
 NS=ostrom; REL=ostrom
 kubectl -n $NS create job --from=cronjob/$REL-postgresql-backup backup-now
 kubectl -n $NS wait --for=condition=complete job/backup-now --timeout=10m
-kubectl -n $NS run backup-copy --rm -i --restart=Never --image=busybox:1.37 \
-  --overrides='{"spec":{"securityContext":{"runAsUser":999,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"busybox:1.37","command":["tar","czf","-","-C","/b","."],"stdin":true,"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"b","mountPath":"/b"}]}],"volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"'$REL'-postgresql-backup"}}]}}' \
-  > ostrom-backups-$(date +%F).tgz
+kubectl -n $NS run backup-copy --restart=Never --image=busybox:1.37 \
+  --overrides='{"spec":{"securityContext":{"runAsUser":999,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"busybox:1.37","command":["sleep","3600"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"b","mountPath":"/b","readOnly":true}]}],"volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"'$REL'-postgresql-backup","readOnly":true}}]}}'
+kubectl -n $NS wait --for=condition=Ready pod/backup-copy --timeout=5m
+kubectl -n $NS exec backup-copy -- tar czf - -C /b . > ostrom-backups-$(date +%F).tgz
+kubectl -n $NS delete pod backup-copy
 ```
 
 ### Keys and secrets
@@ -51,8 +54,16 @@ Store that file encrypted (age, sops, a password manager): it contains the keys.
 
 ### Restore
 
-1. Fresh namespace: apply `ostrom-secrets.yaml` first (strip `resourceVersion`, `uid`, `creationTimestamp`), then
-   `helm install` with the same release name: the chart reuses the existing Secrets.
+1. Fresh namespace: apply `ostrom-secrets.yaml` first, stripped of `resourceVersion`, `uid`, `creationTimestamp` and
+   `namespace`, and with the Helm annotation `meta.helm.sh/release-namespace` set to the new namespace (otherwise
+   `helm install` refuses to take the Secrets over), then `helm install` with the same release name: the chart reuses
+   the existing Secrets, so the instance key and the secrets key are the old ones.
+
+```sh
+NS=ostrom yq 'del(.items[].metadata.resourceVersion, .items[].metadata.uid, .items[].metadata.creationTimestamp, .items[].metadata.namespace)
+  | .items[].metadata.annotations["meta.helm.sh/release-namespace"] = strenv(NS)' ostrom-secrets.yaml | kubectl -n ostrom apply -f -
+```
+
 2. Stop writers: `kubectl -n ostrom scale deploy -l app.kubernetes.io/instance=ostrom --replicas=0`
    (the PostgreSQL StatefulSet stays up).
 3. Restore each database:
@@ -67,7 +78,10 @@ kubectl -n ostrom exec $POD -- pg_restore -U postgres -d polis --clean --if-exis
 
 4. `helm upgrade ostrom … --reuse-values` (scales back up), then `helm test ostrom -n ostrom`.
 
-Restore test: CI restores nothing yet; do a restore drill into a scratch namespace once per quarter.
+Restore test: every CI run of this repository plays this page on kind (`ci/backup-restore-drill.sh`): data written,
+backup by the CronJob, copy off the cluster, namespace deleted, restore into a fresh namespace, then the data, the
+table owner, the instance key, the secrets key and the serving role's limits are checked. Do the same drill on your
+own cluster once per quarter.
 
 ## Docker Compose
 
