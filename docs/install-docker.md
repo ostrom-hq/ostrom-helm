@@ -7,8 +7,11 @@ git clone https://github.com/ostrom-hq/ostrom-helm && cd ostrom-helm/compose
 ./install.sh
 ```
 
-`install.sh` writes `.env` once (mode 600) with fresh secrets — the PostgreSQL password and the three Ory Polis
-keys — then runs `docker compose up -d --wait`. Run it again any time: it keeps `.env`.
+`install.sh` writes `.env` once (mode 600) with fresh secrets — the passwords of the four database roles
+(`postgres`, the owner `ostrom` who migrates, the serving role `ostrom_app`, `polis`) and the three Ory Polis keys —
+then runs `docker compose up -d --wait`. Run it again any time: it keeps the values already in `.env` and only adds
+the missing ones. A one-shot `migrate` service applies the schema with the owner's credentials before the server
+starts; the server itself connects as `ostrom_app`, which owns nothing and cannot bypass row-level security.
 
 By default everything answers on plain HTTP under `*.localhost`: console `http://app.localhost`, API
 `http://api.localhost`, SAML bridge `http://sso.localhost`.
@@ -44,7 +47,7 @@ The full list of server keys is in [values.md](values.md#server-environment).
 
 ## Version
 
-`OSTROM_VERSION` in `.env` picks the image tag (`latest` by default). Pin it in production, e.g. `OSTROM_VERSION=0.1.0`,
+`OSTROM_VERSION` in `.env` picks the image tag (`latest` by default). Pin it in production, e.g. `OSTROM_VERSION=<version>`,
 then `docker compose pull && docker compose up -d`. See [upgrade.md](upgrade.md).
 
 Cloud sessions (agents running on the server) need Kubernetes: they are off in the Compose install.
