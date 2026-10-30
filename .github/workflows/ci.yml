@@ -95,3 +95,46 @@ jobs:
         if: always()
         working-directory: compose
         run: COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml docker compose down -v || true
+
+  # The chart with the REAL Ostrom images (`edge` from each repository's main), once this repository can read
+  # them: needs the org secret GHCR_READ_TOKEN (read:packages). Skipped, and says so, without it.
+  install-real-images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+      TAG: edge
+    steps:
+      - name: Token present?
+        id: token
+        run: |
+          if [ -n "$GHCR_READ_TOKEN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else
+            echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::GHCR_READ_TOKEN missing: real-image install skipped"; fi
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: steps.token.outputs.present == 'true'
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with: { version: v3.17.2 }
+      - if: steps.token.outputs.present == 'true'
+        uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          version: v0.29.0
+          node_image: kindest/node:v1.31.9
+      - name: Install with the real images, then helm test
+        if: steps.token.outputs.present == 'true'
+        run: |
+          kubectl create namespace ostrom
+          kubectl label namespace ostrom pod-security.kubernetes.io/enforce=restricted
+          kubectl -n ostrom create secret docker-registry ghcr --docker-server=ghcr.io \
+            --docker-username=ostrom-ci --docker-password="$GHCR_READ_TOKEN"
+          helm install ostrom charts/ostrom -n ostrom --wait --timeout 10m \
+            --set global.imageTag="$TAG" --set 'global.imagePullSecrets={ghcr}' \
+            --set server.replicas=1 --set web.replicas=1 --set site.replicas=1 \
+            --set postgresql.persistence.size=1Gi
+          helm test ostrom -n ostrom --logs
+      - name: Cluster state on failure
+        if: failure() && steps.token.outputs.present == 'true'
+        run: |
+          kubectl get all,netpol,secrets -n ostrom -o wide || true
+          kubectl get events -n ostrom --sort-by=.lastTimestamp | tail -60 || true
+          for p in $(kubectl get pods -n ostrom -o name); do echo "== $p"; kubectl logs -n ostrom "$p" --all-containers --tail=80 || true; done
