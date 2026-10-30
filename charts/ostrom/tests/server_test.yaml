@@ -4,7 +4,7 @@ templates:
   - templates/server-config.yaml
 release: { name: o, namespace: ostrom }
 tests:
-  - it: wires the database (serving role), the URLs and Polis into the ConfigMap; no cloud sessions by default
+  - it: wires the database (serving role) and the URLs into the ConfigMap; no cloud sessions by default
     template: templates/server-config.yaml
     set: { global.urls.api: "https://api.ostrom.run", global.urls.app: "https://app.ostrom.run" }
     asserts:
@@ -12,8 +12,46 @@ tests:
       - equal: { path: data.OSTROM_DATABASE_USER, value: ostrom_app }
       - equal: { path: data.OSTROM_PUBLIC_URL, value: "https://api.ostrom.run" }
       - equal: { path: data.OSTROM_CONSOLE_URL, value: "https://app.ostrom.run" }
-      - equal: { path: data.OSTROM_SAML_POLIS_URL, value: "http://o-ostrom-polis:5225" }
       - notExists: { path: data.OSTROM_RUNNERS_DRIVER }
+      - notExists: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS }
+  - it: sets only variables the server of main reads (no API/app/site URL, extraction, Polis or session cap keys)
+    template: templates/server-config.yaml
+    set: { cloudSessions.enabled: true, server.replicas: 1 }
+    asserts:
+      - notExists: { path: data.OSTROM_API_URL }
+      - notExists: { path: data.OSTROM_APP_URL }
+      - notExists: { path: data.OSTROM_SITE_URL }
+      - notExists: { path: data.OSTROM_EXTRACTION_PROVIDER }
+      - notExists: { path: data.OSTROM_SAML_POLIS_URL }
+      - notExists: { path: data.OSTROM_SAML_POLIS_EXTERNAL_URL }
+      - notExists: { path: data.OSTROM_CLOUD_MAX_CONCURRENT }
+  - it: no Polis or extraction key in the server's environment
+    template: templates/server.yaml
+    asserts:
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_SAML_POLIS_API_KEY }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_EXTRACTION_API_KEY }, any: true }
+  - it: cloud sessions with no allowed organization set an empty list, an explicit refusal (S2-10)
+    template: templates/server-config.yaml
+    set: { cloudSessions.enabled: true, server.replicas: 1 }
+    asserts:
+      - equal: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS, value: "" }
+  - it: cloud sessions open to the listed organizations
+    template: templates/server-config.yaml
+    set:
+      cloudSessions: { enabled: true, allowedOrgs: [0192f6a1-7c3e-7d4a-9b2f-1a2b3c4d5e6f, 0192f6a1-7c3e-7d4a-9b2f-1a2b3c4d5e70] }
+      server.replicas: 1
+    asserts:
+      - equal: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS, value: "0192f6a1-7c3e-7d4a-9b2f-1a2b3c4d5e6f,0192f6a1-7c3e-7d4a-9b2f-1a2b3c4d5e70" }
+  - it: cloud sessions open to all with "*"
+    template: templates/server-config.yaml
+    set: { cloudSessions: { enabled: true, allowedOrgs: ["*"] }, server.replicas: 1 }
+    asserts:
+      - equal: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS, value: "*" }
+  - it: refuses an allowed organization that is not an id
+    template: templates/server.yaml
+    set: { cloudSessions: { enabled: true, allowedOrgs: [acme] }, server.replicas: 1 }
+    asserts:
+      - failedTemplate: { errorMessage: 'cloudSessions.allowedOrgs lists organization ids (UUID) or "*", not acme' }
   - it: cloud sessions use the Kubernetes driver in the release namespace
     template: templates/server-config.yaml
     set: { cloudSessions.enabled: true, server.replicas: 1, global.imagePullSecrets: [ghcr], cloudSessions.runner.priorityClassName: low }
@@ -31,14 +69,12 @@ tests:
     set: { cloudSessions.enabled: true, server.replicas: 2 }
     asserts:
       - failedTemplate: { errorMessage: "cloudSessions.enabled needs exactly one server replica (server.replicas: 1, no autoscaling): the terminal relay lives in memory" }
-  - it: BYOK and OTel settings land in the ConfigMap when set
+  - it: OTel settings land in the ConfigMap when set
     template: templates/server-config.yaml
     set:
-      byok.extraction: { provider: openrouter, baseUrl: "https://openrouter.ai/api/v1", model: "x/y" }
       observability.otel:
         { enabled: true, endpoint: "https://otlp", resourceAttributes: "deployment.environment.name=prod", tracesSampleRatio: "0.25" }
     asserts:
-      - equal: { path: data.OSTROM_EXTRACTION_PROVIDER, value: openrouter }
       - equal: { path: data.OTEL_EXPORTER_OTLP_ENDPOINT, value: "https://otlp" }
       - equal: { path: data.OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf }
       - equal: { path: data.OTEL_SERVICE_NAME, value: ostrom-server }

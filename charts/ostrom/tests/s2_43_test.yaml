@@ -31,7 +31,11 @@ tests:
         documentIndex: 2
       - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT ostrom_tenant TO :"app";' }
         documentIndex: 2
-      - notMatchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT :"owner" TO|CREATEROLE.*:"app"' }
+      - notMatchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT :"owner" TO|CREATEROLE.*:"app"|GRANT ostrom_router TO :"app"' }
+        documentIndex: 2
+      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'CREATE ROLE ostrom_router NOLOGIN NOSUPERUSER NOBYPASSRLS' }
+        documentIndex: 2
+      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;' }
         documentIndex: 2
       - equal: { path: 'spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem', value: true }
         documentIndex: 2
@@ -84,13 +88,13 @@ tests:
   - it: Cloudflare origin pulls are off by default
     template: templates/ingress.yaml
     asserts:
-      - hasDocuments: { count: 4 }
+      - hasDocuments: { count: 5 }
       - notExists: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-secret"]' }
   - it: on, every Ingress of the release requires Cloudflare's client certificate, from a Secret of the namespace
     template: templates/ingress.yaml
     set: { ingress.cloudflareOriginPulls.enabled: true }
     asserts:
-      - hasDocuments: { count: 5 }
+      - hasDocuments: { count: 6 }
       - isKind: { of: Secret }
         documentIndex: 0
       - isNotEmpty: { path: 'data["ca.crt"]' }
@@ -98,4 +102,6 @@ tests:
       - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-secret"]', value: ostrom/o-ostrom-cloudflare-origin-pull-ca }
         documentIndex: 1
       - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-verify-client"]', value: "on" }
-        documentIndex: 4
+        documentIndex: 5
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-verify-client"]', value: "on" }
+        documentIndex: 2

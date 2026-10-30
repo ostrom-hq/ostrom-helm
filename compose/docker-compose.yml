@@ -1,6 +1,8 @@
 # Ostrom self-hosted, in one command: ./install.sh  (writes .env with fresh secrets, then `docker compose up -d`).
 # Hosts default to *.localhost over plain HTTP; set OSTROM_API_HOST / OSTROM_APP_HOST / OSTROM_SSO_HOST to real
 # names in .env and Caddy obtains the TLS certificates itself.
+# Images: pinned by digest to a signed build of main (ostrom-infra prod/images.lock), until the first release tags
+# exist. OSTROM_SERVER_IMAGE / OSTROM_WEB_IMAGE in .env override them (an image you built: see docs/install-docker.md).
 name: ostrom
 
 x-restart: &restart
@@ -34,7 +36,7 @@ services:
 
   # Migrations, once per `up`, with the owner's credentials: the server never receives them.
   migrate:
-    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server:${OSTROM_VERSION:-latest}}
+    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server@sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03}
     command: ["/usr/local/bin/ostrom-server", "migrate"]
     restart: "no"
     depends_on:
@@ -49,7 +51,7 @@ services:
 
   server:
     <<: *restart
-    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server:${OSTROM_VERSION:-latest}}
+    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server@sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03}
     depends_on:
       migrate: { condition: service_completed_successfully }
     environment:
@@ -58,17 +60,8 @@ services:
       OSTROM_DATABASE_PASSWORD: ${OSTROM_APP_PASSWORD}
       OSTROM_SIGNING_KEY_FILE: /var/lib/ostrom/instance-key.pem
       OSTROM_PUBLIC_URL: ${OSTROM_SCHEME:-http}://${OSTROM_API_HOST:-api.localhost}
-      OSTROM_API_URL: ${OSTROM_SCHEME:-http}://${OSTROM_API_HOST:-api.localhost}
-      OSTROM_APP_URL: ${OSTROM_SCHEME:-http}://${OSTROM_APP_HOST:-app.localhost}
+      # The console's origin, the only one a browser session may change state from (it serves /api/v1, Caddyfile).
       OSTROM_CONSOLE_URL: ${OSTROM_SCHEME:-http}://${OSTROM_APP_HOST:-app.localhost}
-      OSTROM_SAML_POLIS_URL: http://polis:5225
-      OSTROM_SAML_POLIS_EXTERNAL_URL: ${OSTROM_SCHEME:-http}://${OSTROM_SSO_HOST:-sso.localhost}
-      OSTROM_SAML_POLIS_API_KEY: ${POLIS_API_KEY}
-      # BYOK (extraction): openrouter | openai | anthropic | openai-compatible
-      OSTROM_EXTRACTION_PROVIDER: ${OSTROM_EXTRACTION_PROVIDER:-}
-      OSTROM_EXTRACTION_BASE_URL: ${OSTROM_EXTRACTION_BASE_URL:-}
-      OSTROM_EXTRACTION_MODEL: ${OSTROM_EXTRACTION_MODEL:-}
-      OSTROM_EXTRACTION_API_KEY: ${OSTROM_EXTRACTION_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
@@ -83,7 +76,7 @@ services:
 
   web:
     <<: *restart
-    image: ${OSTROM_WEB_IMAGE:-ghcr.io/ostrom-hq/ostrom-web:${OSTROM_VERSION:-latest}}
+    image: ${OSTROM_WEB_IMAGE:-ghcr.io/ostrom-hq/ostrom-web@sha256:509b7beb1f4c17de132440f2cc6438c245a9f2c6286566f618a956331f815154}
     environment:
       OSTROM_API_UPSTREAM: http://server:8080
       OSTROM_API_URL: ${OSTROM_SCHEME:-http}://${OSTROM_API_HOST:-api.localhost}

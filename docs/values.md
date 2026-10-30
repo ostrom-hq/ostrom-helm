@@ -7,12 +7,11 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 | `global` | image registry, tag and pull secrets; public URLs (`urls.api`, `urls.app`, `urls.site`) |
 | `server` | replicas, resources, probes, HPA, PDB, `config` (non-secret env), `secretEnv` / `existingSecret` (secret env), signing key, secrets key |
 | `migrations` | `initContainer: true` runs `ostrom-server migrate` before each pod starts |
-| `byok.extraction` | provider, base URL, model and key of the model that extracts workflows and policies (BYOK) |
 | `observability` | `otel` (OTLP/HTTP endpoint and headers), `langfuse`, `posthog` |
 | `web`, `site` | the console (nginx) and the site (Next.js) |
 | `postgresql` / `externalDatabase` | built-in StatefulSet with optional daily `pg_dump`, or your own database |
 | `polis` | Ory Polis, the SAML ↔ OIDC bridge |
-| `cloudSessions` | runner image, resources, deadline, concurrency; RBAC of the controller |
+| `cloudSessions` | runner image, resources, deadline; `allowedOrgs` (S2-10); RBAC of the controller |
 | `ingress` | class, hosts, TLS secret or cert-manager issuer, API annotations (streaming, body size) |
 | `networkPolicy` | ingress controller location, DNS, denied egress CIDRs, Kubernetes API access |
 
@@ -27,13 +26,13 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_DATABASE_MIGRATION_URL`, `OSTROM_DATABASE_MIGRATION_USER`, `OSTROM_DATABASE_MIGRATION_PASSWORD` | the owner, in the `migrate` init container only: `postgresql.ownerUsername` or `externalDatabase.migrationUsername` |
 | `OSTROM_SIGNING_KEY_FILE` | the mounted instance key, `/var/run/ostrom/signing/instance-key.pem` |
 | `OSTROM_SECRETS_KEY` | key `secrets-key` of the generated Secret `<release>-secrets-key`, or of `server.secretsKey.existingSecret` |
-| `OSTROM_PUBLIC_URL`, `OSTROM_API_URL`, `OSTROM_APP_URL`, `OSTROM_CONSOLE_URL`, `OSTROM_SITE_URL` | `global.urls.*` |
-| `OSTROM_EXTRACTION_PROVIDER`, `OSTROM_EXTRACTION_BASE_URL`, `OSTROM_EXTRACTION_MODEL`, `OSTROM_EXTRACTION_API_KEY` | `byok.extraction.*` |
+| `OSTROM_PUBLIC_URL` | `global.urls.api` |
+| `OSTROM_CONSOLE_URL` | `global.urls.app`: device-login page, sign-in redirects, and the only origin a browser session may change state from |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` (always `http/protobuf`), `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER_ARG` | `observability.otel.*` (`tracesSampleRatio` for the last) |
 | `OSTROM_LANGFUSE_HOST`, `OSTROM_LANGFUSE_PUBLIC_KEY`, `OSTROM_LANGFUSE_SECRET_KEY` | `observability.langfuse.*` |
 | `OSTROM_POSTHOG_HOST`, `OSTROM_POSTHOG_API_KEY` | `observability.posthog.*` |
-| `OSTROM_SAML_POLIS_URL`, `OSTROM_SAML_POLIS_EXTERNAL_URL`, `OSTROM_SAML_POLIS_API_KEY` | `polis.*` |
-| `OSTROM_RUNNERS_DRIVER` (`kubernetes`), `OSTROM_RUNNERS_SERVER_URL`, `OSTROM_RUNNERS_IMAGE`, `OSTROM_RUNNERS_WORKSPACE_SIZE`, `OSTROM_RUNNERS_KUBERNETES_{NAMESPACE,STORAGE_CLASS,IMAGE_PULL_SECRET,PRIORITY_CLASS,SERVER_SELECTOR}`, `OSTROM_CLOUD_MAX_CONCURRENT` | `cloudSessions.*`, only when `cloudSessions.enabled` |
+| `OSTROM_RUNNERS_DRIVER` (`kubernetes`), `OSTROM_RUNNERS_SERVER_URL`, `OSTROM_RUNNERS_IMAGE`, `OSTROM_RUNNERS_WORKSPACE_SIZE`, `OSTROM_RUNNERS_KUBERNETES_{NAMESPACE,STORAGE_CLASS,IMAGE_PULL_SECRET,PRIORITY_CLASS,SERVER_SELECTOR}` | `cloudSessions.*`, only when `cloudSessions.enabled` |
+| `OSTROM_RUNNERS_ALLOWED_ORGS` | `cloudSessions.allowedOrgs`, only when `cloudSessions.enabled`: organization ids, or `["*"]`; **empty (the default) refuses every organization** (403), audit S2-10. How many sessions run at once comes from each organization's plan |
 | `OSTROM_POD_NAME` | the pod name (downward API) |
 | `OSTROM_TRUSTED_PROXIES` | `server.trustedProxies`: CIDRs (comma separated) of the ingress controller's pods and of the nodes, whose forwarded client address the server believes; unset by default |
 | `OSTROM_SHUTDOWN_DELAY_SECONDS` | `server.shutdownDelaySeconds` (0 to 10, default 5): after SIGTERM, `/ready` answers 503 this long before the server stops, so the Service drops the pod first; readiness probes `/ready`, liveness and startup `/health` |
@@ -62,6 +61,7 @@ The built-in PostgreSQL starts with four roles (`templates/postgresql.yaml`, the
 | `ostrom_app` (`postgresql.username`) | read and write rows; owns nothing, `NOSUPERUSER NOBYPASSRLS` | the server: row-level security always applies |
 | `polis` | its own `polis` database only | Ory Polis |
 | `ostrom_tenant` | `NOLOGIN`: the role the server switches to (`SET LOCAL ROLE`) for row-level security | granted to `ostrom_app`; the owner administers it |
+| `ostrom_router` | `NOLOGIN`: owns the cross-organization functions (`SECURITY DEFINER`, ostrom-server `docs/tenancy.md`), no table | the owner administers it; never granted to `ostrom_app` |
 
 Since server 4e4137d (S2-43) the server does not migrate and refuses to start if the migrations are not applied, or
 if its role is a superuser, `BYPASSRLS`, owns a table or is a member of the owner. The migrations create
@@ -75,12 +75,15 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_tenant') \gexec
 ALTER ROLE :"owner" CREATEROLE;
 GRANT ostrom_tenant TO :"owner" WITH ADMIN OPTION;
 GRANT ostrom_tenant TO :"app";
+SELECT 'CREATE ROLE ostrom_router NOLOGIN NOSUPERUSER NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_router') \gexec
+GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
 ```
 
 (`psql -v ON_ERROR_STOP=1 -v owner=ostrom -v app=ostrom_app -v db=ostrom`). Never give the serving role
-`CREATEROLE` nor membership of the owner.
+`CREATEROLE`, membership of the owner nor `ostrom_router`.
 
 `helm test` checks it on the live database (`templates/tests/test-database.yaml`): the serving role is neither
 superuser nor `BYPASSRLS`, cannot create or alter a table, reads what the owner creates; Polis cannot open
@@ -134,3 +137,17 @@ origin-pull client certificate: the chart puts Cloudflare's public CA (`files/cl
 `<release>-cloudflare-origin-pull-ca` and sets the `auth-tls-*` annotations on its own Ingresses only; nothing changes
 on the shared controller. Turn it on once the hosts are proxied by Cloudflare and "Authenticated Origin Pulls" is on
 for the zone (SSL/TLS → Origin Server): until then, every request gets a 400.
+
+## Request body size of the API
+
+The API Ingress allows 16 MiB (`ingress.apiAnnotations`); the server refuses more than 1 MiB on most routes (S2-46).
+Publishing an artifact sends its files base64 in JSON (up to about 27.7 MiB on the server): `/api/v1/artifacts` has its
+own Ingress, `<release>-api-artifacts`, with `ingress.artifactsBodySize` (32m). Set it to "" to drop that Ingress.
+
+## One origin for the browser
+
+The console reads its session's CSRF token from a cookie of its own origin, so the browser must reach the API there.
+The chart routes `<ingress.hosts.app>/api/v1` to the server (Ingress `<release>-api`, with the API annotations) and
+everything else on that host to the console; `<ingress.hosts.api>` keeps the whole API for non-browser clients (CLI,
+tokens, webhooks). Both hosts reach the same Service. The server accepts state changes from a browser session only
+from `OSTROM_CONSOLE_URL`'s origin. The Compose install does the same in its Caddyfile.

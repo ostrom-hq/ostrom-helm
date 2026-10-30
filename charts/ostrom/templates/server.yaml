@@ -39,7 +39,7 @@ spec:
         {{- with $s.podLabels }}{{ toYaml . | nindent 8 }}{{- end }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/server-config.yaml") . | sha256sum | trunc 16 }}
-        checksum/secrets: {{ toYaml (dict "env" $s.secretEnv "byok" .Values.byok "obs" .Values.observability) | sha256sum | trunc 16 }}
+        checksum/secrets: {{ toYaml (dict "env" $s.secretEnv "obs" .Values.observability) | sha256sum | trunc 16 }}
         {{- with $s.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
     spec:
       serviceAccountName: {{ $full }}-server
@@ -94,18 +94,6 @@ spec:
             - name: OSTROM_SECRETS_KEY
               valueFrom:
                 secretKeyRef: { name: {{ include "ostrom.secretsKey.secretName" . }}, key: secrets-key }
-            {{- if .Values.polis.enabled }}
-            - name: OSTROM_SAML_POLIS_API_KEY
-              valueFrom:
-                secretKeyRef: { name: {{ include "ostrom.polis.secretName" . }}, key: api-key }
-            {{- end }}
-            {{- with .Values.byok.extraction }}
-            {{- if .existingSecret }}
-            - name: OSTROM_EXTRACTION_API_KEY
-              valueFrom:
-                secretKeyRef: { name: {{ .existingSecret }}, key: {{ .existingSecretKey }} }
-            {{- end }}
-            {{- end }}
             {{- with .Values.observability.otel }}
             {{- if and .enabled .existingSecret }}
             - name: OTEL_EXPORTER_OTLP_HEADERS

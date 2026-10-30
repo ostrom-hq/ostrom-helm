@@ -20,6 +20,7 @@ done
 
 get api.localhost /health | grep -q '"status":"ok"' || fail "server through Caddy"
 get app.localhost / >/dev/null || fail "console through Caddy"
+get app.localhost /api/v1/health | grep -q '"status":"ok"' || fail "API on the console's origin through Caddy"
 get sso.localhost /api/health | grep -qi 'version\|healthy\|ok' || fail "Ory Polis through Caddy"
 
 before=$(sha256sum .env 2>/dev/null || shasum -a 256 .env)

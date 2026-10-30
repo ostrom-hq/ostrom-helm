@@ -31,6 +31,16 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
 `/ready`; set `server.trustedProxies` to your ingress pods' and nodes' CIDRs. An external database: play the SQL of
 [values.md](values.md#database-roles) as its administrator first.
 
+### 0.3.0 → 0.3.1
+
+- Kubernetes 1.29 or later (`kubeVersion`): cloud-session pods use native sidecars.
+- The server's ConfigMap keeps only what the server reads: `OSTROM_API_URL`, `OSTROM_APP_URL`, `OSTROM_SITE_URL`,
+  `OSTROM_EXTRACTION_*`, `OSTROM_SAML_POLIS_*` and `OSTROM_CLOUD_MAX_CONCURRENT` are gone, with `byok.*` and
+  `cloudSessions.runner.maxConcurrent` (remove them from your values; they are ignored).
+- `cloudSessions.allowedOrgs` (S2-10): with sessions on, list the organizations they are open to; empty refuses all.
+- The console's host serves `/api/v1` from the server (one origin for the browser), and `/api/v1/artifacts` takes
+  32m on both hosts. A pre-upgrade Job adds the `ostrom_router` role.
+
 ## 0.1.x → 0.2.x
 
 0.2.0 replaces the single PostgreSQL user (a superuser named after `postgresql.username`) by four roles, created by
@@ -51,6 +61,7 @@ An install without data only needs step 2. With an external database, create the
 
 ```sh
 cd compose
-sed -i.bak 's/^OSTROM_VERSION=.*/OSTROM_VERSION=<new>/' .env
+# by digest: OSTROM_SERVER_IMAGE and OSTROM_WEB_IMAGE (docker-compose.yml pins a signed build of main by default)
+sed -i.bak 's|^OSTROM_SERVER_IMAGE=.*|OSTROM_SERVER_IMAGE=ghcr.io/ostrom-hq/ostrom-server@sha256:<new>|' .env
 docker compose pull && docker compose up -d --wait
 ```

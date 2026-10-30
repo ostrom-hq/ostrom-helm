@@ -176,6 +176,8 @@ Roles that must hold on every install and every upgrade (SECURITY-AUDIT S2-43), 
 psql variables owner, app and db. The owner gets CREATEROLE (the migrations create `ostrom_tenant`; since PostgreSQL 16
 it only administers the roles it creates, never a superuser nor a BYPASSRLS role); `ostrom_tenant` is created ahead and
 granted to the serving role, which gets neither CREATEROLE nor membership of the owner (the server refuses to start).
+`ostrom_router` owns the cross-organization functions (SECURITY DEFINER, ostrom-server docs/tenancy.md, S2-51): no
+table, administered by the owner who hands it the functions, never granted to the serving role.
 Also the end of 10-roles.sh, and the pre-upgrade Job for a database created by an older chart.
 */}}
 {{- define "ostrom.postgresql.tenantSql" -}}
@@ -184,6 +186,9 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_tenant') \gexec
 ALTER ROLE :"owner" CREATEROLE;
 GRANT ostrom_tenant TO :"owner" WITH ADMIN OPTION;
 GRANT ostrom_tenant TO :"app";
+SELECT 'CREATE ROLE ostrom_router NOLOGIN NOSUPERUSER NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_router') \gexec
+GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
 {{- end -}}
