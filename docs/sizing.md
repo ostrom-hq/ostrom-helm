@@ -1,7 +1,8 @@
 # Sizing
 
-Measured budgets the server is tested against in CI: API p95 < 50 ms at nominal load, start < 200 ms. The server is
-a native binary (no JVM): it idles around 20-40 MB of RAM.
+Targets of the server (a native binary, no JVM): API p95 under 50 ms at nominal load, start under 200 ms, a few tens
+of MB of RAM at rest. They are goals, not yet measured on a release: size from the table, then adjust on your own
+metrics.
 
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|

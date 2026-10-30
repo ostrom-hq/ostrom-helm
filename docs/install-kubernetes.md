@@ -35,7 +35,7 @@ Pick one:
 
 ```yaml
 global:
-  imageTag: "0.1.0"
+  imageTag: "<ostrom version>"   # or pin each image: server.image.digest: sha256:…
   imagePullSecrets: [ghcr]
   urls: { api: https://api.example.com, app: https://app.example.com, site: https://example.com }
 ingress:
@@ -60,17 +60,17 @@ kubectl -n ostrom create secret generic ostrom-server --from-env-file=server.env
 ## 5. Install
 
 ```sh
-helm install ostrom oci://ghcr.io/ostrom-hq/charts/ostrom --version 0.1.0 -n ostrom -f values-mine.yaml
+helm install ostrom oci://ghcr.io/ostrom-hq/charts/ostrom --version <chart version> -n ostrom -f values-mine.yaml
 # or from a clone: helm install ostrom ./charts/ostrom -n ostrom -f values-mine.yaml
 helm test ostrom -n ostrom
 ```
 
 The chart generates once, and keeps across upgrades and uninstalls (`helm.sh/resource-policy: keep`): the
-PostgreSQL password, the **instance signing key** (Secret `ostrom-signing-key`, signs every receipt — back it up),
-the **secrets key** (Secret `ostrom-secrets-key`, seals the org secrets, the same for every replica — back it up),
-and the Ory Polis keys. A chart rendered without cluster access (`helm template`, Argo CD, Flux) cannot find the kept
-Secrets: create the signing key and the secrets key yourself and set `server.signingKey.existingSecret` and
-`server.secretsKey.existingSecret`.
+passwords of the four database roles (Secret `<release>-postgresql`), the **instance signing key** (Secret
+`ostrom-signing-key`, signs every receipt — back it up), the **secrets key** (Secret `ostrom-secrets-key`, seals the
+org secrets, the same for every replica — back it up), and the Ory Polis keys. A chart rendered without cluster
+access (`helm template`, Argo CD, Flux) cannot find the kept Secrets: create the signing key and the secrets key
+yourself and set `server.signingKey.existingSecret` and `server.secretsKey.existingSecret`.
 
 ## 6. DNS
 
@@ -88,9 +88,15 @@ externalDatabase:
   polisExistingSecret: ostrom-polis-db  # key `url`: postgres://user:pass@db.example.com:5432/polis
 ```
 
-Add the database's address to nothing: the server's egress allows the internet, minus the private ranges in
-`networkPolicy.egress.deniedCidrs`. If your database is on a private range, remove that range from the list or set
-`networkPolicy.enabled: false`.
+The server's egress allows the internet minus the private ranges in `networkPolicy.egress.deniedCidrs`. If your
+database is on a private range, remove that range from the list or set `networkPolicy.enabled: false`. If it runs
+as pods of another namespace of the same cluster, `networkPolicy.ciliumEgressDeny` (Cilium, off by default) denies
+it too: keep that off, or move the database out of the cluster.
+
+Create the two roles yourself before installing: the owner (`CREATE DATABASE … OWNER ostrom`) and the serving role
+(`NOSUPERUSER NOBYPASSRLS`, `CONNECT` on the database, `USAGE` on the schema, and `ALTER DEFAULT PRIVILEGES FOR
+ROLE ostrom … GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES` and `USAGE, SELECT ON SEQUENCES`). The script the
+chart runs on its own PostgreSQL, `10-roles.sh` in `templates/postgresql.yaml`, is the reference.
 
 ## Cloud sessions
 
