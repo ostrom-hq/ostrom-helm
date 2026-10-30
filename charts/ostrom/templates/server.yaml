@@ -149,18 +149,7 @@ spec:
       {{- with $s.tolerations }}
       tolerations: {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if $s.affinity }}
-      affinity: {{- toYaml $s.affinity | nindent 8 }}
-      {{- else }}
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                topologyKey: kubernetes.io/hostname
-                labelSelector:
-                  matchLabels: {{- include "ostrom.selectorLabels" (dict "root" . "component" "server") | nindent 20 }}
-      {{- end }}
+      affinity: {{- include "ostrom.affinity" (dict "root" . "component" "server" "affinity" $s.affinity) | nindent 8 }}
       {{- with $s.topologySpreadConstraints }}
       topologySpreadConstraints: {{- toYaml . | nindent 8 }}
       {{- end }}

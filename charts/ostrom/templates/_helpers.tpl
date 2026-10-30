@@ -192,3 +192,21 @@ GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
 {{- end -}}
+
+{{/*
+Affinity of a stateless component: the user's, or by default a preference for one pod per node, so that one node going
+down does not take every replica with it. Usage: include "ostrom.affinity" (dict "root" $ "component" "web" "affinity" $w.affinity)
+*/}}
+{{- define "ostrom.affinity" -}}
+{{- if .affinity -}}
+{{ toYaml .affinity }}
+{{- else -}}
+podAntiAffinity:
+  preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        topologyKey: kubernetes.io/hostname
+        labelSelector:
+          matchLabels: {{- include "ostrom.selectorLabels" (dict "root" .root "component" .component) | nindent 12 }}
+{{- end -}}
+{{- end -}}
