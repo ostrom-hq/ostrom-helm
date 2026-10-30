@@ -334,6 +334,17 @@ networkPolicy:
   # it holds whatever NetworkPolicy the server writes for its sessions.
   ciliumEgressDeny:
     enabled: false
+    # Also deny every pod of another namespace (cluster DNS excepted) and, with `denyNodes`, the nodes: needed on a
+    # shared cluster, where a Service or LoadBalancer address of another tenant is reached as its backend pods.
+    otherNamespaces:
+      enabled: true
+      dns:
+        namespace: kube-system
+        labelKey: k8s-app
+        labelValues: [kube-dns, coredns]
+      # The Kubernetes API of a managed cluster is outside the nodes; with a self-hosted control plane, cloud
+      # sessions need it: set false.
+      denyNodes: true
 
 serviceAccount:
   annotations: {}

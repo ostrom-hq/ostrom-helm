@@ -201,8 +201,10 @@ spec:
 {{- end }}
 {{- if $np.ciliumEgressDeny.enabled }}
 ---
-# Every pod of the namespace, session pods included: never the extra denied CIDRs nor the metadata service.
-# A Cilium deny rule wins over every allow rule, whoever wrote it.
+# Every pod of the namespace, session pods included: never the extra denied CIDRs nor the metadata service, and,
+# with `otherNamespaces`, no pod of another namespace (but cluster DNS) and no node. Cilium resolves a Service or
+# LoadBalancer address of the cluster to its backend pods before policy, so a CIDR alone does not stop traffic to an
+# in-cluster load balancer: the endpoint rules do. A Cilium deny rule wins over every allow rule, whoever wrote it.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -219,6 +221,26 @@ spec:
         {{- range $np.egress.extraDeniedCidrs }}
         - cidr: {{ . }}
         {{- end }}
+    {{- with $np.ciliumEgressDeny.otherNamespaces }}
+    {{- if .enabled }}
+    - toEndpoints:
+        # `Exists` first: NotIn alone also matches identities without a namespace, the internet included.
+        - matchExpressions:
+            - key: k8s:io.kubernetes.pod.namespace
+              operator: Exists
+            - key: k8s:io.kubernetes.pod.namespace
+              operator: NotIn
+              values: [{{ $.Release.Namespace | quote }}, {{ .dns.namespace | quote }}]
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: {{ .dns.namespace | quote }} }
+          matchExpressions:
+            - key: {{ printf "k8s:%s" .dns.labelKey | quote }}
+              operator: NotIn
+              values: {{ toJson .dns.labelValues }}
+    {{- if .denyNodes }}
+    - toEntities: [host, remote-node]
+    {{- end }}
+    {{- end }}
+    {{- end }}
 {{- end }}
 {{- if .Values.tests.enabled }}
 ---
