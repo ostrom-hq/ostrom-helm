@@ -37,7 +37,8 @@ services:
   # Migrations, once per `up`, with the owner's credentials: the server never receives them.
   migrate:
     image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server@sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03}
-    command: ["/usr/local/bin/ostrom-server", "migrate"]
+    # The image's entrypoint is the server binary: only its subcommand here.
+    command: ["migrate"]
     restart: "no"
     depends_on:
       postgres: { condition: service_healthy }

@@ -19,7 +19,11 @@ case "${1:-up}" in
     echo "Console http://app.localhost · API http://api.localhost · mails http://mail.localhost · GitHub (fake) http://github.localtest.me"
     ;;
   journey) node demo/journey.mjs ;;
-  logs) dc logs --no-color --tail "${2:-200}" ;;
+  # Every service but the Stripe CLI's, whose log holds its webhook signing secret.
+  logs)
+    # shellcheck disable=SC2046 # one service name per word
+    dc logs --no-color --tail "${2:-200}" $(dc config --services | grep -v '^stripe-')
+    ;;
   down)
     dc down --volumes --remove-orphans
     # The cloud sessions' containers and volumes, which the server created through the engine (label managed-by).
