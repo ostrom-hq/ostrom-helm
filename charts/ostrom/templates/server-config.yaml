@@ -28,10 +28,14 @@ data:
   {{- with .Values.observability.otel }}
   {{- if .enabled }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ required "observability.otel.endpoint is required when otel is enabled" .endpoint | quote }}
-  OTEL_EXPORTER_OTLP_PROTOCOL: http/json
+  # The only protocol the server writes (ostrom-core telemetry); any other value stops its start.
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
   OTEL_SERVICE_NAME: {{ printf "%s-server" .serviceNamePrefix | quote }}
   {{- if .resourceAttributes }}
   OTEL_RESOURCE_ATTRIBUTES: {{ .resourceAttributes | quote }}
+  {{- end }}
+  {{- if .tracesSampleRatio }}
+  OTEL_TRACES_SAMPLER_ARG: {{ .tracesSampleRatio | quote }}
   {{- end }}
   {{- end }}
   {{- end }}
