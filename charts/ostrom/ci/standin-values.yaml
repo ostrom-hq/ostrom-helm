@@ -7,6 +7,9 @@ podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532
   seccompProfile: { type: RuntimeDefault }
+# The stand-in has no `migrate` subcommand; the roles it would migrate with are checked by tests/test-database.yaml.
+migrations:
+  initContainer: false
 server:
   replicas: 1
   image: { repository: docker.io/hashicorp/http-echo, tag: "1.0" }

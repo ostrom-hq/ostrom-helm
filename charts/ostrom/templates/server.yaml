@@ -1,6 +1,9 @@
 {{- if .Values.server.enabled }}
 {{- $full := include "ostrom.fullname" . -}}
 {{- $s := .Values.server -}}
+{{- if and .Values.cloudSessions.enabled (or (gt (int $s.replicas) 1) $s.autoscaling.enabled) }}
+{{- fail "cloudSessions.enabled needs exactly one server replica (server.replicas: 1, no autoscaling): the terminal relay lives in memory" }}
+{{- end }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -52,12 +55,15 @@ spec:
           image: {{ include "ostrom.image" (dict "root" . "image" $s.image "name" "ostrom-server") }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           command: {{- toYaml .Values.migrations.command | nindent 12 }}
-          envFrom:
-            - configMapRef: { name: {{ $full }}-server }
+          # The owner's credentials live in this step only: the serving container never receives them (CONVENTIONS 16.1).
           env:
-            - name: OSTROM_DATABASE_PASSWORD
+            - { name: OSTROM_LOG_LEVEL, value: {{ $s.logLevel | quote }} }
+            - { name: OSTROM_DATABASE_MIGRATION_USER, value: {{ include "ostrom.database.ownerUser" . | quote }} }
+            - name: OSTROM_DATABASE_MIGRATION_PASSWORD
               valueFrom:
-                secretKeyRef: {{- include "ostrom.database.passwordRef" . | nindent 18 }}
+                secretKeyRef: {{- include "ostrom.database.ownerPasswordRef" . | nindent 18 }}
+            - name: OSTROM_DATABASE_MIGRATION_URL
+              value: {{ regexReplaceAll "^([a-z]+)://" (include "ostrom.database.url" .) "${1}://$(OSTROM_DATABASE_MIGRATION_USER):$(OSTROM_DATABASE_MIGRATION_PASSWORD)@" | quote }}
           {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
           resources: {{- toYaml $s.resources | nindent 12 }}
       {{- end }}
