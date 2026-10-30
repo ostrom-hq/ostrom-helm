@@ -94,6 +94,18 @@ Job against an external database) and give both: `externalDatabase.username`
 (serving) and `externalDatabase.migrationUsername` (owner), passwords in `externalDatabase.existingSecret` under
 `password` and `migration-password`.
 
+## Availability
+
+- **Spread over nodes.** By default, server, web and site prefer one pod per node (`podAntiAffinity` on
+  `kubernetes.io/hostname`, preferred, so a one-node cluster still schedules them). An `affinity` in the values replaces this
+  default; add `topologySpreadConstraints` to spread over zones too.
+- **PodDisruptionBudget**, `minAvailable: 1`. It is rendered only when the fewest replicas that can run (`replicas`, or
+  `autoscaling.minReplicas` with the HPA) are two or more: with one, the budget would block every node drain. The
+  chart refuses a `minAvailable` equal to or above that number, for the same reason.
+- **HPA**, `autoscaling.enabled` (needs metrics-server). The Deployment then has no `replicas`, so an upgrade never resets
+  the HPA's count. The server's `autoscaling.behavior` scales up at once and down by one pod a minute, after 5 minutes
+  of low load; any [HPA `behavior`](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior)
+  goes there, for web and site too. Cloud sessions need exactly one server replica and no HPA (the chart refuses otherwise).
 ## Dashboards and alerts
 
 The server sends its metrics, traces and logs over OTLP (`observability.otel`). Point it at your OpenTelemetry
