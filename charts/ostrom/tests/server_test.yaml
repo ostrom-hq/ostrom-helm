@@ -55,3 +55,10 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content: { name: signing-key, mountPath: /var/run/ostrom/signing, readOnly: true }
+  - it: the server user can read the signing key (fsGroup, group-readable mode)
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: spec.template.spec.securityContext.fsGroup, value: 65532 }
+      - equal: { path: spec.template.spec.securityContext.runAsNonRoot, value: true }
+      - equal: { path: 'spec.template.spec.volumes[0].secret.defaultMode', value: 0440 }

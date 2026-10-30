@@ -29,6 +29,7 @@ server:
   args: []
   replicas: 2
   port: 8080
+  runAsUser: 65532            # distroless nonroot, the user of the server image
   logLevel: info
   database:
     maxConnections: 10

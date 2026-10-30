@@ -41,7 +41,9 @@ spec:
     spec:
       serviceAccountName: {{ $full }}-server
       {{- include "ostrom.imagePullSecrets" . | nindent 6 }}
-      {{- include "ostrom.podSecurityContext" . | nindent 6 }}
+      # The image's user (distroless nonroot); fsGroup lets it read the mounted signing key.
+      securityContext:
+        {{- toYaml (mergeOverwrite (deepCopy .Values.podSecurityContext) (dict "runAsUser" $s.runAsUser "runAsGroup" $s.runAsUser "fsGroup" $s.runAsUser)) | nindent 8 }}
       enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       {{- if .Values.migrations.initContainer }}
@@ -132,13 +134,17 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/ostrom
       volumes:
         - name: signing-key
           secret:
             secretName: {{ include "ostrom.signingKey.secretName" . }}
-            defaultMode: 0400
+            defaultMode: 0440
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
+        - name: data
+          emptyDir: { sizeLimit: 64Mi }
       {{- with $s.nodeSelector }}
       nodeSelector: {{- toYaml . | nindent 8 }}
       {{- end }}
