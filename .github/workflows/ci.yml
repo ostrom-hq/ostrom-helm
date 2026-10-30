@@ -119,6 +119,9 @@ jobs:
       # docs/backup-restore.md, end to end: backup by the CronJob, copy off the cluster, restore into a fresh namespace.
       - name: PostgreSQL backup and restore drill (docs/backup-restore.md)
         run: ci/backup-restore-drill.sh
+      # docs/secret-rotation.md, end to end: PostgreSQL passwords and the signing key rotated, then helm test.
+      - name: Secret rotation drill (docs/secret-rotation.md)
+        run: ci/secret-rotation-drill.sh
       - name: Cluster state on failure
         if: failure()
         run: |
