@@ -15,3 +15,8 @@ Check it:   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
 The instance signing key is in Secret {{ include "ostrom.signingKey.secretName" . }} (kept on uninstall).
 Back it up: every receipt this instance signs is verified with it.
 {{- end }}
+{{- if and .Values.server.enabled (not (include "ostrom.secretsKey.existingSecret" .)) }}
+
+The secrets key is in Secret {{ include "ostrom.secretsKey.secretName" . }} (kept on uninstall).
+Back it up with the database: it seals every org secret, which is unreadable without it.
+{{- end }}
