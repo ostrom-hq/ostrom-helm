@@ -501,7 +501,7 @@ const MACHINE_SERVER_URL = env('OSTROM_DEMO_MACHINE_SERVER_URL', 'http://server:
  * M1-M4 (6.2): a machine of the organization registered by the owner (`POST /runners`, its key shown once), running
  * the runner image as `ostrom-runner machine` on the sessions' network. It shows `online` in `GET /runners` from its
  * heartbeats; stopped, `offline` once 90 s passed since its last one; started again then removed, its next heartbeat
- * is refused (401) and the process ends with code 3. The key goes to the container through the environment, never on
+ * is refused (401), and after three refusals in a row the process ends with code 3. The key goes to the container through the environment, never on
  * a command line nor in the report.
  */
 async function machineRunner(owner, image) {
@@ -555,11 +555,12 @@ async function machineRunner(owner, image) {
     docker('start', container);
     const back = await until('online', 30);
     const removed = await owner.call('DELETE', `/api/v1/runners/${id}`);
-    const exitCode = await exited(MACHINE_INTERVAL_S + 15);
+    // The runner stops after three refused keys in a row (one 401 may come from a proxy): three intervals at most.
+    const exitCode = await exited(3 * MACHINE_INTERVAL_S + 15);
     const refusedLog = docker('logs', container).includes('key refused');
     const direct = await fetch(`${API}/api/v1/runners/${id}/heartbeat`, { method: 'POST', headers: { authorization: `Bearer ${key}` } });
     const gone = !(await listed());
-    record('M4', 'Supprimé, son heartbeat suivant reçoit 401', back >= 0 && removed.status === 204 && exitCode === 3 && refusedLog && direct.status === 401 && gone ? GREEN : RED, `redémarré, online après ${back} s ; DELETE → ${removed.status} ; le runner reçoit 401 et s’arrête (code ${exitCode}, « key refused » ${refusedLog ? 'dans' : 'absent de'} ses journaux) ; heartbeat avec la même clé → ${direct.status} ; ${gone ? 'absent' : 'encore'} de GET /runners`);
+    record('M4', 'Supprimé, son heartbeat suivant reçoit 401', back >= 0 && removed.status === 204 && exitCode === 3 && refusedLog && direct.status === 401 && gone ? GREEN : RED, `redémarré, online après ${back} s ; DELETE → ${removed.status} ; le runner reçoit 401 et s’arrête après trois refus (code ${exitCode}, « key refused » ${refusedLog ? 'dans' : 'absent de'} ses journaux) ; heartbeat avec la même clé → ${direct.status} ; ${gone ? 'absent' : 'encore'} de GET /runners`);
   } catch (e) {
     record('M4', 'Runner sur une machine', RED, `${e.stderr ?? ''}`.trim() || e.message);
   } finally {
