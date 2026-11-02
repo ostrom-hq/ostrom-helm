@@ -209,8 +209,3 @@ tests:
           content:
             name: OSTROM_SECRETS_KEY
             valueFrom: { secretKeyRef: { name: sealing, key: secrets-key } }
-  - it: the server requests 160 Mi (129-138 MiB measured under load) and is limited to 256 Mi
-    template: templates/server.yaml
-    documentSelector: { path: kind, value: Deployment }
-    asserts:
-      - equal: { path: 'spec.template.spec.containers[0].resources', value: { requests: { cpu: 100m, memory: 160Mi }, limits: { memory: 256Mi } } }

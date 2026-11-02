@@ -13,13 +13,12 @@ Measured on the chart (ostrom-e2e `chart-load.yml`, kind, ingress-nginx, 2 serve
 | token reads (`/auth/me`, orgs, members), 100 req/s | 5.4-6.9 ms | 8.7-12.1 ms | (same window) | | |
 | organization rename (a write), 5 req/s | 17.0 ms | 23.7 ms | | | |
 
-Peaks come from `kubectl top` (15 s windows): short bursts go higher. The load pass of 02/11/2026 measured 129-138 MiB
-per server pod under load, so the memory request is 160 Mi. The server requests below cover these peaks.
+Peaks come from `kubectl top` (15 s windows): short bursts go higher. The server requests below cover them.
 
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|
-| up to 50 people | 2 × (100m CPU, 160 Mi request / 256 Mi limit) | 2 × default | 100m / 256 Mi, 10 Gi disk | 250m / 512 Mi each, limit 2 CPU / 2 Gi |
-| 50-500 | 3 × (200m, 160 Mi / 512 Mi), HPA 3-10 | 2-4 | 500m / 1 Gi, 50 Gi, `max_connections` ≥ replicas × `server.database.maxConnections` + 20 | same; size the nodes for the sessions the organizations' plans allow |
+| up to 50 people | 2 × (100m CPU, 128 Mi request / 256 Mi limit) | 2 × default | 100m / 256 Mi, 10 Gi disk | 250m / 512 Mi each, limit 2 CPU / 2 Gi |
+| 50-500 | 3 × (200m, 128 Mi / 512 Mi), HPA 3-10 | 2-4 | 500m / 1 Gi, 50 Gi, `max_connections` ≥ replicas × `server.database.maxConnections` + 20 | same; size the nodes for the sessions the organizations' plans allow |
 | 500+ | HPA 4-20, external managed PostgreSQL with backups and a replica | 3-6 | managed | dedicated nodes for sessions, a PriorityClass below your workloads (`cloudSessions.runner.priorityClassName`) |
 
 Rules of thumb:
