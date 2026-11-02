@@ -1,0 +1,87 @@
+suite: values schema — hardening cannot be turned off by a value (AUDIT-SECU-HELM-2 M5)
+templates:
+  - templates/server.yaml
+  - templates/server-config.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: the defaults pass the schema
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - isKind: { of: Deployment }
+  - it: refuses an unknown top-level key (a typo would keep the default silently)
+    set: { networkPolicyy: { enabled: false } }
+    asserts:
+      - failedTemplate: { errorPattern: "networkPolicyy" }
+        template: templates/server.yaml
+  - it: refuses privilege escalation
+    set: { containerSecurityContext.allowPrivilegeEscalation: true }
+    asserts:
+      - failedTemplate: { errorPattern: "allowPrivilegeEscalation" }
+        template: templates/server.yaml
+  - it: refuses a writable root filesystem
+    set: { containerSecurityContext.readOnlyRootFilesystem: false }
+    asserts:
+      - failedTemplate: { errorPattern: "readOnlyRootFilesystem" }
+        template: templates/server.yaml
+  - it: refuses a privileged container
+    set: { containerSecurityContext.privileged: true }
+    asserts:
+      - failedTemplate: { errorPattern: "privileged" }
+        template: templates/server.yaml
+  - it: refuses an added capability
+    set: { containerSecurityContext.capabilities.add: [NET_ADMIN] }
+    asserts:
+      - failedTemplate: { errorPattern: "capabilities/add" }
+        template: templates/server.yaml
+  - it: refuses capabilities that do not drop ALL
+    set: { containerSecurityContext.capabilities.drop: [NET_RAW] }
+    asserts:
+      - failedTemplate: { errorPattern: "capabilities/drop" }
+        template: templates/server.yaml
+  - it: refuses a pod that may run as root
+    set: { podSecurityContext.runAsNonRoot: false }
+    asserts:
+      - failedTemplate: { errorPattern: "runAsNonRoot" }
+        template: templates/server.yaml
+  - it: refuses an empty pod security context
+    set: { podSecurityContext: null }
+    asserts:
+      - failedTemplate: { errorPattern: "podSecurityContext" }
+        template: templates/server.yaml
+  - it: refuses an unconfined seccomp profile
+    set: { podSecurityContext.seccompProfile.type: Unconfined }
+    asserts:
+      - failedTemplate: { errorPattern: "seccompProfile/type" }
+        template: templates/server.yaml
+  - it: refuses the server as root
+    set: { server.runAsUser: 0 }
+    asserts:
+      - failedTemplate: { errorPattern: "runAsUser" }
+        template: templates/server.yaml
+  - it: refuses a malformed digest of an Ostrom image
+    set: { server.image.digest: "sha256:abc" }
+    asserts:
+      - failedTemplate: { errorPattern: "digest" }
+        template: templates/server.yaml
+  - it: refuses an unknown pull policy
+    set: { global.imagePullPolicy: Sometimes }
+    asserts:
+      - failedTemplate: { errorPattern: "imagePullPolicy" }
+        template: templates/server.yaml
+  - it: refuses a query string in the external database URL (the server refuses it at start)
+    set: { externalDatabase.url: "postgresql://db:5432/o?sslmode=require" }
+    asserts:
+      - failedTemplate: { errorPattern: "externalDatabase/url" }
+        template: templates/server.yaml
+  - it: the server pod says on its spec that it mounts no Kubernetes token
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: spec.template.spec.automountServiceAccountToken, value: false }
+  - it: the server pod mounts the token only for cloud sessions
+    set: { cloudSessions.enabled: true, server.replicas: 1 }
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: spec.template.spec.automountServiceAccountToken, value: true }

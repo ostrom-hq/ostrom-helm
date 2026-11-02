@@ -15,6 +15,23 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 | `ingress` | class, hosts, TLS secret or cert-manager issuer, API annotations (streaming, body size) |
 | `networkPolicy` | ingress controller location, DNS, denied egress CIDRs, Kubernetes API access |
 
+## Guardrails
+
+`charts/ostrom/values.schema.json` refuses, before anything renders:
+
+- an unknown top-level key (`networkPolicyy`: a typo would keep the default without a word);
+- a security context below the Pod Security Standard `restricted` plus a read-only root: `podSecurityContext` keeps
+  `runAsNonRoot: true` and a `RuntimeDefault` (or `Localhost`) seccomp profile; `containerSecurityContext` keeps
+  `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `drop: [ALL]`, no added capability, never
+  `privileged`; `server.runAsUser` is never 0;
+- a malformed image digest, an unknown `global.imagePullPolicy`, an external database URL with a query string (the
+  server refuses it at start).
+
+The CI then checks every pod of four renders (default, the CI stand-in, an external database with Polis and autoscaling, cloud sessions with Cilium and backups) with the Kyverno CLI (`ci/policy-check.sh`, `ci/policies/restricted.yaml`):
+`restricted`, a read-only root (Ory Polis excepted), requests and a memory limit, no `latest`, `edge` or missing tag,
+and no Kubernetes token but on the server with cloud sessions. One failure fails the run. Install in a namespace
+labelled `pod-security.kubernetes.io/enforce=restricted` all the same: the chart is tested there.
+
 ## Server environment
 
 The chart sets these for the server (ConfigMap `<release>-server`, Secret `<release>-server`):

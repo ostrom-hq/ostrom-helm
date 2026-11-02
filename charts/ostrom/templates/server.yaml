@@ -43,6 +43,8 @@ spec:
         {{- with $s.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
     spec:
       serviceAccountName: {{ $full }}-server
+      # Said on the pod too, not only on the ServiceAccount: a token only for cloud sessions (Kubernetes API).
+      automountServiceAccountToken: {{ .Values.cloudSessions.enabled }}
       {{- include "ostrom.imagePullSecrets" . | nindent 6 }}
       # The image's user (distroless nonroot); fsGroup lets it read the mounted signing key.
       securityContext:
