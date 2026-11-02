@@ -29,7 +29,8 @@ tests:
     template: templates/server-config.yaml
     documentSelector: { path: metadata.name, value: o-ostrom-db-proxy }
     asserts:
-      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: '\* = host=db\.corp\.example port=5433' }
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: '(?m)^ostrom = host=db\.corp\.example port=5433 dbname=ostrom$' }
+      - notMatchRegex: { path: 'data["pgbouncer.ini"]', pattern: '(?m)^\*' }
       - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'server_tls_sslmode = verify-full' }
       - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'server_tls_ca_file = /etc/ostrom/db-ca/ca\.crt' }
       - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'listen_addr = 127\.0\.0\.1' }
@@ -104,7 +105,7 @@ tests:
     template: templates/server.yaml
     set: { externalDatabase.url: "db.corp.example/ostrom" }
     asserts:
-      - failedTemplate: { errorPattern: 'externalDatabase.url must be postgresql://host\[:port\]/database' }
+      - failedTemplate: { errorPattern: 'externalDatabase.url must be postgresql://host\[:port\]/database with externalDatabase.tls \(no credentials, no query string\)$' }
   - it: tls.host overrides the host the proxy dials and checks
     template: templates/server-config.yaml
     set: { externalDatabase.tls.host: ostrom.cluster-x.eu-west-3.rds.amazonaws.com }
@@ -125,3 +126,41 @@ tests:
     set: { externalDatabase.tls.proxy.image.tag: "0.0" }
     asserts:
       - failedTemplate: { errorPattern: 'externalDatabase.tls.proxy.image: tag "0.0" with the chart.s digest' }
+  - it: a URL with credentials is refused without echoing the password
+    template: templates/server.yaml
+    set: { externalDatabase.url: "postgresql://ostrom_app:S3cretPw@db.corp.example/ostrom" }
+    asserts:
+      # The whole message, word for word: nothing of the URL in it.
+      - failedTemplate:
+          errorMessage: "externalDatabase.url holds a credential (a password in the URL, or a token in its query string): give the credentials in externalDatabase.username and password, or existingSecret"
+  - it: an IPv6 literal is refused with a clear message
+    template: templates/server.yaml
+    set: { externalDatabase.url: "postgresql://[2001:db8::5]:5432/ostrom" }
+    asserts:
+      - failedTemplate: { errorPattern: 'an IPv6 literal cannot go through the TLS proxy' }
+  - it: the default port is 5432
+    template: templates/server-config.yaml
+    set: { externalDatabase.url: "postgres://db.corp.example/ostrom" }
+    documentSelector: { path: metadata.name, value: o-ostrom-db-proxy }
+    asserts:
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: '(?m)^ostrom = host=db\.corp\.example port=5432 dbname=ostrom$' }
+  - it: mode require mounts no CA, checks nothing, and says so in the NOTES
+    template: templates/server.yaml
+    set: { externalDatabase.tls: { mode: require, ca: { secretName: "" } } }
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content: { name: db-ca }
+          any: true
+      - notContains:
+          path: spec.template.spec.initContainers[1].volumeMounts
+          content: { name: db-ca }
+          any: true
+  - it: mode require writes no CA file in the ini
+    template: templates/server-config.yaml
+    set: { externalDatabase.tls: { mode: require, ca: { secretName: "" } } }
+    documentSelector: { path: metadata.name, value: o-ostrom-db-proxy }
+    asserts:
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'server_tls_sslmode = require' }
+      - notMatchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'server_tls_ca_file' }

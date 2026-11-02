@@ -52,5 +52,5 @@ tag. `tests.image` is one full reference (`repository:tag@digest`), checked the 
 - `global.imagePullPolicy` applies to every image of the chart, these included (`Always` behind a mirror that you
   trust more than the node's cache).
 - Renovate moves the tags and the digests together, in `values.yaml` and `compose/docker-compose.yml` in one pull
-  request; the chart's table of its own pins (`ostrom.thirdPartyPins`, `_helpers.tpl`) moves with them, or the unit
-  tests fail.
+  request; the chart's table of its own pins (`ostrom.thirdPartyPins`, `_helpers.tpl`, a `# renovate:` comment per
+  line) moves with them, or the unit tests fail.

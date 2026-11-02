@@ -166,7 +166,8 @@ echo "-- C1. without externalDatabase.tls: refused"
 if helm install $REL charts/ostrom -n $NS "${real[@]}" "${external[@]}" --wait --timeout 3m; then
   fail "the server started in clear against a TLS-only PostgreSQL"
 fi
-kubectl -n $NS logs pod/pg-tls | grep -q 'no encryption' || fail "PostgreSQL did not log a refused plain connection"
+pg_log=$(kubectl -n $NS logs pod/pg-tls)
+grep -q 'no encryption' <<<"$pg_log" || fail "PostgreSQL did not log a refused plain connection"
 echo "plain connection refused by PostgreSQL, as expected"
 helm uninstall $REL -n $NS --wait
 echo "-- C2. with externalDatabase.tls (verify-full, the test CA): migrates and serves"

@@ -26,6 +26,10 @@ see "TLS to an external database" in docs/install-kubernetes.md).
 externalDatabase.tls.mode is require: the connection to PostgreSQL is encrypted but its certificate is not checked.
 Use verify-full with externalDatabase.tls.ca in production.
 {{- end }}
+{{- if and .Values.polis.enabled (not .Values.postgresql.enabled) (include "ostrom.dbProxy.enabled" .) }}
+
+Ory Polis does not go through the TLS proxy: its connection to externalDatabase.polisUrl uses its own driver.
+{{- end }}
 {{- if and .Values.server.enabled (not .Values.server.signingKey.existingSecret) }}
 
 The instance signing key is in Secret {{ include "ostrom.signingKey.secretName" . }} (kept on uninstall).

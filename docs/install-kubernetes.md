@@ -132,6 +132,8 @@ externalDatabase:
 - The proxy asks every client for its password (SCRAM) and logs in to the database with it. The owner's password is
   in the proxy's memory for `migrate` (an in-memory volume, never in the server container); with
   `migrations.initContainer: false`, the proxy only knows the serving role's.
+- The proxy serves the one database of `url`, nothing else on the server. `url` takes a host name (the one the
+  certificate names, or set `host`), not an IPv6 literal.
 - Session pooling, one server connection per client connection: the server's prepared statements and the migration
   lock need it. Pool size: `server.database.maxConnections` + 2.
 - A database that only accepts TLS (`hostssl`, RDS with `rds.force_ssl=1`, Cloud SQL, Azure) works this way; the CI
@@ -139,7 +141,7 @@ externalDatabase:
 - The proxy is the way out until the driver speaks TLS: `sqlx4k`'s Rust `sqlx` is built without a TLS backend. An
   upstream change (`tls-rustls-ring-webpki`) is planned; once the server takes `sslmode` and `sslrootcert`, the
   sidecar goes and `externalDatabase.tls` keeps its meaning.
-- Ory Polis (off by default) connects with its own driver, not through this proxy.
+- Ory Polis (off by default) connects with its own driver, not through this proxy (the NOTES remind it).
 
 Without `externalDatabase.tls`, everything between the server and PostgreSQL crosses the network in the clear (the
 password does not: SCRAM), and a database that forces TLS refuses the server. The chart's own PostgreSQL stays in the

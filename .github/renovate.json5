@@ -25,7 +25,7 @@
     {
       description: 'One pull request per third-party image for the chart and the Compose stack, so they never drift',
       matchDatasources: ['docker'],
-      matchPackageNames: ['docker.io/library/postgres', 'postgres', 'library/postgres', 'docker.io/boxyhq/jackson', 'boxyhq/jackson', 'ghcr.io/cloudnative-pg/pgbouncer'],
+      matchPackageNames: ['docker.io/library/postgres', 'postgres', 'library/postgres', 'docker.io/boxyhq/jackson', 'boxyhq/jackson', 'docker.io/curlimages/curl', 'ghcr.io/cloudnative-pg/pgbouncer'],
       groupName: 'third-party images (chart and Compose)',
     },
     {
@@ -50,6 +50,15 @@
       matchStrings: [
         'repository: (?<depName>(docker|ghcr)\\.io/[^\\s]+)\\s+tag: "(?<currentValue>[^"]+)"\\s+digest: "(?<currentDigest>sha256:[a-f0-9]{64})"',
         'image: (?<depName>docker\\.io/[^:\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})',
+      ],
+      datasourceTemplate: 'docker',
+    },
+    {
+      // The chart's table of its own pins (_helpers.tpl), moved in the same pull request as values.yaml.
+      customType: 'regex',
+      managerFilePatterns: ['/^charts/ostrom/templates/_helpers\\.tpl$/'],
+      matchStrings: [
+        '"(?<currentDigest>sha256:[a-f0-9]{64})": "(?<currentValue>[^"]+)" # renovate: (?<depName>[^\\s]+)',
       ],
       datasourceTemplate: 'docker',
     },

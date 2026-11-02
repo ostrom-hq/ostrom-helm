@@ -48,13 +48,13 @@ app.kubernetes.io/component: {{ .component }}
 {{/*
 The digests values.yaml pins, and the tag each one is: a tag changed without its digest would otherwise run the pinned
 version without a word (a PostgreSQL 16 data directory started by 17). Moving a digest in values.yaml (Renovate)
-means moving it here too: tests/images_test.yaml fails otherwise.
+means moving it here too (Renovate does, by the comment that ends each line): the unit tests fail otherwise.
 */}}
 {{- define "ostrom.thirdPartyPins" -}}
-"sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929": "17.6"
-"sha256:9165f3db9d9f5d3262f23446e860f4929f462d1d9c954af13f3bb44910c3a699": "26.2.0"
-"sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69": "8.11.1"
-"sha256:c96417dce3f7ee82a1cb6df65309ebb7efec0a449363c333c043e2fe0c636097": "1.26.1-202610291052-trixie"
+"sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929": "17.6" # renovate: docker.io/library/postgres
+"sha256:9165f3db9d9f5d3262f23446e860f4929f462d1d9c954af13f3bb44910c3a699": "26.2.0" # renovate: docker.io/boxyhq/jackson
+"sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69": "8.11.1" # renovate: docker.io/curlimages/curl
+"sha256:c96417dce3f7ee82a1cb6df65309ebb7efec0a449363c333c043e2fe0c636097": "1.26.1-202610291052-trixie" # renovate: ghcr.io/cloudnative-pg/pgbouncer
 {{- end -}}
 
 {{/*
@@ -139,22 +139,17 @@ imagePullSecrets:
 {{/* host, port and db of externalDatabase.url (postgresql://host[:port]/db), as YAML. */}}
 {{- define "ostrom.externalDatabase.parts" -}}
 {{- $url := required "externalDatabase.url is required when postgresql.enabled is false" .Values.externalDatabase.url -}}
-{{- $m := regexFindAll "^postgres(ql)?://([^/:@?#]+|\\[[0-9a-fA-F:]+\\])(:([0-9]+))?/([^/?#]+)$" $url 1 -}}
-{{- if not $m -}}
-{{- fail (printf "externalDatabase.url must be postgresql://host[:port]/database with externalDatabase.tls (no credentials, no query string), got %s" $url) -}}
+{{- include "ostrom.refuseCredentialUrl" (dict "value" $url "where" "externalDatabase.url" "instead" "give the credentials in externalDatabase.username and password, or existingSecret") -}}
+{{- if contains "[" $url -}}
+{{- fail "externalDatabase.url: an IPv6 literal cannot go through the TLS proxy; use a host name (the one its certificate names)" -}}
 {{- end -}}
-{{- $rest := regexReplaceAll "^postgres(ql)?://" $url "" -}}
-{{- $hostport := first (splitList "/" $rest) -}}
-{{- $db := last (splitList "/" $rest) -}}
-{{- $host := $hostport -}}
-{{- $port := "5432" -}}
-{{- if regexMatch ":[0-9]+$" $hostport -}}
-{{- $port = regexFind "[0-9]+$" $hostport -}}
-{{- $host = regexReplaceAll ":[0-9]+$" $hostport "" -}}
+{{- $re := "^postgres(?:ql)?://([^/:@?#\\[\\]]+)(?::([0-9]+))?/([^/?#]+)$" -}}
+{{- if not (regexMatch $re $url) -}}
+{{- fail "externalDatabase.url must be postgresql://host[:port]/database with externalDatabase.tls (no credentials, no query string)" -}}
 {{- end }}
-host: {{ $host | quote }}
-port: {{ $port | quote }}
-db: {{ $db | quote }}
+host: {{ regexReplaceAll $re $url "${1}" | quote }}
+port: {{ regexReplaceAll $re $url "${2}" | default "5432" | quote }}
+db: {{ regexReplaceAll $re $url "${3}" | quote }}
 {{- end -}}
 
 {{/*
@@ -175,7 +170,10 @@ Session pooling: the server's prepared statements and the migration lock (a sess
 {{- end -}}
 {{- $pool := add (int .Values.server.database.maxConnections) 2 -}}
 [databases]
-* = host={{ $host }} port={{ $p.port }}
+{{- if not (regexMatch "^[A-Za-z0-9_.-]+$" $p.db) }}
+{{- fail "externalDatabase.url: the database name goes through the TLS proxy, letters, digits, _ . - only" }}
+{{- end }}
+{{ $p.db }} = host={{ $host }} port={{ $p.port }} dbname={{ $p.db }}
 
 [pgbouncer]
 listen_addr = 127.0.0.1

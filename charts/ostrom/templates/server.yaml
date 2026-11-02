@@ -96,10 +96,13 @@ spec:
           startupProbe:
             exec: { command: ["/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/{{ include "ostrom.dbProxy.port" . }}"] }
             periodSeconds: 1
+            timeoutSeconds: 3
             failureThreshold: 30
           livenessProbe:
             exec: { command: ["/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/{{ include "ostrom.dbProxy.port" . }}"] }
-            periodSeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
           resources: {{- toYaml $t.proxy.resources | nindent 12 }}
           volumeMounts:
