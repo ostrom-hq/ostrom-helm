@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The customer's journey on the local demo stack, from outside, through Caddy, as a browser and the CLI would call it:
 // sign-up by e-mailed link (read in Mailpit), sign-in with the fake GitHub, an organization, an invitation accepted,
-// the CLI's device login, a cloud session on this machine's Docker with its terminal, isolation between two
+// the CLI's device login, a cloud session on this machine's Docker with its terminal, the TeamCode import and its
+// cutover, the yes end to end (a push to main waiting, the second member's yes, its receipt), isolation between two
 // organizations, billing. Each step is green, red, or not possible yet (a route main does not serve, or a step it needs
 // failed), with what it saw. Writes a Markdown report (REPORT, default demo-report.md) and exits 1 on a red step.
 // Node 22 or later (fetch, WebSocket), no dependency. Usage: node demo/journey.mjs
 import { execFileSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
+import { dockerQuery, readTables, teamCodeImport } from './teamcode/export.mjs';
+import { demoKey, TEAM } from './teamcode/seed.mjs';
 
 const env = (k, d) => (process.env[k] ?? '').trim() || d;
 const API = env('OSTROM_DEMO_API_URL', 'http://api.localhost');
@@ -70,6 +73,25 @@ class Browser {
 }
 
 const brief = (r) => `${r.status} ${r.text.slice(0, 160).replace(/\s+/g, ' ')}`;
+
+/** A call with a personal token, as the CLI and the hooks make them (no cookie, no CSRF). */
+async function bearer(token, method, path, body, org) {
+  const headers = { authorization: `Bearer ${token}` };
+  if (org) headers['ostrom-org'] = org;
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  const r = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const text = await r.text();
+  let json;
+  try {
+    json = text ? JSON.parse(text) : undefined;
+  } catch {
+    json = undefined;
+  }
+  return { status: r.status, json: json ?? {}, text };
+}
+
+/** The receipt id an answer names (`receiptId`, `approval.receiptId`, `receipt.id`, `gate.receiptId`), or ''. */
+const receiptIn = (text) => /"receiptId"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? /"receipt"\s*:\s*\{[^{}]*"id"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? '';
 
 /** The newest mail to `to` in Mailpit whose text holds `marker`, polled for up to 20 s. */
 async function mailTo(to, marker) {
@@ -229,6 +251,76 @@ async function journey() {
       record('I1', 'Base TeamCode factice (MySQL)', RED, `${e.stdout ?? ''}${e.stderr ?? ''}`.trim() || e.message);
     }
   }
+
+  // (i) The TeamCode import, as `ostrom import teamcode` posts it: the plan, the import, then the owner's cutover, which
+  // renews the shared accounts' tokens at their provider (the fake's token endpoints) and revives those left waiting.
+  if (orgId && joined && teamcodeCheck) {
+    try {
+      const members = (await owner.call('GET', `/api/v1/orgs/${orgId}/members`)).json.items ?? [];
+      const idOf = (email) => members.find((m) => m.email === email)?.id;
+      const memberMap = Object.fromEntries([['m-alice', idOf(ownerEmail)], ['m-rev', idOf(reviewerEmail)]].filter(([, id]) => id));
+      const tables = readTables(dockerQuery(env('TEAMCODE_DB_CONTAINER', 'ostrom-teamcode-db-1')), TEAM);
+      const { body } = teamCodeImport(tables, demoKey(), TEAM, memberMap);
+      const count = (r, action) => (r.json.items ?? []).filter((i) => i.action === action).length;
+      const plan = await owner.call('POST', '/api/v1/import/teamcode?dryRun=true', body);
+      const done = plan.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode', body) : plan;
+      const again = done.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode?dryRun=true', body) : done;
+      const imported = done.status === 200 && done.json.created > 0 && again.json.created === 0;
+      record('I2', 'Import TeamCode (plan, import, second passage sans changement)', imported ? GREEN : RED,
+        imported
+          ? `${Object.keys(memberMap).length} membres associés ; plan ${plan.status} (${count(plan, 'planned')} lignes prévues), import : ${done.json.created} créées, ${done.json.skipped} sautées, ${done.json.reviveAtCutover} compte(s) en attente de la bascule ; second plan : ${again.json.created} à créer`
+          : `plan → ${brief(plan)} ; import → ${brief(done)} ; second plan → ${brief(again)}`);
+      const cutPlan = imported ? await owner.call('POST', '/api/v1/import/teamcode?dryRun=true&cutover=true', body) : { status: 0, text: 'I2 a échoué', json: {} };
+      const cut = cutPlan.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode?cutover=true', body) : cutPlan;
+      const accounts = (cut.json.items ?? []).filter((i) => i.kind === 'account');
+      const revived = accounts.filter((i) => ['created', 'updated'].includes(i.action)).length;
+      const cutOk = cut.status === 200 && cut.json.reviveAtCutover === 0 && revived > 0;
+      const cutState = cut.status === 503 || /not (enabled|configured)/i.test(cut.text ?? '') ? NOT_YET : cutOk ? GREEN : RED;
+      record('I3', 'Bascule de l’import par l’owner (cutover)', cutState,
+        cutOk
+          ? `plan ${cutPlan.status}, bascule ${cut.status} : ${revived} compte(s) partagé(s) ranimé(s), jetons renouvelés chez le fournisseur (faux), ${cut.json.reviveAtCutover} encore en attente`
+          : `plan → ${brief(cutPlan)} ; bascule → ${brief(cut)}${accounts.length ? ` ; comptes : ${accounts.map((a) => `${a.name} ${a.action}${a.reason ? ` (${a.reason})` : ''}`).join(', ')}` : ''}`);
+    } catch (e) {
+      record('I2', 'Import TeamCode', RED, e.message);
+    }
+  } else record('I2', 'Import TeamCode', NOT_YET, 'pas d’organisation, de second membre ou de base TeamCode');
+
+  // (y) The yes, end to end: a workflow whose push-main gate names the second member; the owner's token asks a push to
+  // main, which waits; the second member says yes from their browser with the digest they were shown; the receipt.
+  if (orgId && joined) {
+    const who = (await reviewer.call('GET', '/api/v1/auth/me', undefined, { org: '' })).json;
+    const login = who.login ?? who.dev?.login ?? '';
+    const repo = `acme/api-${run}`;
+    const flow = await owner.call('POST', '/api/v1/workflows', {
+      id: `demo-${run}`, name: 'Demo delivery', domain: 'delivery', status: 'accepted', foundAt: new Date().toISOString(),
+      nodes: [{ id: 'push-main', kind: 'gate', label: 'Push to main', approvers: [login], actions: [{ class: 'push-main', label: 'Push to the main branch', patterns: [], repos: [repo] }] }],
+      edges: [],
+    });
+    const pat = flow.status < 300 ? await owner.call('POST', '/api/v1/tokens', { name: `demo asker ${run}`, scopes: ['gates:ask', 'gates:read'], expiresInDays: 1 }) : flow;
+    const secret = pat.json.secret ?? '';
+    const sha = randomUUID().replaceAll('-', '').padEnd(40, '0').slice(0, 40);
+    const ask = { repo, class: 'push-main', tool: 'Bash', command: 'git push origin main', push: { remote: 'origin', refs: [{ ref: 'refs/heads/main', sha }] } };
+    const asked = secret ? await bearer(secret, 'POST', '/api/v1/gates', ask, orgId) : pat;
+    const gate = asked.json.gate ?? {};
+    const pending = gate.status === 'pending';
+    record('Y1', 'Porte en attente d’un oui (push sur main)', pending ? GREEN : RED,
+      `workflow ${flow.status}, jeton ${pat.status}, POST /gates → ${asked.status}, porte ${gate.status ?? '?'}${pending ? ` (${gate.id}), approbateur ${login}` : ` : ${brief(asked)}`}`);
+    let yes = { status: 0, text: '', json: {} };
+    if (pending) {
+      const list = await reviewer.call('GET', '/api/v1/approvals?mine=true&status=pending&limit=50');
+      const mine = (list.json.items ?? []).find((a) => a.group === gate.id || a.gate === gate.id);
+      yes = mine ? await reviewer.call('POST', `/api/v1/approvals/${encodeURIComponent(mine.id)}/answer`, { answer: 'approve', shownDigest: mine.shownDigest }) : { status: 0, text: `aucune demande pour ${login} : ${brief(list)}`, json: {} };
+      record('Y2', 'Le second membre dit oui depuis son navigateur', yes.status === 200 ? GREEN : RED, mine ? `demande ${mine.id}, oui → ${brief(yes)}` : yes.text);
+    } else record('Y2', 'Le second membre dit oui', NOT_YET, 'aucune porte en attente (Y1)');
+    if (yes.status === 200) {
+      const after = await bearer(secret, 'POST', '/api/v1/gates', ask, orgId);
+      const receipt = receiptIn(yes.text) || receiptIn(after.text);
+      const kept = receipt ? await owner.call('GET', `/api/v1/receipts/${encodeURIComponent(receipt)}`) : { status: 0, text: '' };
+      const ok = kept.status === 200 && kept.text.includes(login) && kept.text.includes(sha);
+      record('Y3', 'Le push passe, et le reçu du oui nomme l’approbateur et le SHA', ok ? GREEN : RED,
+        `même push → ${after.status} (porte ${after.json.gate?.status ?? '?'}), reçu ${receipt || 'absent'} → ${kept.status}${ok ? `, signé pour ${login} et ${sha.slice(0, 7)}` : ` ${brief(kept)}`}`);
+    } else record('Y3', 'Reçu du oui', NOT_YET, 'pas de oui (Y2)');
+  } else record('Y1', 'Porte en attente d’un oui', NOT_YET, 'pas d’organisation ou de second membre');
 
   // (g) Isolation: the GitHub person (no membership of Acme) sees nothing of it.
   if (orgId && a2.ok) {
