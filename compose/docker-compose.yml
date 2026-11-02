@@ -11,7 +11,7 @@ x-restart: &restart
 services:
   postgres:
     <<: *restart
-    image: docker.io/library/postgres:17.6
+    image: docker.io/library/postgres:17.6@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929
     # Roles (postgres-init/10-roles.sh, the same script as the Helm chart): the superuser; `ostrom`, owner of the
     # database, for migrations only; `ostrom_app`, the server's role, which owns nothing and cannot bypass
     # row-level security; `polis`, with its own database.
@@ -96,7 +96,7 @@ services:
   polis:
     <<: *restart
     profiles: [sso]
-    image: docker.io/boxyhq/jackson:26.2.0
+    image: docker.io/boxyhq/jackson:26.2.0@sha256:9165f3db9d9f5d3262f23446e860f4929f462d1d9c954af13f3bb44910c3a699
     depends_on:
       postgres: { condition: service_healthy }
     environment:
@@ -121,7 +121,7 @@ services:
 
   caddy:
     <<: *restart
-    image: docker.io/library/caddy:2.10-alpine
+    image: docker.io/library/caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     depends_on: [server, web]
     ports:
       - "${OSTROM_HTTP_PORT:-80}:80"
