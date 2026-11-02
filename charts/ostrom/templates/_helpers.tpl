@@ -45,6 +45,18 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 {{- end -}}
 
+{{/* A third-party image (PostgreSQL, Ory Polis): repository:tag, or repository@digest when a digest is given. */}}
+{{- define "ostrom.thirdPartyImage" -}}
+{{- if .digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" (toString .digest)) -}}
+{{- fail (printf "image digest of %s must be sha256:<64 hex>, got %v" .repository .digest) -}}
+{{- end -}}
+{{- printf "%s@%s" .repository .digest -}}
+{{- else -}}
+{{- printf "%s:%s" .repository (toString .tag) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "ostrom.imagePullSecrets" -}}
 {{- with .Values.global.imagePullSecrets }}
 imagePullSecrets:

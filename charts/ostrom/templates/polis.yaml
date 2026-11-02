@@ -25,8 +25,8 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: polis
-          image: {{ printf "%s:%s" $p.image.repository $p.image.tag }}
-          imagePullPolicy: IfNotPresent
+          image: {{ include "ostrom.thirdPartyImage" $p.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           ports:
             - name: http
               containerPort: {{ $p.port }}

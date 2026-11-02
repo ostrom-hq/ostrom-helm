@@ -1,0 +1,76 @@
+suite: images — third-party images pinned by digest, one pull policy
+templates:
+  - templates/postgresql.yaml
+  - templates/database-roles-job.yaml
+  - templates/polis.yaml
+  - templates/tests/test-connection.yaml
+  - templates/tests/test-database.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: PostgreSQL runs from the digest of its multi-arch index
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - matchRegex: { path: 'spec.template.spec.containers[0].image', pattern: '^docker\.io/library/postgres@sha256:[a-f0-9]{64}$' }
+      - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: IfNotPresent }
+  - it: the backup, the roles Job and the database test use the same pinned image
+    set: { postgresql.backup.enabled: true }
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: CronJob }
+    asserts:
+      - matchRegex: { path: 'spec.jobTemplate.spec.template.spec.containers[0].image', pattern: '^docker\.io/library/postgres@sha256:[a-f0-9]{64}$' }
+  - it: the roles Job is pinned
+    template: templates/database-roles-job.yaml
+    documentSelector: { path: kind, value: Job }
+    asserts:
+      - matchRegex: { path: 'spec.template.spec.containers[0].image', pattern: '@sha256:[a-f0-9]{64}$' }
+  - it: the database test is pinned
+    template: templates/tests/test-database.yaml
+    asserts:
+      - matchRegex: { path: 'spec.containers[0].image', pattern: '@sha256:[a-f0-9]{64}$' }
+  - it: the helm test image is pinned
+    template: templates/tests/test-connection.yaml
+    asserts:
+      - matchRegex: { path: 'spec.containers[0].image', pattern: '^docker\.io/curlimages/curl:[0-9.]+@sha256:[a-f0-9]{64}$' }
+  - it: Polis is pinned
+    set: { polis.enabled: true }
+    template: templates/polis.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - matchRegex: { path: 'spec.template.spec.containers[0].image', pattern: '^docker\.io/boxyhq/jackson@sha256:[a-f0-9]{64}$' }
+  - it: an empty digest follows the tag
+    set: { postgresql.image.digest: "" }
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: 'docker.io/library/postgres:17.6' }
+  - it: a mirror keeps the digest
+    set: { postgresql.image.repository: registry.corp.example/mirror/postgres }
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - matchRegex: { path: 'spec.template.spec.containers[0].image', pattern: '^registry\.corp\.example/mirror/postgres@sha256:' }
+  - it: refuses a malformed digest
+    set: { postgresql.image.digest: "sha256:abc" }
+    # The first template that renders the image stops the render.
+    template: templates/tests/test-database.yaml
+    asserts:
+      - failedTemplate: { errorPattern: 'must be sha256:<64 hex>' }
+  - it: global.imagePullPolicy applies to the third-party images too
+    set: { global.imagePullPolicy: Always, polis.enabled: true }
+    template: templates/polis.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: Always }
+  - it: global.imagePullPolicy reaches the roles Job
+    set: { global.imagePullPolicy: Always }
+    template: templates/database-roles-job.yaml
+    documentSelector: { path: kind, value: Job }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: Always }
+  - it: an old values file without a digest key still renders (helm upgrade --reuse-values)
+    set: { postgresql.image.digest: null }
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: 'docker.io/library/postgres:17.6' }

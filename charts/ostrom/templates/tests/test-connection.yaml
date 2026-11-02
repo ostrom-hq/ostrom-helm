@@ -18,6 +18,7 @@ spec:
   containers:
     - name: test
       image: {{ .Values.tests.image }}
+      imagePullPolicy: {{ .Values.global.imagePullPolicy }}
       command: ["/bin/sh", "-ec"]
       args:
         - |

@@ -73,8 +73,8 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: roles
-          image: {{ printf "%s:%s" $pg.image.repository $pg.image.tag }}
-          imagePullPolicy: IfNotPresent
+          image: {{ include "ostrom.thirdPartyImage" $pg.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           command: ["/bin/sh", "-ec"]
           args:
             - |

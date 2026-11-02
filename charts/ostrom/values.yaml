@@ -5,6 +5,7 @@ global:
   imageRegistry: ghcr.io/ostrom-hq
   # Version of every Ostrom image when an image tag is not set; defaults to the chart appVersion.
   imageTag: ""
+  # Every image of the chart, Ostrom's and the third-party ones (PostgreSQL, Ory Polis, the helm test image).
   imagePullPolicy: IfNotPresent
   # Names of existing docker-registry Secrets (GHCR is private until the public release).
   imagePullSecrets: []
@@ -210,9 +211,12 @@ site:
 # Either the chart runs PostgreSQL itself (StatefulSet in the release namespace), or you point it at yours.
 postgresql:
   enabled: true
+  # Pinned by digest (the multi-arch index): the PostgreSQL and roles containers hold the superuser password, a
+  # rewritten tag must not reach them. The digest wins over the tag; set it to "" to follow the tag.
   image:
     repository: docker.io/library/postgres
     tag: "17.6"
+    digest: "sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929"
   database: ostrom
   # The serving role: owns nothing, NOSUPERUSER NOBYPASSRLS, so row-level security always applies to it.
   username: ostrom_app
@@ -267,6 +271,7 @@ polis:
   image:
     repository: docker.io/boxyhq/jackson
     tag: "26.2.0"
+    digest: "sha256:9165f3db9d9f5d3262f23446e860f4929f462d1d9c954af13f3bb44910c3a699"
   replicas: 1
   port: 5225
   # The server talks to Polis inside the cluster; browsers and identity providers reach it on its own host
@@ -403,4 +408,5 @@ containerSecurityContext:
 
 tests:
   enabled: true
-  image: docker.io/curlimages/curl:8.11.1
+  # A full reference, pinned by digest.
+  image: docker.io/curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
