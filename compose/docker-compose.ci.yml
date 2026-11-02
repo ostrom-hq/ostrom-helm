@@ -1,8 +1,10 @@
 # CI only: stand-ins for the Ostrom images this repository's CI cannot read yet (see charts/ostrom/ci/).
 services:
+  # The server image's shape (binary path, ENTRYPOINT) around a fake CLI: the `command` of docker-compose.yml runs
+  # unchanged, so a wrong one fails here as it would with the real image.
   migrate:
-    image: docker.io/library/busybox:1.37
-    command: ["true"]
+    image: ostrom-ci-standin-server:local
+    build: { context: ci-standin }
   server:
     image: docker.io/hashicorp/http-echo:1.0
     command: ["-listen=:8080", "-text={\"status\":\"ok\"}"]
