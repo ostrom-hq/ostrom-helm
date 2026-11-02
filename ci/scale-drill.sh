@@ -7,9 +7,10 @@
 #      must become ready and serve, and no request fails;
 #   2. a version rollout under steady load: `helm upgrade` changes the pod template while k6 sends $ROLLOUT_RATE
 #      requests/s; zero failed request (no 5xx, no reset, no timeout), every pod replaced, no container restart
-#      (the probes held): the server's shutdown delay drains each old pod before it stops. The CI's requests are below the defaults (ci/standin-values.yaml), so the HPA reacts sooner
-#      here than in production: the drill proves the mechanism (scale-up, new pods ready and serving under load), not
-#      the production threshold.
+#      (the probes held), and the rollout ends well inside the load window. It starts right after the peak, at the
+#      replica count the HPA still holds (its scale-down waits 300 s): up to four pods replaced one by one under load.
+# The CI's requests are below the defaults (ci/standin-values.yaml), so the HPA reacts sooner here than in production:
+# the drill proves the mechanism (scale-up, new pods ready and serving under load), not the production threshold.
 # Every figure goes to the job summary. Usage: SERVER_IMAGE=ostrom-server:chart-ci ci/scale-drill.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -17,6 +18,11 @@ cd "$(dirname "$0")/.."
 : "${SERVER_IMAGE:?SERVER_IMAGE (repository:tag of the loaded server image) is required}"
 ROLLOUT_RATE=${ROLLOUT_RATE:-50}
 PEAK_RATE=${PEAK_RATE:-300}
+PEAK_RAMP=30      # seconds from 10 to PEAK_RATE requests/s (ci/load/drill.js)
+PEAK_HOLD=150     # seconds held at PEAK_RATE
+ROLLOUT_LOAD=240  # seconds of steady load around the rollout
+ROLLOUT_LEAD=15   # seconds of load before `helm upgrade`
+ROLLOUT_TAIL=30   # seconds of load that must remain after the rollout ends
 K6_IMAGE=docker.io/grafana/k6:2.3.0@sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8
 REL=ostrom
 NS=ostrom-scale
@@ -26,7 +32,8 @@ sampler=""
 
 fail() { echo "FAIL: $*" >&2; kubectl get pods,hpa,pdb,jobs -n "$NS" -o wide >&2 || true
   kubectl -n "$NS" logs -l job-name --tail=30 >&2 || true; exit 1; }
-cleanup() { [ -z "$sampler" ] || kill "$sampler" 2>/dev/null || true; rm -rf "$work"; }
+stop_sampler() { [ -z "$sampler" ] && return 0; touch "$work/stop"; wait "$sampler" 2>/dev/null || true; sampler=""; }
+cleanup() { stop_sampler; rm -rf "$work"; }
 trap cleanup EXIT
 
 real=(-f charts/ostrom/ci/standin-values.yaml --set ingress.enabled=false --set polis.enabled=false
@@ -66,7 +73,7 @@ spec:
             - { name: MODE, value: "$2" }
             - { name: RATE, value: "$3" }
             - { name: DURATION, value: "$4" }
-            - { name: RAMP, value: "30s" }
+            - { name: RAMP, value: "${PEAK_RAMP}s" }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
           resources: { requests: { cpu: 200m, memory: 128Mi }, limits: { memory: 512Mi } }
           volumeMounts:
@@ -78,13 +85,22 @@ spec:
 YAML
   kubectl -n $NS wait --for=jsonpath='{.status.ready}'=1 job/"$1" --timeout 3m || fail "k6 ($1) did not start"
 }
-k6_result() { # name timeout -> the summary JSON in $work/<name>.json
-  kubectl -n $NS wait --for=condition=complete job/"$1" --timeout "$2" || true
+k6_result() { # name timeout-in-seconds -> the summary JSON in $work/<name>.json
+  # Ends as soon as the Job succeeds or fails (k6 crashed), not at the timeout.
+  local deadline=$(( $(date +%s) + $2 )) st=""
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    st=$(kubectl -n $NS get job "$1" -o jsonpath='{.status.succeeded}/{.status.failed}' 2>/dev/null || true)
+    case "$st" in 1/*|*/1) break ;; esac
+    sleep 5
+  done
+  case "$st" in 1/*) ;; */1) echo "::warning::k6 ($1) failed" ;; *) echo "::warning::k6 ($1) still running after $2 s" ;; esac
   kubectl -n $NS logs job/"$1" > "$work/$1.log" 2>&1 || true
   grep '^DRILL-SUMMARY ' "$work/$1.log" | tail -1 | cut -d' ' -f2- > "$work/$1.json"
   [ -s "$work/$1.json" ] || { tail -40 "$work/$1.log"; fail "k6 ($1) gave no summary"; }
   cat "$work/$1.json"
 }
+# requests failed dropped p95 p99 of a k6 summary, 0 for a missing figure (no request recorded).
+k6_figures() { jq -r '"\(.requests // 0) \(.failed // 0) \(.dropped // 0) \(.p95 // 0) \(.p99 // 0)"' "$work/$1.json"; }
 server_pods() { kubectl -n $NS get pods -l app.kubernetes.io/component=server -o json; }
 
 echo "== 1. A peak from two replicas: the HPA must follow"
@@ -92,19 +108,22 @@ kubectl -n $NS wait hpa/$REL-server --for=jsonpath='{.status.currentMetrics[0].r
   --timeout 3m >/dev/null 2>&1 || echo "::warning::the HPA had no CPU metric yet before the peak"
 # One sample every 5 s: seconds since the start, desired and current replicas, ready server pods.
 peak_start=$(date +%s)
-( while :; do
-    h=$(kubectl -n $NS get hpa $REL-server -o jsonpath='{.status.desiredReplicas} {.status.currentReplicas}' 2>/dev/null || true)
+# A sample is written only when both reads succeed, with 0 for a missing field: four columns, always.
+( while [ ! -e "$work/stop" ]; do
+    h=$(kubectl -n $NS get hpa $REL-server -o json 2>/dev/null \
+      | jq -r '"\(.status.desiredReplicas // 0) \(.status.currentReplicas // 0)"' 2>/dev/null || true)
     r=$(kubectl -n $NS get pods -l app.kubernetes.io/component=server -o json 2>/dev/null \
-      | jq '[.items[] | select(.metadata.deletionTimestamp == null and any(.status.conditions[]?; .type == "Ready" and .status == "True"))] | length' || true)
-    [ -z "$h" ] || echo "$(( $(date +%s) - peak_start )) $h $r"
+      | jq '[.items[] | select(.metadata.deletionTimestamp == null and any(.status.conditions[]?; .type == "Ready" and .status == "True"))] | length' 2>/dev/null || true)
+    [ -z "$h" ] || [ -z "$r" ] || echo "$(( $(date +%s) - peak_start )) $h $r"
     sleep 5
   done ) > "$work/hpa.log" 2>/dev/null &
 sampler=$!
-k6_job k6-peak peak "$PEAK_RATE" 150s
-k6_result k6-peak 6m
-kill "$sampler" 2>/dev/null || true; sampler=""
+k6_job k6-peak peak "$PEAK_RATE" "${PEAK_HOLD}s"
+k6_result k6-peak $(( PEAK_RAMP + PEAK_HOLD + 180 ))
+stop_sampler
 cat "$work/hpa.log"
-read -r requests failed dropped p95 p99 < <(jq -r '"\(.requests) \(.failed) \(.dropped) \(.p95) \(.p99)"' "$work/k6-peak.json")
+read -r requests failed dropped p95 p99 < <(k6_figures k6-peak)
+expected=$(( (10 + PEAK_RATE) * PEAK_RAMP / 2 + PEAK_RATE * PEAK_HOLD ))
 peak_restarts=$(server_pods | jq '[.items[].status.containerStatuses[]?.restartCount] | add // 0')
 max_desired=$(awk 'BEGIN { m = 0 } $2 > m { m = $2 } END { print m }' "$work/hpa.log")
 max_ready=$(awk 'BEGIN { m = 0 } $4 > m { m = $4 } END { print m }' "$work/hpa.log")
@@ -121,33 +140,35 @@ ready_up=$(awk '$4 > 2 { print $1; exit }' "$work/hpa.log")
 [ "$max_desired" -gt 2 ] || fail "the HPA did not scale up under the peak"
 [ "$max_ready" -gt 2 ] || fail "the HPA asked for more replicas, but none became ready during the peak"
 [ "$failed" = 0 ] || fail "$failed requests failed during the peak"
+[ "$requests" -ge $(( expected * 95 / 100 )) ] || fail "only $requests of the $expected requests of the peak were sent ($dropped dropped by k6)"
 [ "$peak_restarts" = 0 ] || fail "$peak_restarts container restarts during the peak (OOM or a probe gave up)"
 echo "peak: the HPA went to $max_desired replicas ($max_ready ready), $requests requests, none failed"
 
 echo "== 2. A version rollout under steady load (the HPA may move meanwhile)"
 before=$(server_pods | jq -r '[.items[].metadata.name] | sort | join(" ")')
-k6_job k6-rollout steady "$ROLLOUT_RATE" 150s
-sleep 15
+k6_job k6-rollout steady "$ROLLOUT_RATE" "${ROLLOUT_LOAD}s"
+sleep "$ROLLOUT_LEAD"
 start=$(date +%s)
 helm upgrade $REL charts/ostrom -n $NS "${real[@]}" --set-string server.podAnnotations.drill-rollout=2 \
   --wait --timeout 5m || fail "the upgrade under load"
 kubectl -n $NS rollout status deploy/$REL-server --timeout 5m || fail "the rollout under load"
 rolled=$(( $(date +%s) - start ))
-k6_result k6-rollout 5m
+k6_result k6-rollout $(( ROLLOUT_LOAD + 120 ))
 server_pods > "$work/after.json"
 after=$(jq -r '[.items[] | select(.metadata.deletionTimestamp == null) | .metadata.name] | sort | join(" ")' "$work/after.json")
 for p in $before; do case " $after " in *" $p "*) fail "pod $p was not replaced by the upgrade" ;; esac; done
 restarts=$(jq '[.items[].status.containerStatuses[]?.restartCount] | add // 0' "$work/after.json")
-read -r requests failed dropped p95 p99 < <(jq -r '"\(.requests) \(.failed) \(.dropped) \(.p95) \(.p99)"' "$work/k6-rollout.json")
+read -r requests failed dropped p95 p99 < <(k6_figures k6-rollout)
 {
   printf '| rollout at %s req/s | %s | %s | %s | %.1f | %.1f | rollout %s s, %s restarts |\n' \
     "$ROLLOUT_RATE" "$requests" "$failed" "$dropped" "$p95" "$p99" "$rolled" "$restarts"
   echo
 } >> "$SUMMARY"
 [ "$failed" = 0 ] || fail "$failed requests failed during the rollout"
-[ "$requests" -ge $(( ROLLOUT_RATE * 150 * 9 / 10 )) ] || fail "only $requests requests sent during the rollout"
+[ "$requests" -ge $(( ROLLOUT_RATE * ROLLOUT_LOAD * 95 / 100 )) ] || fail "only $requests requests sent during the rollout ($dropped dropped by k6)"
 [ "$restarts" = 0 ] || fail "$restarts container restarts during the rollout (a probe gave up)"
-[ "$rolled" -le 120 ] || fail "the rollout took ${rolled}s: it outlasted the load window (135 s)"
+[ "$rolled" -le $(( ROLLOUT_LOAD - ROLLOUT_LEAD - ROLLOUT_TAIL )) ] \
+  || fail "the rollout took ${rolled}s: it did not end ${ROLLOUT_TAIL}s before the load (${ROLLOUT_LOAD}s, started after ${ROLLOUT_LEAD}s)"
 echo "rollout under load: $requests requests, none failed, every pod replaced in ${rolled}s"
 
 helm uninstall $REL -n $NS --wait

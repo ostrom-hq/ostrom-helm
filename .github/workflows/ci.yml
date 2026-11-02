@@ -257,7 +257,8 @@ jobs:
       - name: Startup to ready, and the server's PodDisruptionBudget against a node drain (real server)
         if: steps.real.outputs.run == 'true'
         run: SERVER_IMAGE=ostrom-server:chart-ci ci/perf-drill.sh
-      # metrics-server for the HPA (pinned manifest, checked by digest; kind's kubelets serve self-signed certificates).
+      # metrics-server for the HPA: the same pinned, digest-checked manifest as ostrom-e2e's chart-load.yml (two repos, no
+      # shared action; bump both together). kind's kubelets serve self-signed certificates.
       - name: metrics-server
         if: steps.real.outputs.run == 'true'
         run: |
