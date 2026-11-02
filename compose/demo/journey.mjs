@@ -269,7 +269,7 @@ async function journey() {
       const imported = done.status === 200 && done.json.created > 0 && again.json.created === 0;
       record('I2', 'Import TeamCode (plan, import, second passage sans changement)', imported ? GREEN : RED,
         imported
-          ? `${Object.keys(memberMap).length} membres associés${Object.keys(memberMap).length ? '' : ` (membres Ostrom : ${JSON.stringify(members.map((m) => [m.login, m.email]))})`} ; plan ${plan.status} (${count(plan, 'planned')} lignes prévues), import : ${done.json.created} créées, ${done.json.skipped} sautées, ${done.json.reviveAtCutover} compte(s) en attente de la bascule ; second plan : ${again.json.created} à créer`
+          ? `${Object.keys(memberMap).length} membres associés${Object.keys(memberMap).length ? '' : members.some((m) => m.id) ? ` (aucun membre Ostrom ne correspond : ${members.map((m) => m.login).join(', ')})` : ' (le serveur ne donne pas encore l’id des membres, server#63 : leurs affectations sont laissées)'} ; plan ${plan.status} (${count(plan, 'planned')} lignes prévues), import : ${done.json.created} créées, ${done.json.skipped} sautées, ${done.json.reviveAtCutover} compte(s) en attente de la bascule ; second plan : ${again.json.created} à créer`
           : `plan → ${brief(plan)} ; import → ${brief(done)} ; second plan → ${brief(again)}`);
       const cutPlan = imported ? await owner.call('POST', '/api/v1/import/teamcode?dryRun=true&cutover=true', body) : { status: 0, text: 'I2 a échoué', json: {} };
       const cut = cutPlan.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode?cutover=true', body) : cutPlan;
