@@ -72,12 +72,84 @@ imagePullSecrets:
 {{- if .Values.postgresql.existingSecret -}}{{ .Values.postgresql.existingSecret }}{{- else -}}{{ printf "%s-postgresql" (include "ostrom.fullname" .) }}{{- end -}}
 {{- end -}}
 
+{{/* The URL the server and `migrate` use: the TLS proxy on the pod's loopback when externalDatabase.tls is on. */}}
 {{- define "ostrom.database.url" -}}
 {{- if .Values.postgresql.enabled -}}
 {{- printf "postgresql://%s:5432/%s" (include "ostrom.postgresql.host" .) .Values.postgresql.database -}}
+{{- else if include "ostrom.dbProxy.enabled" . -}}
+{{- printf "postgresql://127.0.0.1:%d/%s" (include "ostrom.dbProxy.port" . | int) (include "ostrom.externalDatabase.parts" . | fromYaml).db -}}
 {{- else -}}
 {{- required "externalDatabase.url is required when postgresql.enabled is false" .Values.externalDatabase.url -}}
 {{- end -}}
+{{- end -}}
+
+{{/* "true" when the server reaches an external database through the TLS proxy sidecar. */}}
+{{- define "ostrom.dbProxy.enabled" -}}
+{{- if and (not .Values.postgresql.enabled) .Values.externalDatabase.tls .Values.externalDatabase.tls.enabled }}true{{ end -}}
+{{- end -}}
+
+{{- define "ostrom.dbProxy.port" -}}6432{{- end -}}
+
+{{/* host, port and db of externalDatabase.url (postgresql://host[:port]/db), as YAML. */}}
+{{- define "ostrom.externalDatabase.parts" -}}
+{{- $url := required "externalDatabase.url is required when postgresql.enabled is false" .Values.externalDatabase.url -}}
+{{- $m := regexFindAll "^postgres(ql)?://([^/:@?#]+|\\[[0-9a-fA-F:]+\\])(:([0-9]+))?/([^/?#]+)$" $url 1 -}}
+{{- if not $m -}}
+{{- fail (printf "externalDatabase.url must be postgresql://host[:port]/database with externalDatabase.tls (no credentials, no query string), got %s" $url) -}}
+{{- end -}}
+{{- $rest := regexReplaceAll "^postgres(ql)?://" $url "" -}}
+{{- $hostport := first (splitList "/" $rest) -}}
+{{- $db := last (splitList "/" $rest) -}}
+{{- $host := $hostport -}}
+{{- $port := "5432" -}}
+{{- if regexMatch ":[0-9]+$" $hostport -}}
+{{- $port = regexFind "[0-9]+$" $hostport -}}
+{{- $host = regexReplaceAll ":[0-9]+$" $hostport "" -}}
+{{- end }}
+host: {{ $host | quote }}
+port: {{ $port | quote }}
+db: {{ $db | quote }}
+{{- end -}}
+
+{{/*
+The PgBouncer configuration of the TLS proxy (externalDatabase.tls). It listens on 127.0.0.1 only, checks the
+client's password (SCRAM) against the file the config step writes, and logs in to the database with it, in TLS.
+Session pooling: the server's prepared statements and the migration lock (a session advisory lock) need it.
+*/}}
+{{- define "ostrom.dbProxy.ini" -}}
+{{- $t := .Values.externalDatabase.tls -}}
+{{- $p := include "ostrom.externalDatabase.parts" . | fromYaml -}}
+{{- $host := $t.host | default $p.host -}}
+{{- if not (has $t.mode (list "verify-full" "verify-ca" "require")) -}}
+{{- fail (printf "externalDatabase.tls.mode must be verify-full, verify-ca or require, got %v" $t.mode) -}}
+{{- end -}}
+{{- $verify := ne $t.mode "require" -}}
+{{- if and $verify (not (or $t.ca.secretName $t.ca.configMapName)) -}}
+{{- fail (printf "externalDatabase.tls.mode %s needs the CA: externalDatabase.tls.ca.secretName or configMapName" $t.mode) -}}
+{{- end -}}
+{{- $pool := add (int .Values.server.database.maxConnections) 2 -}}
+[databases]
+* = host={{ $host }} port={{ $p.port }}
+
+[pgbouncer]
+listen_addr = 127.0.0.1
+listen_port = {{ include "ostrom.dbProxy.port" . }}
+unix_socket_dir =
+auth_type = scram-sha-256
+auth_file = /run/ostrom/db-proxy/userlist.txt
+pool_mode = session
+max_client_conn = {{ add $pool 4 }}
+default_pool_size = {{ $pool }}
+server_tls_sslmode = {{ $t.mode }}
+{{- if $verify }}
+server_tls_ca_file = /etc/ostrom/db-ca/{{ $t.ca.key }}
+{{- end }}
+server_tls_protocols = secure
+ignore_startup_parameters = extra_float_digits
+admin_users =
+stats_users =
+logfile =
+pidfile =
 {{- end -}}
 
 {{- define "ostrom.database.user" -}}

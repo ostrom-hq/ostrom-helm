@@ -17,10 +17,14 @@ Check it:   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
 networkPolicy.enabled is false: every pod of the cluster can reach PostgreSQL and the server, and the server
 reaches your private network and the cloud metadata service.
 {{- end }}
-{{- if and .Values.server.enabled (not .Values.postgresql.enabled) }}
+{{- if and .Values.server.enabled (not .Values.postgresql.enabled) (not (include "ostrom.dbProxy.enabled" .)) }}
 
-The connection to your external PostgreSQL is not encrypted (the server's driver has no TLS yet):
-see "Traffic to the database is not encrypted" in docs/install-kubernetes.md.
+The connection to your external PostgreSQL is not encrypted: set externalDatabase.tls (a TLS proxy sidecar,
+see "TLS to an external database" in docs/install-kubernetes.md).
+{{- else if and .Values.server.enabled (include "ostrom.dbProxy.enabled" .) (eq .Values.externalDatabase.tls.mode "require") }}
+
+externalDatabase.tls.mode is require: the connection to PostgreSQL is encrypted but its certificate is not checked.
+Use verify-full with externalDatabase.tls.ca in production.
 {{- end }}
 {{- if and .Values.server.enabled (not .Values.server.signingKey.existingSecret) }}
 

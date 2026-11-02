@@ -1,0 +1,122 @@
+suite: externalDatabase.tls — a TLS proxy sidecar for the server's database (AUDIT-SECU-HELM-2 H1)
+templates:
+  - templates/server.yaml
+  - templates/server-config.yaml
+release: { name: o, namespace: ostrom }
+set:
+  postgresql.enabled: false
+  externalDatabase:
+    url: postgresql://db.corp.example:5433/ostrom
+    username: ostrom_app
+    password: app
+    migrationUsername: ostrom
+    migrationPassword: owner
+    tls: { enabled: true, ca: { secretName: rds-ca } }
+tests:
+  - it: the server and migrate talk to the proxy on the pod's loopback
+    template: templates/server-config.yaml
+    documentSelector: { path: metadata.name, value: o-ostrom-server }
+    asserts:
+      - equal: { path: data.OSTROM_DATABASE_URL, value: postgresql://127.0.0.1:6432/ostrom }
+  - it: migrate's URL goes through the proxy too
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[2].env
+          content: { name: OSTROM_DATABASE_MIGRATION_URL, value: "postgresql://$(OSTROM_DATABASE_MIGRATION_USER):$(OSTROM_DATABASE_MIGRATION_PASSWORD)@127.0.0.1:6432/ostrom" }
+  - it: the proxy dials the database in TLS, verify-full against the URL's host, with the CA
+    template: templates/server-config.yaml
+    documentSelector: { path: metadata.name, value: o-ostrom-db-proxy }
+    asserts:
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: '\* = host=db\.corp\.example port=5433' }
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'server_tls_sslmode = verify-full' }
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'server_tls_ca_file = /etc/ostrom/db-ca/ca\.crt' }
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'listen_addr = 127\.0\.0\.1' }
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'auth_type = scram-sha-256' }
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'pool_mode = session' }
+      - notMatchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'app|owner"|password' }
+  - it: config step, native sidecar, then migrate; the passwords only from Secrets
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: 'spec.template.spec.initContainers[0].name', value: db-proxy-config }
+      - equal: { path: 'spec.template.spec.initContainers[1].name', value: db-proxy }
+      - equal: { path: 'spec.template.spec.initContainers[1].restartPolicy', value: Always }
+      - equal: { path: 'spec.template.spec.initContainers[2].name', value: migrate }
+      - matchRegex: { path: 'spec.template.spec.initContainers[1].image', pattern: '^ghcr\.io/cloudnative-pg/pgbouncer:[^@]+@sha256:[a-f0-9]{64}$' }
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content: { name: APP_PASSWORD, valueFrom: { secretKeyRef: { name: o-ostrom-external-db, key: password } } }
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content: { name: OWNER_PASSWORD, valueFrom: { secretKeyRef: { name: o-ostrom-external-db, key: migration-password } } }
+      - equal: { path: 'spec.template.spec.initContainers[1].securityContext.readOnlyRootFilesystem', value: true }
+      - equal: { path: 'spec.template.spec.initContainers[1].securityContext.allowPrivilegeEscalation', value: false }
+      - exists: { path: 'spec.template.spec.initContainers[1].resources.limits.memory' }
+  - it: the server container never gets the owner's password
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: { name: OWNER_PASSWORD, valueFrom: { secretKeyRef: { name: o-ostrom-external-db, key: migration-password } } }
+          any: true
+  - it: the password file lives in memory, and the CA is mounted read-only
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content: { name: db-proxy, emptyDir: { medium: Memory, sizeLimit: 1Mi } }
+      - contains:
+          path: spec.template.spec.volumes
+          content: { name: db-ca, secret: { secretName: rds-ca, items: [{ key: ca.crt, path: ca.crt }] } }
+  - it: without migrate in the pod, the proxy never holds the owner's password
+    template: templates/server.yaml
+    set: { migrations.initContainer: false }
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - notContains:
+          path: spec.template.spec.initContainers[0].env
+          content: { name: OWNER_USER }
+          any: true
+      - equal: { path: 'spec.template.spec.initContainers[1].name', value: db-proxy }
+  - it: a CA from a ConfigMap (RDS's global bundle)
+    template: templates/server.yaml
+    set: { externalDatabase.tls.ca: { secretName: "", configMapName: rds-bundle, key: global-bundle.pem } }
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content: { name: db-ca, configMap: { name: rds-bundle, items: [{ key: global-bundle.pem, path: global-bundle.pem }] } }
+  - it: verify-full without a CA is refused
+    template: templates/server.yaml
+    set: { externalDatabase.tls.ca.secretName: "" }
+    asserts:
+      - failedTemplate: { errorPattern: 'externalDatabase.tls.mode verify-full needs the CA' }
+  - it: an unknown mode is refused
+    template: templates/server.yaml
+    set: { externalDatabase.tls.mode: prefer }
+    asserts:
+      - failedTemplate: { errorPattern: 'externalDatabase.tls.mode must be verify-full, verify-ca or require' }
+  - it: a URL the proxy cannot read is refused
+    template: templates/server.yaml
+    set: { externalDatabase.url: "db.corp.example/ostrom" }
+    asserts:
+      - failedTemplate: { errorPattern: 'externalDatabase.url must be postgresql://host\[:port\]/database' }
+  - it: tls.host overrides the host the proxy dials and checks
+    template: templates/server-config.yaml
+    set: { externalDatabase.tls.host: ostrom.cluster-x.eu-west-3.rds.amazonaws.com }
+    documentSelector: { path: metadata.name, value: o-ostrom-db-proxy }
+    asserts:
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'host=ostrom\.cluster-x\.eu-west-3\.rds\.amazonaws\.com port=5433' }
+  - it: off by default, and never with the chart's own PostgreSQL
+    template: templates/server.yaml
+    set: { postgresql.enabled: true }
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - notContains:
+          path: spec.template.spec.initContainers
+          content: { name: db-proxy }
+          any: true

@@ -67,7 +67,7 @@ jobs:
         run: |
           if [ "$EVENT" != pull_request ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           changed=$(git diff --name-only "$BASE"...HEAD)
-          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|networkpolicy\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/migrate-drill\.sh|\.github/workflows/ci\.yml)'; then
+          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|server-config\.yaml|networkpolicy\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/migrate-drill\.sh|\.github/workflows/ci\.yml)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
