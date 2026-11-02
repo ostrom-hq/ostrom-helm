@@ -67,7 +67,7 @@ jobs:
         run: |
           if [ "$EVENT" != pull_request ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           changed=$(git diff --name-only "$BASE"...HEAD)
-          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|server-config\.yaml|networkpolicy\.yaml|availability\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/(migrate|perf)-drill\.sh|\.github/workflows/ci\.yml)'; then
+          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|server-config\.yaml|networkpolicy\.yaml|availability\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/(migrate|perf|scale)-drill\.sh|ci/load/|\.github/workflows/ci\.yml)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -257,6 +257,19 @@ jobs:
       - name: Startup to ready, and the server's PodDisruptionBudget against a node drain (real server)
         if: steps.real.outputs.run == 'true'
         run: SERVER_IMAGE=ostrom-server:chart-ci ci/perf-drill.sh
+      # metrics-server for the HPA (pinned manifest, checked by digest; kind's kubelets serve self-signed certificates).
+      - name: metrics-server
+        if: steps.real.outputs.run == 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/metrics-server.yaml" \
+            https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.9.1/components.yaml
+          echo "3c7f57cdbee0f57fb0259a150e8f6d6cb4f29d72d1aa5dce8803151dd6d4c2a1  $RUNNER_TEMP/metrics-server.yaml" | sha256sum -c -
+          sed -i 's|^\( *\)- --metric-resolution=15s$|&\n\1- --kubelet-insecure-tls|' "$RUNNER_TEMP/metrics-server.yaml"
+          grep -q -- '- --kubelet-insecure-tls' "$RUNNER_TEMP/metrics-server.yaml"
+          kubectl apply -f "$RUNNER_TEMP/metrics-server.yaml"
+      - name: Scaling under load (the HPA follows a peak; a version rollout loses no request), real server
+        if: steps.real.outputs.run == 'true'
+        run: SERVER_IMAGE=ostrom-server:chart-ci ci/scale-drill.sh
       - name: Cluster state on failure
         if: failure()
         run: |

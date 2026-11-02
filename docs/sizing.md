@@ -36,6 +36,12 @@ fresh install:
 The server itself is ready 2 s after its init containers. The drain of the same run: 85 samples of the Service, 84
 with one ready endpoint and 1 with two, never zero; the eviction of the last pod refused by the budget.
 
+Scaling is measured the same way (`ci/scale-drill.sh`, HPA 2-4, k6 in the namespace on the server's Service): a
+peak from 10 to 300 requests/s must make the HPA add replicas that become ready and serve, and a version rollout
+under 50 requests/s must lose no request (the server's shutdown delay drains each old pod) with no container
+restart. The CI's requests are below the defaults, so its HPA reacts sooner than yours: the drill proves the
+mechanism, not your threshold.
+
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|
 | up to 50 people | 2 × (250m CPU, 512 Mi request / 1 Gi limit) | 2 × default | 250m / 256 Mi, 10 Gi disk | 250m / 512 Mi each, limit 2 CPU / 2 Gi |
