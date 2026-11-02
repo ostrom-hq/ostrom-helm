@@ -24,7 +24,8 @@ spec:
     seccompProfile: { type: RuntimeDefault }
   containers:
     - name: test
-      image: {{ printf "%s:%s" $pg.image.repository $pg.image.tag }}
+      image: {{ include "ostrom.thirdPartyImage" (merge (dict "where" "postgresql.image") $pg.image) }}
+      imagePullPolicy: {{ .Values.global.imagePullPolicy }}
       command: ["/bin/sh", "-ec"]
       args:
         - |
