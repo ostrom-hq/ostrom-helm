@@ -10,6 +10,18 @@ Ostrom {{ .Chart.AppVersion }} is installed in namespace {{ .Release.Namespace }
 {{- end }}
 
 Check it:   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- if include "ostrom.networkProbe.enabled" . }}
+            (it also fails if your CNI does not enforce the chart's NetworkPolicies)
+{{- else if not .Values.networkPolicy.enabled }}
+
+networkPolicy.enabled is false: every pod of the cluster can reach PostgreSQL and the server, and the server
+reaches your private network and the cloud metadata service.
+{{- end }}
+{{- if and .Values.server.enabled (not .Values.postgresql.enabled) }}
+
+The connection to your external PostgreSQL is not encrypted (the server's driver has no TLS yet):
+see "Traffic to the database is not encrypted" in docs/install-kubernetes.md.
+{{- end }}
 {{- if and .Values.server.enabled (not .Values.server.signingKey.existingSecret) }}
 
 The instance signing key is in Secret {{ include "ostrom.signingKey.secretName" . }} (kept on uninstall).
