@@ -172,6 +172,11 @@ jobs:
             --set externalDatabase.password=p --set externalDatabase.polisUrl=postgres://u:p@db/polis \
             --set externalDatabase.migrationUsername=o --set externalDatabase.migrationPassword=p \
             --set server.autoscaling.enabled=true --set postgresql.backup.enabled=true --set polis.enabled=true
+          ci/policy-check.sh tls --set postgresql.enabled=false \
+            --set externalDatabase.url=postgresql://db:5432/o --set externalDatabase.username=u \
+            --set externalDatabase.password=p --set externalDatabase.migrationUsername=o \
+            --set externalDatabase.migrationPassword=p --set externalDatabase.tls.enabled=true \
+            --set externalDatabase.tls.ca.secretName=db-ca
           ci/policy-check.sh cloud --set cloudSessions.enabled=true --set server.replicas=1 \
             --set networkPolicy.kubeApi.cilium=true --set networkPolicy.ciliumEgressDeny.enabled=true \
             --set postgresql.backup.enabled=true
