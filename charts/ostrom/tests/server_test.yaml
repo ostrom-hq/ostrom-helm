@@ -108,9 +108,9 @@ tests:
   - it: a digest pins the image
     template: templates/server.yaml
     documentSelector: { path: kind, value: Deployment }
-    set: { server.image.digest: "sha256:abc" }
+    set: { server.image.digest: "sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03" }
     asserts:
-      - equal: { path: 'spec.template.spec.containers[0].image', value: "ghcr.io/ostrom-hq/ostrom-server@sha256:abc" }
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "ghcr.io/ostrom-hq/ostrom-server@sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03" }
   - it: global tag and registry apply
     template: templates/server.yaml
     documentSelector: { path: kind, value: Deployment }

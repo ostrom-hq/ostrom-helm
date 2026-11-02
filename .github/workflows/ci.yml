@@ -147,6 +147,29 @@ jobs:
               | ./kubeconform -strict -summary -kubernetes-version "$v" -schema-location default \
                 -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/3eb90d47aba8d61919d4419dd38301536e32a94b/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' -
           done
+      # AUDIT-SECU-HELM-2 M6: every pod of every render holds the Pod Security Standard `restricted` (the admission
+      # library, through Kyverno's podSecurity rule), a read-only root, requests and a memory limit, no moving tag and
+      # no Kubernetes token (ci/policies/restricted.yaml). Blocking. The CLI is checked against its release checksum.
+      - name: Policy (Kyverno CLI, restricted and the chart's rules)
+        env:
+          KYVERNO_VERSION: v1.19.2
+          KYVERNO_SHA256: 357eaf1df8bc24ddd5a73979fadeaae6a032e8710f11af264229756e4956bf4a
+        run: |
+          curl -fsSL -o kyverno.tar.gz "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VERSION}/kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+          echo "${KYVERNO_SHA256}  kyverno.tar.gz" | sha256sum -c -
+          tar xzf kyverno.tar.gz kyverno && rm kyverno.tar.gz
+          export KYVERNO="$PWD/kyverno"
+          ci/policy-check.sh default
+          ci/policy-check.sh standin -f charts/ostrom/ci/standin-values.yaml
+          ci/policy-check.sh external --set postgresql.enabled=false \
+            --set externalDatabase.url=postgresql://db:5432/o --set externalDatabase.username=u \
+            --set externalDatabase.password=p --set externalDatabase.polisUrl=postgres://u:p@db/polis \
+            --set externalDatabase.migrationUsername=o --set externalDatabase.migrationPassword=p \
+            --set server.autoscaling.enabled=true --set postgresql.backup.enabled=true --set polis.enabled=true
+          ci/policy-check.sh cloud --set cloudSessions.enabled=true --set server.replicas=1 \
+            --set networkPolicy.kubeApi.cilium=true --set networkPolicy.ciliumEgressDeny.enabled=true \
+            --set postgresql.backup.enabled=true
+          rm -f kyverno
       # Only what the server emits today (ostrom-server main: Tracing.kt, ProcessMetrics.kt; ostrom-core telemetry), and their labels.
       - name: The dashboards and alerts are portable and query only metrics the server emits
         run: |
