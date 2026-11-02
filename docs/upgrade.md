@@ -45,6 +45,10 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
 - `values.schema.json` refuses an unknown top-level key and a security context below `restricted`: a values file
   with a leftover key (one the chart never read) now stops the upgrade with `additional properties ... not allowed`.
   Remove the key; with `--reuse-values`, the stored values are checked too.
+- The migrations' histories (`_migrations_<module>`) are written by the owner alone (AUDIT-RLS R8): the pre-upgrade
+  Job takes the write off every other role and keeps their read, and `helm test` checks it. An external database:
+  play the end of the block in [values.md](values.md#database-roles) once (a server with ostrom-server#144 also does
+  it at every `migrate`).
 - `cloudSessions.allowedOrgs` (S2-10): with sessions on, list the organizations they are open to; empty refuses all.
 - The console's host serves `/api/v1` from the server (one origin for the browser), and `/api/v1/artifacts` takes
   32m on both hosts. A pre-upgrade Job adds the `ostrom_router` role.

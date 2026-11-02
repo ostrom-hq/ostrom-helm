@@ -374,6 +374,10 @@ it only administers the roles it creates, never a superuser nor a BYPASSRLS role
 granted to the serving role, which gets neither CREATEROLE nor membership of the owner (the server refuses to start).
 `ostrom_router` owns the cross-organization functions (SECURITY DEFINER, ostrom-server docs/tenancy.md, S2-51): no
 table, administered by the owner who hands it the functions, never granted to the serving role.
+The migrations' history tables (`_migrations_<module>`) are written by the owner alone (AUDIT-RLS R8): the default
+privileges give the serving role every table. `ostrom-server migrate` revokes the write on its histories at every pass
+(ostrom-server#144), install and external database included; this block does it again before every upgrade, for any
+history of the schema (one an older server migrated, or one a module no longer migrates), from every role but the owner.
 Also the end of 10-roles.sh, and the pre-upgrade Job for a database created by an older chart.
 */}}
 {{- define "ostrom.postgresql.tenantSql" -}}
@@ -387,6 +391,34 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_router') \gexec
 GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
+-- AUDIT-RLS R8: the migrations' history is written by its owner alone. Any other role (the serving role, ostrom_tenant
+-- that it inherits, PUBLIC) holding more than SELECT, on the table or a column, loses it all and keeps SELECT.
+-- A named dollar quote: Kubernetes reads a doubled dollar sign in a container's args as one (the pre-upgrade Job).
+DO $lock$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT quote_ident(c.relname) AS tbl,
+      CASE WHEN g.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(g.grantee)) END AS name,
+      bool_or(g.privilege_type = 'SELECT' AND NOT g.on_column) AS reads
+    FROM pg_class c
+    CROSS JOIN LATERAL (
+      SELECT a.grantee, a.privilege_type, false AS on_column FROM aclexplode(c.relacl) a
+      UNION ALL
+      SELECT a.grantee, a.privilege_type, true FROM pg_attribute t, aclexplode(t.attacl) a WHERE t.attrelid = c.oid
+    ) g
+    WHERE c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace AND c.relname LIKE '\_migrations\_%'
+      AND g.grantee <> c.relowner
+    GROUP BY c.relname, g.grantee
+    HAVING bool_or(g.privilege_type <> 'SELECT' OR g.on_column)
+  LOOP
+    EXECUTE format('REVOKE ALL ON public.%s FROM %s CASCADE', r.tbl, r.name);
+    IF r.reads THEN
+      EXECUTE format('GRANT SELECT ON public.%s TO %s', r.tbl, r.name);
+    END IF;
+  END LOOP;
+END
+$lock$;
 {{- end -}}
 
 {{/*
