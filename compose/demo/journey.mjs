@@ -279,16 +279,25 @@ async function journey() {
         expiresAt: new Date(Date.now() - 3600_000).toISOString(),
       });
       const caller = shared.status < 300 ? await owner.call('POST', '/api/v1/tokens', { name: `demo inference ${run}`, scopes: ['inference:use'], expiresInDays: 1 }) : shared;
-      const infer = caller !== shared && caller.json.secret
-        ? await bearer(caller.json.secret, 'POST', '/api/v1/inference/v1/messages', { model: 'claude-opus-5-5', max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] })
-        : { status: 0, text: '' };
-      if (caller !== shared && caller.json.id) await owner.call('DELETE', `/api/v1/tokens/${encodeURIComponent(caller.json.id)}`);
+      let infer = { status: 0, text: '' };
+      try {
+        if (caller !== shared && caller.json.secret) {
+          infer = await bearer(caller.json.secret, 'POST', '/api/v1/inference/v1/messages', { model: 'claude-opus-5-5', max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] });
+        }
+      } finally {
+        // The journey's token goes with it, even when the call throws.
+        if (caller !== shared && caller.json.id) await owner.call('DELETE', `/api/v1/tokens/${encodeURIComponent(caller.json.id)}`);
+      }
       const accountOf = async () => ((await owner.call('GET', '/api/v1/accounts')).json?.items ?? []).find((a) => a.providerAccountId === staleId);
       const before = await accountOf();
       const retired = before?.status === 'reconnect_required';
       record('R1', 'Compte partagé dont TeamCode a fait tourner le jeton : en attente de reconnexion', retired ? GREEN : RED,
         `partage ${shared.status}, jeton inference:use ${caller.status}, appel au modèle par la passerelle ${infer.status} (renouvellement refusé : invalid_grant), compte ${before?.label ?? '?'} → ${before?.status ?? 'absent'}${retired ? '' : ` ; ${brief(shared)} ; ${brief(infer)}`}`);
-      const renewals = async () => ((await fetch(`${FAKE}/_demo/refreshed`).then((r) => r.json()).catch(() => ({}))).refreshed ?? []).filter((p) => p === 'claude').length;
+      // The renewals at Claude's token endpoint the fake has answered, or null when the fake cannot be read.
+      const renewals = async () => {
+        const seen = await fetch(`${FAKE}/_demo/refreshed`).then((r) => r.json()).catch(() => null);
+        return Array.isArray(seen?.refreshed) ? seen.refreshed.filter((p) => p === 'claude').length : null;
+      };
 
       const plan = await owner.call('POST', '/api/v1/import/teamcode?dryRun=true', body);
       const done = plan.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode', body) : plan;
@@ -298,7 +307,7 @@ async function journey() {
       // The account Ostrom holds as `reconnect_required` is left so while TeamCode runs: testing TeamCode's tokens would
       // rotate them and disconnect TeamCode.
       const waiting = (done.json.items ?? []).find((i) => i.kind === 'account' && i.action === 'revive_at_cutover');
-      const imported = done.status === 200 && done.json.created > 0 && again.json.created === 0 && mapped && (!retired || (done.json.reviveAtCutover === 1 && !!waiting));
+      const imported = done.status === 200 && done.json.created > 0 && again.json.created === 0 && mapped && done.json.reviveAtCutover === 1 && !!waiting;
       record('I2', 'Import TeamCode (plan, import, second passage sans changement)', imported ? GREEN : RED,
         imported
           ? `${Object.keys(memberMap).length} membres associés${Object.keys(memberMap).length ? '' : members.some((m) => m.id) ? ` (aucun membre Ostrom ne correspond : ${members.map((m) => m.login).join(', ')})` : ' (le serveur ne donne pas encore l’id des membres, server#63 : leurs affectations sont laissées)'} ; plan ${plan.status} (${count(plan, 'planned')} lignes prévues), import : ${done.json.created} créées, ${done.json.skipped} sautées, ${done.json.reviveAtCutover} compte(s) en attente de la bascule ; second plan : ${again.json.created} à créer`
@@ -316,13 +325,15 @@ async function journey() {
       const audited = audit.status === 200 && !!auditLine;
       // The revival: TeamCode's tokens renewed at the provider (the fake), stored, and the account serving again.
       const after = await accountOf();
-      const renewed = (await renewals()) - renewedBefore;
-      const revivedItem = accounts.find((i) => i.action === 'updated');
-      const revived = !retired || (!!revivedItem && after?.status === 'ready' && renewed >= 1);
+      const renewedAfter = await renewals();
+      const renewed = renewedBefore === null || renewedAfter === null ? null : renewedAfter - renewedBefore;
+      // The item of the very account R1 left waiting (the line names TeamCode's label), its row now serving again.
+      const revivedItem = accounts.find((i) => i.action === 'updated' && i.name === waiting?.name);
+      const revived = retired && !!revivedItem && after?.status === 'ready' && renewed >= 1;
       const cutOk = cut.status === 200 && cut.json.reviveAtCutover === 0 && kept.length === accounts.length && accounts.length > 0 && revived && (audit.status === 404 || audited);
       const cutState = cut.status === 503 ? NOT_YET : cutOk ? GREEN : RED;
       record('I3', 'Bascule par l’owner : le compte en attente est réanimé', cutState,
-        `plan ${cutPlan.status}, bascule ${cut.status} : comptes ${accounts.map((a) => `${a.name} ${a.action}`).join(', ') || 'aucun'}, ${cut.json.reviveAtCutover ?? '?'} en attente ; ${retired ? `compte ${after?.label ?? '?'} ${before?.status} → ${after?.status ?? 'absent'}, ${renewed} renouvellement(s) chez le fournisseur` : 'aucun compte à réanimer (R1)'} ; journal d’audit de l’org ${audit.status === 200 ? (audited ? `avec la bascule (acteur ${auditLine.actor})` : 'SANS la bascule') : `pas encore servi (GET /audit → ${audit.status})`}${cutOk ? '' : ` ; ${brief(cut)}`}`);
+        `plan ${cutPlan.status}, bascule ${cut.status} : comptes ${accounts.map((a) => `${a.name} ${a.action}`).join(', ') || 'aucun'}, ${cut.json.reviveAtCutover ?? '?'} en attente ; ${retired ? `compte ${after?.label ?? '?'} ${before?.status} → ${after?.status ?? 'absent'}, ${renewed === null ? `renouvellements illisibles (${FAKE}/_demo/refreshed injoignable)` : `${renewed} renouvellement(s) chez le fournisseur`}` : 'aucun compte à réanimer : R1 a échoué'} ; journal d’audit de l’org ${audit.status === 200 ? (audited ? `avec la bascule (acteur ${JSON.stringify(auditLine.actor)})` : 'SANS la bascule') : `pas encore servi (GET /audit → ${audit.status})`}${cutOk ? '' : ` ; ${brief(cut)}`}`);
     } catch (e) {
       record('I2', 'Import TeamCode', RED, e.message);
     }
