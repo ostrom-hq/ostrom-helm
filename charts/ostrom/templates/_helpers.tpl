@@ -76,6 +76,7 @@ imagePullSecrets:
 {{- if .Values.postgresql.enabled -}}
 {{- printf "postgresql://%s:5432/%s" (include "ostrom.postgresql.host" .) .Values.postgresql.database -}}
 {{- else -}}
+{{- include "ostrom.refuseCredentialUrl" (dict "value" .Values.externalDatabase.url "where" "externalDatabase.url" "instead" "give the credentials in externalDatabase.username and password, or existingSecret") -}}
 {{- required "externalDatabase.url is required when postgresql.enabled is false" .Values.externalDatabase.url -}}
 {{- end -}}
 {{- end -}}
@@ -129,6 +130,45 @@ key: {{ if .Values.postgresql.enabled }}owner-password{{ else }}migration-passwo
 
 {{- define "ostrom.polis.secretName" -}}
 {{- if .Values.polis.existingSecret -}}{{ .Values.polis.existingSecret }}{{- else -}}{{ printf "%s-polis" (include "ostrom.fullname" .) }}{{- end -}}
+{{- end -}}
+
+{{/* Secret of Ory Polis's external database URL (key `url`): the user's, or the one the chart writes from polisUrl. */}}
+{{- define "ostrom.polis.dbSecretName" -}}
+{{- .Values.externalDatabase.polisExistingSecret | default (printf "%s-polis-db" (include "ostrom.fullname" .)) -}}
+{{- end -}}
+
+{{/*
+Refuses a secret-looking key in a place that is not a Secret (AUDIT-SECU-HELM-2 M4): a ConfigMap, a plain env value,
+or the console's public config. Call with (dict "values" (dict name value …) "where" "server.config" "what" "…"
+"instead" "…"). A name is secret-looking with SECRET, PASSWORD, PASSWD, TOKEN, CREDENTIAL, API_KEY, PRIVATE_KEY,
+LICENSE_KEY or a final _KEY; except a path (_FILE), an address (_URL), the runners' pull Secret name and PostHog's
+project key (public by design). A false positive (a length, a TTL) goes in the Secret too: it is only an environment
+variable there. Every value is also refused when it carries a credential (ostrom.refuseCredentialUrl), whatever its
+name: an address is exempt by name, never by content.
+*/}}
+{{- define "ostrom.refuseSecrets" -}}
+{{- range $k, $v := .values -}}
+{{- $u := upper (toString $k) -}}
+{{- $named := regexMatch "(SECRET|PASSWORD|PASSWD|TOKEN|CREDENTIAL|API_KEY|PRIVATE_KEY|LICENSE_KEY|_KEY$)" $u -}}
+{{- $exempt := or (hasSuffix "_FILE" $u) (hasSuffix "_URL" $u) (has $u (list "OSTROM_POSTHOG_API_KEY" "OSTROM_RUNNERS_KUBERNETES_IMAGE_PULL_SECRET")) -}}
+{{- if and $named (not $exempt) -}}
+{{- fail (printf "%s.%s looks like a secret, and %s is not a Secret: %s" $.where $k $.what $.instead) -}}
+{{- end -}}
+{{- include "ostrom.refuseCredentialUrl" (dict "value" $v "where" (printf "%s.%s" $.where $k) "instead" $.instead) -}}
+{{- end -}}
+{{- end -}}
+
+{{/* A value that carries a credential whatever its name: a URL with a password, or a token in its query string. */}}
+{{- define "ostrom.refuseCredentialUrl" -}}
+{{- $v := toString (.value | default "") -}}
+{{- if or (regexMatch "://[^/@\\s:]*:[^/@\\s]+@" $v) (regexMatch "(?i)[?&](access_?token|token|api_?key|key|secret|password|sig|signature)=" $v) -}}
+{{- fail (printf "%s holds a credential (a password in the URL, or a token in its query string): %s" .where .instead) -}}
+{{- end -}}
+{{- end -}}
+
+{{/* Ory Polis's external database URL (it holds a password): only ever in its Secret, or hashed. */}}
+{{- define "ostrom.polis.dbUrl" -}}
+{{- required "externalDatabase.polisUrl or polisExistingSecret is required when polis.enabled and postgresql.enabled is false" .Values.externalDatabase.polisUrl -}}
 {{- end -}}
 
 {{- define "ostrom.polis.externalUrl" -}}
