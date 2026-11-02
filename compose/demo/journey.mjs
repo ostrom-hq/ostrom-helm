@@ -283,6 +283,12 @@ async function journey() {
   if (orgId) await isolatedRunner(owner);
   else record('D5', 'Check exécuté par Ostrom (isolated_runner)', NOT_YET, 'pas d’organisation');
 
+  // (m) A registered runner on a machine (6.2): online by its heartbeats, offline 90 s after the last, refused once removed.
+  const machineImage = env('OSTROM_DEMO_RUNNER_IMAGE', '');
+  if (!orgId) record('M1', 'Runner enregistré sur une machine', NOT_YET, 'pas d’organisation');
+  else if (!machineImage) record('M1', 'Runner enregistré sur une machine', NOT_YET, 'OSTROM_DEMO_RUNNER_IMAGE absent');
+  else await machineRunner(owner, machineImage);
+
   // TeamCode import: the fake TeamCode base the CLI reads (`ostrom import teamcode` itself runs on the laptop, in the film).
   const teamcodeCheck = env('OSTROM_DEMO_TEAMCODE_CHECK', '');
   if (teamcodeCheck) {
@@ -482,6 +488,87 @@ async function journey() {
     record('D3', 'Session cloud arrêtée et supprimée', ['terminated', 'deleted'].includes(status) ? GREEN : RED, `DELETE → ${stopped.status}, puis ${status}`);
   }
 
+}
+
+/** How long the server shows a runner online after its last heartbeat (ostrom-server, HEARTBEAT_LOSS). */
+const HEARTBEAT_LOSS_S = 90;
+/** Between the machine's heartbeats: the offline moment is then known to within these seconds. */
+const MACHINE_INTERVAL_S = 5;
+const MACHINE_NETWORK = env('OSTROM_DEMO_MACHINE_NETWORK', 'ostrom-sessions');
+const MACHINE_SERVER_URL = env('OSTROM_DEMO_MACHINE_SERVER_URL', 'http://server:8080');
+
+/**
+ * M1-M4 (6.2): a machine of the organization registered by the owner (`POST /runners`, its key shown once), running
+ * the runner image as `ostrom-runner machine` on the sessions' network. It shows `online` in `GET /runners` from its
+ * heartbeats; stopped, `offline` once 90 s passed since its last one; started again then removed, its next heartbeat
+ * is refused (401) and the process ends with code 3. The key goes to the container through the environment, never on
+ * a command line nor in the report.
+ */
+async function machineRunner(owner, image) {
+  const container = `ostrom-demo-machine-${run}`;
+  const made = await owner.call('POST', '/api/v1/runners', { name: `machine-${run}`, labels: ['demo'], version: 'demo' });
+  const id = made.json.id ?? '';
+  const key = made.json.token ?? '';
+  if (made.status !== 201 || !id || !key) return record('M1', 'Runner enregistré sur une machine', RED, `POST /runners → ${made.status}${made.json.error ? ` ${made.json.error}` : ''}`);
+  const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8', env: { ...process.env, OSTROM_RUNNER_KEY: key } }).trim();
+  const listed = async () => {
+    const r = await owner.call('GET', '/api/v1/runners');
+    return (r.json.items ?? []).find((x) => x.id === id);
+  };
+  /** Polls GET /runners until the runner shows `want`, for up to `seconds`; the seconds it took, or -1. */
+  const until = async (want, seconds) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < seconds * 1000) {
+      if ((await listed())?.status === want) return (Date.now() - t0) / 1000;
+      await sleep(1000);
+    }
+    return -1;
+  };
+  const exited = async (seconds) => {
+    for (let i = 0; i < seconds; i++) {
+      if (docker('inspect', '-f', '{{.State.Running}}', container) === 'false') return Number(docker('inspect', '-f', '{{.State.ExitCode}}', container));
+      await sleep(1000);
+    }
+    return null;
+  };
+  try {
+    const before = await listed();
+    docker('run', '-d', '--name', container, '--network', MACHINE_NETWORK, '-e', `OSTROM_SERVER_URL=${MACHINE_SERVER_URL}`, '-e', `OSTROM_RUNNER_ID=${id}`, '-e', 'OSTROM_RUNNER_KEY', '-e', `OSTROM_RUNNER_INTERVAL_SECONDS=${MACHINE_INTERVAL_S}`, image, 'machine');
+    record('M1', 'Runner enregistré, clé affichée une fois', before?.status === 'offline' ? GREEN : RED, `POST /runners → 201 (${id}, clé de ${key.length} caractères) ; avant tout heartbeat : ${before?.status ?? 'absent de GET /runners'} ; \`ostrom-runner machine\` démarré, un heartbeat toutes les ${MACHINE_INTERVAL_S} s`);
+
+    const online = await until('online', 30);
+    const logs = docker('logs', container);
+    const leaked = logs.includes(key);
+    record('M2', 'Le runner passe online par ses heartbeats', online >= 0 && !leaked ? GREEN : RED, `online dans GET /runners après ${online} s (lastSeenAt ${(await listed())?.lastSeenAt ?? '?'}) ; clé ${leaked ? 'VUE' : 'absente'} des journaux du runner`);
+    if (online < 0) return;
+
+    const last = (await listed())?.lastSeenAt;
+    docker('stop', container);
+    const stopped = Date.now();
+    const stopCode = await exited(15);
+    const stillOnline = (await listed())?.status;
+    const offline = await until('offline', HEARTBEAT_LOSS_S + 30);
+    const after = offline < 0 ? -1 : Math.round((Date.now() - stopped) / 1000);
+    const inWindow = after >= HEARTBEAT_LOSS_S - MACHINE_INTERVAL_S - 5 && after <= HEARTBEAT_LOSS_S + 10;
+    record('M3', 'Arrêté, il passe offline 90 s après son dernier heartbeat', stopCode === 0 && stillOnline === 'online' && inWindow ? GREEN : RED, `docker stop → code ${stopCode} ; juste après : ${stillOnline} ; offline ${after} s après l’arrêt (dernier heartbeat ${last}, fenêtre ${HEARTBEAT_LOSS_S} s)`);
+
+    docker('start', container);
+    const back = await until('online', 30);
+    const removed = await owner.call('DELETE', `/api/v1/runners/${id}`);
+    const exitCode = await exited(MACHINE_INTERVAL_S + 15);
+    const refusedLog = docker('logs', container).includes('key refused');
+    const direct = await fetch(`${API}/api/v1/runners/${id}/heartbeat`, { method: 'POST', headers: { authorization: `Bearer ${key}` } });
+    const gone = !(await listed());
+    record('M4', 'Supprimé, son heartbeat suivant reçoit 401', back >= 0 && removed.status === 204 && exitCode === 3 && refusedLog && direct.status === 401 && gone ? GREEN : RED, `redémarré, online après ${back} s ; DELETE → ${removed.status} ; le runner reçoit 401 et s’arrête (code ${exitCode}, « key refused » ${refusedLog ? 'dans' : 'absent de'} ses journaux) ; heartbeat avec la même clé → ${direct.status} ; ${gone ? 'absent' : 'encore'} de GET /runners`);
+  } catch (e) {
+    record('M4', 'Runner sur une machine', RED, `${e.stderr ?? ''}`.trim() || e.message);
+  } finally {
+    try {
+      docker('rm', '-f', container);
+    } catch {
+      // Never started: nothing to remove.
+    }
+  }
 }
 
 /** The Markdown report (REPORT), written whatever happened; exit code 1 on a red step. */
