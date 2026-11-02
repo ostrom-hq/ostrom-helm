@@ -9,13 +9,13 @@ tests:
       ingress.tls.secretName: ostrom-origin-tls
       polis.enabled: true
     asserts:
-      - hasDocuments: { count: 5 }
+      - hasDocuments: { count: 7 }
       - equal: { path: 'spec.tls[0].secretName', value: ostrom-origin-tls }
       - equal: { path: spec.ingressClassName, value: nginx }
       - equal: { path: 'spec.rules[0].host', value: api.ostrom.run }
         documentIndex: 0
       - equal: { path: 'spec.rules[1].host', value: www.ostrom.run }
-        documentIndex: 3
+        documentIndex: 5
       - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-buffering"]', value: "off" }
         documentIndex: 0
   - it: cert-manager is only an annotation, opt-in
@@ -26,7 +26,7 @@ tests:
   - it: skips disabled parts
     set: { site.enabled: false, polis.enabled: false }
     asserts:
-      - hasDocuments: { count: 3 }
+      - hasDocuments: { count: 5 }
   - it: artifact publishing has its own Ingress on the API host, 32m, every other API route keeps 16m
     asserts:
       - equal: { path: metadata.name, value: o-ostrom-api-artifacts }
@@ -41,10 +41,48 @@ tests:
         documentIndex: 0
       - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]', value: 16m }
         documentIndex: 0
-  - it: no artifacts Ingress when its body size is unset
-    set: { ingress.artifactsBodySize: "" }
+  - it: the server's larger bodies, each on its own Ingress over the API annotations; every other API route keeps 16m
     asserts:
-      - hasDocuments: { count: 3 }
+      - equal: { path: metadata.name, value: o-ostrom-api-import }
+        documentIndex: 2
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]', value: 8m }
+        documentIndex: 2
+      - equal: { path: 'spec.rules[0].http.paths[0].path', value: /api/v1/import }
+        documentIndex: 2
+      - equal: { path: 'spec.rules[1].http.paths[0].path', value: /api/v1/import }
+        documentIndex: 2
+      - equal: { path: metadata.name, value: o-ostrom-api-inference }
+        documentIndex: 3
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]', value: 32m }
+        documentIndex: 3
+      - equal: { path: 'spec.rules[0].http.paths[0].path', value: /api/v1/inference }
+        documentIndex: 3
+      - equal: { path: 'spec.rules[1].http.paths[0].path', value: /api/v1/inference }
+        documentIndex: 3
+      - equal: { path: 'spec.rules[0].host', value: api.example.com }
+        documentIndex: 3
+      - equal: { path: 'spec.rules[1].host', value: app.example.com }
+        documentIndex: 3
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-buffering"]', value: "off" }
+        documentIndex: 3
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"]', value: "3600" }
+        documentIndex: 3
+      - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]', value: 16m }
+        documentIndex: 0
+      - isNull: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]' }
+        documentIndex: 4
+  - it: no Ingress for a body size set to ""
+    set: { ingress.bodySizes.artifacts.size: "", ingress.bodySizes.import.size: "" }
+    asserts:
+      - hasDocuments: { count: 4 }
+      - equal: { path: metadata.name, value: o-ostrom-api-inference }
+        documentIndex: 1
+  - it: without the server, no API Ingress at all
+    set: { server.enabled: false }
+    asserts:
+      - hasDocuments: { count: 2 }
+      - equal: { path: metadata.name, value: o-ostrom-app }
+        documentIndex: 0
   - it: one origin for the browser, the console's host serves the console and /api/v1 from the server; the API host serves all of the API
     set: { ingress.hosts: { api: api.ostrom.run, app: app.ostrom.run, site: ostrom.run, sso: sso.ostrom.run } }
     asserts:
@@ -66,7 +104,7 @@ tests:
         documentIndex: 1
       # o-ostrom-app: everything else on the console's host goes to the console
       - equal: { path: 'spec.rules', value: [{ host: app.ostrom.run, http: { paths: [{ path: /, pathType: Prefix, backend: { service: { name: o-ostrom-web, port: { number: 8080 } } } }] } }] }
-        documentIndex: 2
+        documentIndex: 4
   - it: without the console, the API Ingress serves only the API host
     set: { web.enabled: false }
     asserts:
@@ -76,5 +114,5 @@ tests:
         documentIndex: 0
   - it: no SSO host by default (Polis is off until the server speaks SAML)
     asserts:
-      - hasDocuments: { count: 4 }
+      - hasDocuments: { count: 6 }
       - notEqual: { path: metadata.name, value: o-ostrom-sso }

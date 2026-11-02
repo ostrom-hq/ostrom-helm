@@ -10,10 +10,16 @@
 {{- $apiRules := list (dict "host" $i.hosts.api "path" "/") -}}
 {{- if .Values.web.enabled }}{{ $apiRules = append $apiRules (dict "host" $i.hosts.app "path" "/api/v1") }}{{ end -}}
 {{- if .Values.server.enabled }}{{ $routes = append $routes (dict "name" "api" "rules" $apiRules "svc" $server "port" $sport "annotations" $i.apiAnnotations) }}{{ end -}}
-{{- if and .Values.server.enabled $i.artifactsBodySize }}
-{{- $artRules := list (dict "host" $i.hosts.api "path" "/api/v1/artifacts") -}}
-{{- if .Values.web.enabled }}{{ $artRules = append $artRules (dict "host" $i.hosts.app "path" "/api/v1/artifacts") }}{{ end -}}
-{{- $routes = append $routes (dict "name" "api-artifacts" "rules" $artRules "svc" $server "port" $sport "annotations" (merge (dict "nginx.ingress.kubernetes.io/proxy-body-size" $i.artifactsBodySize) $i.apiAnnotations)) }}
+{{- /* Routes whose body the server reads beyond its 1 MiB default (S2-46): each gets its own Ingress, on both hosts,
+       with its proxy-body-size over the API annotations. */ -}}
+{{- if .Values.server.enabled }}
+{{- range $name, $b := $i.bodySizes }}
+{{- if $b.size }}
+{{- $bRules := list (dict "host" $i.hosts.api "path" $b.path) -}}
+{{- if $.Values.web.enabled }}{{ $bRules = append $bRules (dict "host" $i.hosts.app "path" $b.path) }}{{ end -}}
+{{- $routes = append $routes (dict "name" (printf "api-%s" $name) "rules" $bRules "svc" $server "port" $sport "annotations" (merge (dict "nginx.ingress.kubernetes.io/proxy-body-size" $b.size) $i.apiAnnotations)) }}
+{{- end }}
+{{- end }}
 {{- end -}}
 {{- if .Values.web.enabled }}{{ $routes = append $routes (dict "name" "app" "rules" (list (dict "host" $i.hosts.app "path" "/")) "svc" (printf "%s-web" $full) "port" .Values.web.service.port "annotations" dict) }}{{ end -}}
 {{- if .Values.site.enabled }}

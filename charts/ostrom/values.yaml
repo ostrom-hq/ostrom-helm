@@ -330,9 +330,19 @@ ingress:
   # "Authenticated Origin Pulls" enabled on the zone: any other client, Cloudflare unproxied included, gets a 400.
   cloudflareOriginPulls:
     enabled: false
-  # Publishing an artifact carries its files base64 in JSON (server limit ~27.7 MiB, S2-46): `/api/v1/artifacts` gets
-  # its own Ingress with this body size; every other API route keeps apiAnnotations' 16m.
-  artifactsBodySize: 32m
+  # The routes whose body the server reads beyond its 1 MiB default (S2-46): each gets its own Ingress,
+  # `<release>-api-<name>`, on the API host and the console's host, with this body size; every other API route keeps
+  # apiAnnotations' 16m. Set a size to "" to drop its Ingress.
+  bodySizes:
+    artifacts:                # a version's files, base64 in JSON (~27.7 MiB on the server)
+      path: /api/v1/artifacts
+      size: 32m
+    inference:                # a model call carries its whole context (32 MiB on the server)
+      path: /api/v1/inference
+      size: 32m
+    import:                   # a TeamCode export (8 MiB on the server)
+      path: /api/v1/import
+      size: 8m
   apiAnnotations:
     nginx.ingress.kubernetes.io/proxy-body-size: 16m
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
