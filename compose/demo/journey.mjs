@@ -196,7 +196,7 @@ async function journey() {
       let status = made.json.status;
       let last = made;
       const t0 = Date.now();
-      while (status !== 'running' && Date.now() - t0 < CLOUD_TIMEOUT_S * 1000 && !['failed', 'deleted'].includes(status)) {
+      while (status !== 'running' && Date.now() - t0 < CLOUD_TIMEOUT_S * 1000 && !['failed', 'terminated'].includes(status)) {
         await sleep(2000);
         last = await owner.call('GET', `/api/v1/cloud/sessions/${sessionId}`);
         status = last.json.status;
@@ -263,12 +263,13 @@ async function journey() {
   if (sessionId) {
     const stopped = await owner.call('DELETE', `/api/v1/cloud/sessions/${sessionId}`);
     let status = stopped.json.status;
-    for (let i = 0; i < 30 && status !== 'deleted' && stopped.status < 300; i++) {
+    // The contract's final state is `terminated`; a 404 (the row gone) counts as deleted too.
+    for (let i = 0; i < 30 && !['terminated', 'deleted'].includes(status) && stopped.status < 300; i++) {
       await sleep(2000);
       const r = await owner.call('GET', `/api/v1/cloud/sessions/${sessionId}`);
       status = r.status === 404 ? 'deleted' : r.json.status;
     }
-    record('D3', 'Session cloud arrêtée et supprimée', status === 'deleted' ? GREEN : RED, `DELETE → ${stopped.status}, puis ${status}`);
+    record('D3', 'Session cloud arrêtée et supprimée', ['terminated', 'deleted'].includes(status) ? GREEN : RED, `DELETE → ${stopped.status}, puis ${status}`);
   }
 
 }
