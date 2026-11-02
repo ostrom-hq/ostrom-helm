@@ -500,8 +500,9 @@ async function isolatedRunner(owner) {
   let cloudId = '';
   try {
     const flow = await owner.call('POST', '/api/v1/workflows', {
-      id: `demo-checks-${run}`, name: 'Demo checks', domain: 'delivery', status: 'accepted', foundAt: new Date().toISOString(),
-      nodes: [{ id: 'tests', kind: 'check', label: 'Tests', run: { command: 'echo "tests ok on $(hostname)"' } }],
+      // The workflow names the repository: a package takes the workflows whose text mentions it (or whose gates act on it).
+      id: `demo-checks-${run}`, name: `Checks of ${repo}`, domain: 'delivery', status: 'accepted', foundAt: new Date().toISOString(),
+      nodes: [{ id: 'tests', kind: 'check', label: 'Tests', detail: `The tests of ${repo}`, run: { command: 'echo "tests ok on $(hostname)"' } }],
       edges: [],
     });
     steps.push(`workflow ${flow.status}`);
@@ -539,8 +540,8 @@ async function isolatedRunner(owner) {
     const digest = current.json.digest ?? '';
     const script = (payload.scripts ?? []).find((x) => x.nodeId === 'tests');
     const text = (payload.files ?? []).find((f) => f.path === script?.path)?.content;
-    steps.push(`paquet ${current.status}${script ? `, script ${script.id} (${script.mode})` : ', pas de script pour le nœud'}`);
-    if (!digest || !script || text === undefined) return record('D5', title, RED, `${steps.join(', ')} : ${brief(current)}`);
+    steps.push(`paquet ${current.status}${script ? `, script ${script.id} (${script.mode})` : `, pas de script pour le nœud (nœuds du paquet : ${(payload.nodes ?? []).map((n) => `${n.id}:${n.kind}`).join(' ') || 'aucun'}, scripts : ${(payload.scripts ?? []).length})`}`);
+    if (!digest || !script || text === undefined) return record('D5', title, RED, steps.join(', '));
 
     const sid = `d5-${run}`;
     const opened = await bearer(token, 'POST', '/api/v1/sessions', { id: sid, agent: 'claude-code', repo, packageDigest: digest });
