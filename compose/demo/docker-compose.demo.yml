@@ -7,7 +7,7 @@
 #     for the providers' token endpoints the import's cutover calls;
 #   - a fake TeamCode team in MySQL (demo/teamcode), for `ostrom import teamcode`;
 #   - cloud sessions on this machine's Docker (OSTROM_RUNNERS_DRIVER=docker): the server reaches the engine through a
-#     socket proxy on a network of its own, and each session's two containers (the agent host and the runner, S2-49)
+#     socket proxy on a network of its own, and each session's three containers (the agent host, the check host and the runner, S2-49)
 #     join `ostrom-sessions`, an internal network where they reach the server and nothing else: no database, no engine,
 #     no published port of this machine (Caddy, so the Mailpit inbox and its sign-in links), no internet.
 # The Docker socket proxy can create containers: never run this file on a shared or exposed machine.
