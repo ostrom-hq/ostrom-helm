@@ -67,7 +67,7 @@ jobs:
         run: |
           if [ "$EVENT" != pull_request ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           changed=$(git diff --name-only "$BASE"...HEAD)
-          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|networkpolicy\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/migrate-drill\.sh|\.github/workflows/ci\.yml)'; then
+          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|networkpolicy\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/(migrate|perf)-drill\.sh|\.github/workflows/ci\.yml)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -247,6 +247,9 @@ jobs:
         run: |
           kind load docker-image ostrom-server:chart-ci --name chart-testing
           SERVER_IMAGE=ostrom-server:chart-ci ci/migrate-drill.sh
+      - name: Startup to ready, and the server's PodDisruptionBudget against a node drain (real server)
+        if: steps.real.outputs.run == 'true'
+        run: SERVER_IMAGE=ostrom-server:chart-ci ci/perf-drill.sh
       - name: Cluster state on failure
         if: failure()
         run: |

@@ -59,11 +59,12 @@ server:
   existingSecret: ""
   extraEnv: []
   extraEnvFrom: []
-  # Measured in kind through the ingress (ostrom-e2e chart-load.yml, runs 41053122493 and 41055002838): about 50 req/s per replica
-  # peaks at 130-194m CPU and 90-114 MiB; at rest a few millicores and under 10 MiB. Requests cover that peak,
-  # the limit keeps twice its memory.
+  # Measured in kind through the ingress (ostrom-e2e chart-load.yml, runs 41507938323, 41519346164 and 41530106515: reads,
+  # writes, gates with their yes, the race of 100 yes; 0 restarts): about 50 req/s per replica peaks at 134-240m CPU
+  # and 128-165 MiB (kubectl top, 15 s windows); at rest a few millicores and under 10 MiB. Requests cover that peak.
+  # The 256 MiB limit stays: memory under the race is the server's to fix (AUDIT-GATES-2), not the limit's to hide.
   resources:
-    requests: { cpu: 100m, memory: 128Mi }
+    requests: { cpu: 250m, memory: 192Mi }
     limits: { memory: 256Mi }
   probes:
     startup: { path: /health, periodSeconds: 2, failureThreshold: 60 }
@@ -230,8 +231,9 @@ postgresql:
   persistence:
     size: 20Gi
     storageClass: ""
+  # Measured with the server above (same runs): 128-245m CPU and 77-82 MiB at peak; shared_buffers alone is 128 MB.
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
+    requests: { cpu: 250m, memory: 256Mi }
     limits: { memory: 1Gi }
   parameters:
     max_connections: "200"

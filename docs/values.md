@@ -163,7 +163,9 @@ Job against an external database) and give both: `externalDatabase.username`
   default; add `topologySpreadConstraints` to spread over zones too.
 - **PodDisruptionBudget**, `minAvailable: 1`. It is rendered only when the fewest replicas that can run (`replicas`, or
   `autoscaling.minReplicas` with the HPA) are two or more: with one, the budget would block every node drain. The
-  chart refuses a `minAvailable` equal to or above that number, for the same reason.
+  chart refuses a `minAvailable` equal to or above that number, for the same reason. The CI drains the node of a two-replica
+  release on kind (`ci/perf-drill.sh`): one server pod is evicted, the other is refused by the budget, and the Service
+  keeps a ready endpoint all along.
 - **HPA**, `autoscaling.enabled` (needs metrics-server). The Deployment then has no `replicas`, so an upgrade never resets
   the HPA's count. The server's `autoscaling.behavior` scales up at once and down by one pod a minute, after 5 minutes
   of low load; any [HPA `behavior`](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior)
