@@ -9,7 +9,7 @@ tests:
       - equal: { path: 'metadata.annotations["helm.sh/hook"]', value: test }
       - equal: { path: 'metadata.labels["app.kubernetes.io/component"]', value: network-probe }
       - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: o }
-      - equal: { path: 'spec.containers[0].image', value: 'docker.io/library/postgres:17.6' }
+      - matchRegex: { path: 'spec.containers[0].image', pattern: '^docker\.io/library/postgres:17\.6@sha256:[a-f0-9]{64}$' }
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'host=o-ostrom-postgresql' }
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'getent hosts' }
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'pg_isready -h "[$]host" -p 5432 -t 5' }
@@ -22,7 +22,7 @@ tests:
       postgresql.enabled: false
       externalDatabase: { url: postgresql://db:5432/o, username: u, password: p, migrationUsername: o, migrationPassword: p }
     asserts:
-      - equal: { path: 'spec.containers[0].image', value: 'docker.io/curlimages/curl:8.11.1' }
+      - matchRegex: { path: 'spec.containers[0].image', pattern: '^docker\.io/curlimages/curl:8\.11\.1@sha256:[a-f0-9]{64}$' }
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'url=http://o-ostrom-server:8080/health' }
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'proves nothing' }
       - equal: { path: spec.securityContext.runAsUser, value: 100 }
