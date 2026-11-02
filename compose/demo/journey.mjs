@@ -257,7 +257,8 @@ async function journey() {
   if (orgId && joined && teamcodeCheck) {
     try {
       const members = (await owner.call('GET', `/api/v1/orgs/${orgId}/members`)).json.items ?? [];
-      const idOf = (email) => members.find((m) => m.email === email)?.id;
+      // As the CLI maps them: by e-mail, else by login (an e-mail sign-up's login is the e-mail's local part).
+      const idOf = (email) => members.find((m) => m.email === email || m.login === email.split('@')[0])?.id;
       const memberMap = Object.fromEntries([['m-alice', idOf(ownerEmail)], ['m-rev', idOf(reviewerEmail)]].filter(([, id]) => id));
       const tables = readTables(dockerQuery(env('TEAMCODE_DB_CONTAINER', 'ostrom-teamcode-db-1')), TEAM);
       const { body } = teamCodeImport(tables, demoKey(), TEAM, memberMap);
@@ -273,13 +274,16 @@ async function journey() {
       const cutPlan = imported ? await owner.call('POST', '/api/v1/import/teamcode?dryRun=true&cutover=true', body) : { status: 0, text: 'I2 a échoué', json: {} };
       const cut = cutPlan.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode?cutover=true', body) : cutPlan;
       const accounts = (cut.json.items ?? []).filter((i) => i.kind === 'account');
-      const revived = accounts.filter((i) => ['created', 'updated'].includes(i.action)).length;
-      const cutOk = cut.status === 200 && cut.json.reviveAtCutover === 0 && revived > 0;
-      const cutState = cut.status === 503 || /not (enabled|configured)/i.test(cut.text ?? '') ? NOT_YET : cutOk ? GREEN : RED;
+      const kept = accounts.filter((i) => i.action !== 'skipped');
+      // The cutover is recorded in the audit log in the owner's name, before anything is written (ostrom-server#86).
+      const audit = cut.status === 200 ? await owner.call('GET', '/api/v1/auth/me/audit?limit=50') : { status: 0, text: '' };
+      const audited = audit.status === 200 && audit.text.includes('import.teamcode.cutover');
+      const cutOk = cut.status === 200 && cut.json.reviveAtCutover === 0 && kept.length === accounts.length && accounts.length > 0 && (audit.status !== 200 || audited);
+      const cutState = cut.status === 503 ? NOT_YET : cutOk ? GREEN : RED;
+      // A revival needs an account Ostrom already holds as `reconnect_required`; the demo's are fresh, so the cutover
+      // finds them up to date. The revival through the provider's token endpoint is covered by the server's tests.
       record('I3', 'Bascule de l’import par l’owner (cutover)', cutState,
-        cutOk
-          ? `plan ${cutPlan.status}, bascule ${cut.status} : ${revived} compte(s) partagé(s) ranimé(s), jetons renouvelés chez le fournisseur (faux), ${cut.json.reviveAtCutover} encore en attente`
-          : `plan → ${brief(cutPlan)} ; bascule → ${brief(cut)}${accounts.length ? ` ; comptes : ${accounts.map((a) => `${a.name} ${a.action}${a.reason ? ` (${a.reason})` : ''}`).join(', ')}` : ''}`);
+        `plan ${cutPlan.status}, bascule ${cut.status} : comptes ${accounts.map((a) => `${a.name} ${a.action}`).join(', ') || 'aucun'}, ${cut.json.reviveAtCutover ?? '?'} en attente ; journal d’audit ${audit.status === 200 ? (audited ? 'avec la bascule au nom de l’owner' : 'SANS la bascule') : `non lu (${audit.status})`}${cutOk ? '' : ` ; ${brief(cut)}`}`);
     } catch (e) {
       record('I2', 'Import TeamCode', RED, e.message);
     }
