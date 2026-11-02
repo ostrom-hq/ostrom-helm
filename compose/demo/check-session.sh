@@ -23,7 +23,7 @@ checks=$(docker ps -q --filter "label=ostrom.run/session=$hex" --filter "name=-c
 [ "$(docker exec "$checks" id -u)" = 1000 ] || { echo "the check host does not run as 1000"; exit 1; }
 # The check socket's volume is the one the check host and the runner share; the agent must not mount it.
 # The runner's container is the execution's own name, without a suffix: the one that is neither of the others.
-runner=$(printf '%s\n' $ids | grep -vx -e "$agent" -e "$checks")
+runner=$(printf '%s\n' "$ids" | grep -vx -e "$agent" -e "$checks")
 volumes() { docker inspect -f '{{range .Mounts}}{{if .Name}}{{.Name}}{{"\n"}}{{end}}{{end}}' "$1" | sort -u; }
 shared=$(volumes "$checks" | while read -r v; do volumes "$runner" | grep -qx "$v" && echo "$v"; done)
 [ -n "$shared" ] || { echo "the check host and the runner share no volume: no check socket found"; exit 1; }
