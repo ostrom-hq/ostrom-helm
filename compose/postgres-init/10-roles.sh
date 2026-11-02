@@ -32,7 +32,8 @@ GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
 -- AUDIT-RLS R8: the migrations' history is written by its owner alone. Any other role (the serving role, ostrom_tenant
 -- that it inherits, PUBLIC) holding more than SELECT, on the table or a column, loses it all and keeps SELECT.
-DO $$
+-- A named dollar quote: Kubernetes reads a doubled dollar sign in a container's args as one (the pre-upgrade Job).
+DO $lock$
 DECLARE r record;
 BEGIN
   FOR r IN
@@ -56,6 +57,6 @@ BEGIN
     END IF;
   END LOOP;
 END
-$$;
+$lock$;
 SQL
 
