@@ -289,6 +289,7 @@ async function journey() {
   // main, which waits; the second member says yes from their browser with the digest they were shown; the receipt.
   if (orgId && joined) {
     const who = (await reviewer.call('GET', '/api/v1/auth/me', undefined, { org: '' })).json;
+    const members = (await owner.call('GET', `/api/v1/orgs/${orgId}/members`)).json.items ?? [];
     const login = who.login ?? who.dev?.login ?? '';
     const repo = `acme/api-${run}`;
     const flow = await owner.call('POST', '/api/v1/workflows', {
@@ -313,12 +314,27 @@ async function journey() {
       record('Y2', 'Le second membre dit oui depuis son navigateur', yes.status === 200 ? GREEN : RED, mine ? `demande ${mine.id}, oui → ${brief(yes)}` : yes.text);
     } else record('Y2', 'Le second membre dit oui', NOT_YET, 'aucune porte en attente (Y1)');
     if (yes.status === 200) {
+      // The yes lets exactly that SHA through; another commit is a new request. The receipt is signed, names the gate
+      // and who said yes; it binds the push (its refs and SHA) through the subject's digest, checked by `ostrom verify`.
       const after = await bearer(secret, 'POST', '/api/v1/gates', ask, orgId);
+      const other = { ...ask, push: { ...ask.push, refs: [{ ref: 'refs/heads/main', sha: sha.replace(/^./, (c) => (c === 'f' ? '0' : 'f')) }] } };
+      const next = await bearer(secret, 'POST', '/api/v1/gates', other, orgId);
       const receipt = receiptIn(yes.text) || receiptIn(after.text);
-      const kept = receipt ? await owner.call('GET', `/api/v1/receipts/${encodeURIComponent(receipt)}`) : { status: 0, text: '' };
-      const ok = kept.status === 200 && kept.text.includes(login) && kept.text.includes(sha);
-      record('Y3', 'Le push passe, et le reçu du oui nomme l’approbateur et le SHA', ok ? GREEN : RED,
-        `même push → ${after.status} (porte ${after.json.gate?.status ?? '?'}), reçu ${receipt || 'absent'} → ${kept.status}${ok ? `, signé pour ${login} et ${sha.slice(0, 7)}` : ` ${brief(kept)}`}`);
+      const kept = receipt ? await owner.call('GET', `/api/v1/receipts/${encodeURIComponent(receipt)}`) : { status: 0, text: '', json: {} };
+      const decision = kept.json.decisions?.[0] ?? {};
+      const reviewerIds = [login, who.id, who.dev?.id, members.find((m) => m.email === reviewerEmail)?.id].filter(Boolean);
+      const checks = {
+        'même SHA laissé passer': after.json.gate?.status === 'approved',
+        'autre SHA de nouveau en attente': next.json.gate?.status === 'pending' && next.json.gate?.id !== gate.id,
+        'reçu signé': kept.status === 200 && typeof kept.json.signature === 'string',
+        'porte du reçu': kept.json.subject?.kind === 'gate' && kept.json.subject?.id === gate.id && /^[0-9a-f]{64}$/.test(kept.json.subject?.digest ?? ''),
+        'oui du second membre': decision.result === 'approved' && reviewerIds.includes(decision.by),
+      };
+      const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([k]) => k);
+      record('Y3', 'Le oui ne vaut que pour ce SHA, et son reçu signé nomme le second membre', failed.length === 0 ? GREEN : RED,
+        failed.length === 0
+          ? `même push → porte ${after.json.gate.status}, autre SHA → porte ${next.json.gate.status} (nouvelle demande) ; reçu ${receipt} signé : porte ${gate.id.slice(0, 8)}, digest ${kept.json.subject.digest.slice(0, 12)}…, oui de ${decision.by} (${decision.at})`
+          : `en défaut : ${failed.join(', ')} ; même push → ${after.status} ${after.json.gate?.status ?? ''}, autre SHA → ${next.status} ${next.json.gate?.status ?? ''}, reçu ${receipt || 'absent'} → ${kept.status}, décision ${JSON.stringify(decision)}`);
     } else record('Y3', 'Reçu du oui', NOT_YET, 'pas de oui (Y2)');
   } else record('Y1', 'Porte en attente d’un oui', NOT_YET, 'pas d’organisation ou de second membre');
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { COLUMNS, openEnvelope, readTables, tableQuery, teamCodeImport } from '../teamcode/export.mjs';
+import { COLUMNS, openEnvelope, readTables, tableQuery, teamCodeImport, toolModeOf } from '../teamcode/export.mjs';
 import { demoKey, seal, seedRows, TEAM } from '../teamcode/seed.mjs';
 
 const TABLE_OF = { members: 'members', variants: 'variants', mcp_tool_policies: 'policies', variant_assignments: 'assignments', accounts: 'accounts' };
@@ -31,8 +31,8 @@ test('the import body of the demo team is the one `ostrom import teamcode` build
   const { body, skipped } = teamCodeImport(tables, key, TEAM, { 'm-alice': 'o-alice', 'm-rev': 'o-rev' });
   assert.deepEqual(body.members, [{ id: 'm-alice', username: 'alice' }, { id: 'm-rev', username: 'rev' }, { id: 'm-dev', username: 'dev-2' }]);
   assert.deepEqual(body.mcpServers.map((s) => [s.id, s.perMember, s.sharedSecret, s.credentialHeader, s.toolMode, s.tools.length]), [
-    ['v-github', false, 'ghp_demo_not_a_real_token', null, 'ALLOWLIST', 3],
-    ['v-linear', true, null, null, 'ALLOWLIST', 2],
+    ['v-github', false, 'ghp_demo_not_a_real_token', null, 'allow', 3],
+    ['v-linear', true, null, null, 'allow', 2],
     ['v-sentry', false, 'sntrys_demo_not_a_real_token', 'X-Sentry-Token', null, 0],
     ['v-docs', false, null, null, null, 0],
   ]);
@@ -97,4 +97,13 @@ test('an envelope opens only for its own context, and a malformed one is null', 
   assert.equal(openEnvelope(key, null, 'ctx'), null);
   assert.equal(openEnvelope(key, 'v1:AAAA', 'ctx'), null);
   assert.match(tableQuery('accounts', ['id'], "o'k"), /team_id = 'o''k'$/);
+});
+
+test('TeamCode\'s tool modes become the contract\'s: allow, deny, or none for every tool', () => {
+  assert.equal(toolModeOf('ALLOWLIST'), 'allow');
+  assert.equal(toolModeOf('allow'), 'allow');
+  assert.equal(toolModeOf('DENYLIST'), 'deny');
+  assert.equal(toolModeOf(' deny '), 'deny');
+  assert.equal(toolModeOf('ALL'), null);
+  assert.equal(toolModeOf(undefined), null);
 });

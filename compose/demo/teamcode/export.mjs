@@ -33,6 +33,12 @@ function strings(text) {
   }
 }
 
+/** The contract's tool mode of TeamCode's (`ALLOWLIST` → `allow`, `DENYLIST` → `deny`); `ALL` and none mean every tool. */
+export function toolModeOf(mode) {
+  const m = String(mode ?? '').trim().toUpperCase();
+  return m === 'ALLOWLIST' || m === 'ALLOW' ? 'allow' : m === 'DENYLIST' || m === 'DENY' ? 'deny' : null;
+}
+
 const PROVIDERS = { anthropic: 'claude', claude: 'claude', openai: 'codex', codex: 'codex' };
 const truthy = (v) => v === true || v === 1 || v === '1';
 
@@ -72,7 +78,7 @@ export function teamCodeImport(tables, key, team, memberMap) {
       credentialHeader: config.CREDENTIAL_HEADER ?? config.credentialHeader ?? null,
       sharedSecret: v.shared_secret ? open(v.shared_secret, `variant:${team}:${v.id}`, `MCP server ${v.target}`) : null,
       stdio: null,
-      toolMode: policy?.mode ?? null,
+      toolMode: toolModeOf(policy?.mode),
       tools,
     });
   }
