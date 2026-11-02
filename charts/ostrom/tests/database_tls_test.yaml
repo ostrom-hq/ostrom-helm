@@ -120,3 +120,8 @@ tests:
           path: spec.template.spec.initContainers
           content: { name: db-proxy }
           any: true
+  - it: the pin table knows the proxy's digest of values.yaml (a tag changed without its digest is refused)
+    template: templates/server.yaml
+    set: { externalDatabase.tls.proxy.image.tag: "0.0" }
+    asserts:
+      - failedTemplate: { errorPattern: 'externalDatabase.tls.proxy.image: tag "0.0" with the chart.s digest' }

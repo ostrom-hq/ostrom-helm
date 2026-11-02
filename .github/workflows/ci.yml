@@ -138,6 +138,12 @@ jobs:
               --set externalDatabase.migrationUsername=o --set externalDatabase.migrationPassword=p \
               --set server.autoscaling.enabled=true --set postgresql.backup.enabled=true \
               | ./kubeconform -strict -summary -kubernetes-version "$v" -
+            helm template o charts/ostrom -n ostrom --set postgresql.enabled=false \
+              --set externalDatabase.url=postgresql://db:5432/o --set externalDatabase.username=u \
+              --set externalDatabase.password=p --set externalDatabase.migrationUsername=o \
+              --set externalDatabase.migrationPassword=p --set externalDatabase.tls.enabled=true \
+              --set externalDatabase.tls.ca.secretName=db-ca \
+              | ./kubeconform -strict -summary -kubernetes-version "$v" -
             helm template o charts/ostrom -n ostrom --set cloudSessions.enabled=true --set server.replicas=1 \
               --set networkPolicy.kubeApi.cilium=true --set networkPolicy.ciliumEgressDeny.enabled=true \
               | ./kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version "$v" -

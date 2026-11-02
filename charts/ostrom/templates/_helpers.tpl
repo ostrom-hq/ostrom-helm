@@ -54,6 +54,7 @@ means moving it here too: tests/images_test.yaml fails otherwise.
 "sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929": "17.6"
 "sha256:9165f3db9d9f5d3262f23446e860f4929f462d1d9c954af13f3bb44910c3a699": "26.2.0"
 "sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69": "8.11.1"
+"sha256:c96417dce3f7ee82a1cb6df65309ebb7efec0a449363c333c043e2fe0c636097": "1.26.1-202610291052-trixie"
 {{- end -}}
 
 {{/*

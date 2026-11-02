@@ -25,13 +25,13 @@
     {
       description: 'One pull request per third-party image for the chart and the Compose stack, so they never drift',
       matchDatasources: ['docker'],
-      matchPackageNames: ['docker.io/library/postgres', 'postgres', 'library/postgres', 'docker.io/boxyhq/jackson', 'boxyhq/jackson'],
+      matchPackageNames: ['docker.io/library/postgres', 'postgres', 'library/postgres', 'docker.io/boxyhq/jackson', 'boxyhq/jackson', 'ghcr.io/cloudnative-pg/pgbouncer'],
       groupName: 'third-party images (chart and Compose)',
     },
     {
       description: 'The digest-pinned third-party images belong to the regex manager below, not to the Helm values one',
       matchManagers: ['helm-values'],
-      matchDepNames: ['docker.io/library/postgres', 'docker.io/boxyhq/jackson', 'docker.io/curlimages/curl'],
+      matchDepNames: ['docker.io/library/postgres', 'docker.io/boxyhq/jackson', 'docker.io/curlimages/curl', 'ghcr.io/cloudnative-pg/pgbouncer'],
       enabled: false,
     },
   ],
@@ -42,7 +42,7 @@
       customType: 'regex',
       managerFilePatterns: ['/^charts/ostrom/values\\.yaml$/'],
       matchStrings: [
-        'repository: (?<depName>docker\\.io/[^\\s]+)\\s+tag: "(?<currentValue>[^"]+)"\\s+digest: "(?<currentDigest>sha256:[a-f0-9]{64})"',
+        'repository: (?<depName>(docker|ghcr)\\.io/[^\\s]+)\\s+tag: "(?<currentValue>[^"]+)"\\s+digest: "(?<currentDigest>sha256:[a-f0-9]{64})"',
         'image: (?<depName>docker\\.io/[^:\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})',
       ],
       datasourceTemplate: 'docker',

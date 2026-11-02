@@ -9,7 +9,7 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 | `migrations` | `initContainer: true` runs `ostrom-server migrate` before each pod starts |
 | `observability` | `otel` (OTLP/HTTP endpoint and headers), `langfuse`, `posthog` |
 | `web`, `site` | the console (nginx) and the site (Next.js) |
-| `postgresql` / `externalDatabase` | built-in StatefulSet with optional daily `pg_dump`, or your own database |
+| `postgresql` / `externalDatabase` | built-in StatefulSet with optional daily `pg_dump`, or your own database; `externalDatabase.tls` puts a TLS proxy (PgBouncer) in the server pod |
 | `polis` | Ory Polis, the SAML ↔ OIDC bridge. **Coming soon**: off by default (`polis.enabled: false`), the server has no SAML code yet |
 | `cloudSessions` | runner image, resources, deadline; `allowedOrgs` (S2-10); RBAC of the controller |
 | `ingress` | class, hosts, TLS secret or cert-manager issuer, API annotations (streaming, body size) |
@@ -107,6 +107,11 @@ With `postgresql.enabled: false`, create the same roles on your server (the bloc
 Job against an external database) and give both: `externalDatabase.username`
 (serving) and `externalDatabase.migrationUsername` (owner), passwords in `externalDatabase.existingSecret` under
 `password` and `migration-password`.
+
+`externalDatabase.tls` (`enabled`, `mode` `verify-full` | `verify-ca` | `require`, `ca.secretName` or
+`ca.configMapName` with `ca.key`, `host`, `proxy.image`, `proxy.resources`): the server's driver has no TLS, so a
+PgBouncer sidecar dials the database in TLS and the server and `migrate` use it on `127.0.0.1:6432`. See "TLS to an
+external database" in [install-kubernetes.md](install-kubernetes.md).
 
 ## Availability
 
