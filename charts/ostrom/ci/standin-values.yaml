@@ -12,6 +12,10 @@ migrations:
   initContainer: false
 server:
   replicas: 1
+  # The CI's kind node is a 2-vCPU runner shared by every drill: requests below the production defaults.
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
   image: { repository: docker.io/hashicorp/http-echo, tag: "1.0" }
   args: ["-listen=:8080", "-text=ok"]
 web:
@@ -24,6 +28,9 @@ site:
   args: ["-listen=:8080", "-text=ok"]
 postgresql:
   persistence: { size: 1Gi }
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 1Gi }
   # kind's StorageClass binds on first use: an unused backup PVC would hold `helm install --wait` (docs/backup-restore.md).
   backup: { enabled: false }
 ingress:
