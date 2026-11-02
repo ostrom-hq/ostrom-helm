@@ -59,4 +59,35 @@ of `main`. To run another build, set `OSTROM_SERVER_IMAGE` and `OSTROM_WEB_IMAGE
 yourself instead, in a clone of `ostrom-server`: `ci/build-linux.sh` (it leaves the native binary in
 `dist/ostrom-server`), then `docker build -t ostrom-server:local .`, and `OSTROM_SERVER_IMAGE=ostrom-server:local`. See [upgrade.md](upgrade.md).
 
-Cloud sessions (agents running on the server) need Kubernetes: they are off in the Compose install.
+Cloud sessions (agents running on the server) need Kubernetes in the Compose install: they are off there. The local
+demo below runs them on the machine's own Docker.
+
+## Local demo: everything on one machine, nothing outside
+
+`compose/demo/` starts Ostrom whole on a laptop, with no real outside service, to try every screen before a real
+install:
+
+```sh
+cd compose
+demo/demo.sh up        # the install's stack, plus the demo's services
+demo/demo.sh journey   # the customer's journey against it; report in demo-report.md
+demo/demo.sh down      # removes everything it created, cloud sessions included
+```
+
+- **Mail**: the server writes its sign-in and invitation mails to a directory (`OSTROM_MAIL_DIR`). A relay hands them
+  to [Mailpit](https://mailpit.axllent.org), whose inbox is at `http://mail.localhost`.
+- **GitHub**: « Continue with GitHub » goes to a fake GitHub at `http://github.localtest.me`. You pick the login to sign
+  in as; no real account is involved. `github.localtest.me` is a public DNS name that answers `127.0.0.1`: offline, or
+  behind a resolver that refuses such answers, add `127.0.0.1 github.localtest.me` to `/etc/hosts`. The demo needs
+  Caddy on port 80 (`OSTROM_HTTP_PORT`, the default).
+- **Cloud sessions**: they run on this machine's Docker (`OSTROM_RUNNERS_DRIVER=docker`). The server reaches the engine
+  through a socket proxy, on a network only the server joins. Each session's two containers, the agent host and the
+  runner, join the `ostrom-sessions` network, which is internal. There they reach the server and nothing else: not
+  the database, not the engine, not this machine's published ports, not the internet. The session image is `OSTROM_RUNNER_IMAGE` (default
+  `ghcr.io/ostrom-hq/ostrom-runner:latest`).
+- **Billing, optional**: set `OSTROM_DEMO_STRIPE_KEY_FILE` to a file holding a Stripe **test** key (mode 600, outside
+  git) before `demo/demo.sh up`. The Stripe CLI forwards the test events to the server. Checkout opens Stripe's hosted
+  test page, where you pay with `4242 4242 4242 4242`.
+
+The socket proxy lets the server create containers on the machine: run the demo on your own computer only, never on
+a shared or exposed one.
