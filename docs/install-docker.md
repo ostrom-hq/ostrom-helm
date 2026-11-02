@@ -91,7 +91,9 @@ demo/demo.sh down      # removes everything it created, cloud sessions included
   `MYSQL_PWD=demo-teamcode-ro ostrom import teamcode --db mysql://teamcode_ro@127.0.0.1:3307/teamcode --key-file demo/teamcode/key.txt`.
   TeamCode members are matched to Ostrom members by their GitHub login: sign in with the fake GitHub as `alice` and
   as `rev`. The assignments of a member without a match, here `dev-2`, are left out of the import, and so is the
-  account TeamCode never finished.
+  account TeamCode never finished. Once TeamCode is stopped, the owner runs the final pass, the cutover, with the same
+  command plus `--cutover` (`--confirm cutover` without a terminal). It renews the shared accounts' tokens, and in the
+  demo the fake GitHub answers in place of the providers' token endpoints.
 - **Billing, optional**: set `OSTROM_DEMO_STRIPE_KEY_FILE` to a file holding a Stripe **test** key (mode 600, outside
   git) before `demo/demo.sh up`. The Stripe CLI forwards the test events to the server. Checkout opens Stripe's hosted
   test page, where you pay with `4242 4242 4242 4242`.

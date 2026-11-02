@@ -7,6 +7,9 @@
 //   POST /login/oauth/authorize       back to redirect_uri with code and state
 //   POST /login/oauth/access_token    the code (once) for a token; checks client_id, client_secret, code_verifier (S256)
 //   GET  /api/user, /api/user/emails  who the token is
+// It also stands in for the token endpoints of the shared accounts' providers (the server's
+// OSTROM_SHARING_CLAUDE_TOKEN_URL and OSTROM_SHARING_CODEX_TOKEN_URL), for the import's cutover:
+//   POST /claude/oauth/token, /codex/oauth/token   a refresh token for a new pair; `invalid_grant` for a revoked one
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
@@ -35,6 +38,7 @@ export function createFakeGitHub({ clientId, clientSecret }) {
   const codes = new Map();
   const tokens = new Map();
   const users = new Map();
+  const refreshed = [];
   const userOf = (login) => {
     if (!users.has(login)) users.set(login, { login, id: 5000 + users.size, email: `${login.toLowerCase()}@users.github.demo` });
     return users.get(login);
@@ -75,6 +79,13 @@ export function createFakeGitHub({ clientId, clientSecret }) {
       tokens.set(token, userOf(entry.login));
       return send(res, 200, { access_token: token, token_type: 'bearer', scope: 'read:user,user:email' });
     }
+    if (method === 'POST' && (path === '/claude/oauth/token' || path === '/codex/oauth/token')) {
+      const refresh = String(form.refresh_token ?? '');
+      if (form.grant_type !== 'refresh_token' || refresh === '' || refresh.startsWith('revoked')) return send(res, 400, { error: 'invalid_grant' });
+      const provider = path.split('/')[1];
+      refreshed.push(provider);
+      return send(res, 200, { access_token: `${provider}-access-demo-${randomBytes(8).toString('hex')}`, refresh_token: `${provider}-refresh-demo-${randomBytes(8).toString('hex')}`, expires_in: 28800 });
+    }
     const user = tokens.get(authorization.replace(/^(token|bearer)\s+/i, ''));
     if (method === 'GET' && (path === '/api/user' || path === '/api/user/emails')) {
       if (!user) return send(res, 401, { message: 'Bad credentials' });
@@ -103,7 +114,7 @@ export function createFakeGitHub({ clientId, clientSecret }) {
       handle(req.method, url.pathname, url.searchParams, form, req.headers.authorization ?? '', res);
     });
   };
-  return { listener, users };
+  return { listener, users, refreshed };
 }
 
 // The process entry point: run by the Compose demo (its CI run covers it), not by the unit tests.

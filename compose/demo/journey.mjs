@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The customer's journey on the local demo stack, from outside, through Caddy, as a browser and the CLI would call it:
 // sign-up by e-mailed link (read in Mailpit), sign-in with the fake GitHub, an organization, an invitation accepted,
-// the CLI's device login, a cloud session on this machine's Docker with its terminal, isolation between two
+// the CLI's device login, a cloud session on this machine's Docker with its terminal, the TeamCode import and its
+// cutover, the yes end to end (a push to main waiting, the second member's yes, its receipt), isolation between two
 // organizations, billing. Each step is green, red, or not possible yet (a route main does not serve, or a step it needs
 // failed), with what it saw. Writes a Markdown report (REPORT, default demo-report.md) and exits 1 on a red step.
 // Node 22 or later (fetch, WebSocket), no dependency. Usage: node demo/journey.mjs
 import { execFileSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
+import { dockerQuery, readTables, teamCodeImport } from './teamcode/export.mjs';
+import { demoKey, TEAM } from './teamcode/seed.mjs';
 
 const env = (k, d) => (process.env[k] ?? '').trim() || d;
 const API = env('OSTROM_DEMO_API_URL', 'http://api.localhost');
@@ -70,6 +73,25 @@ class Browser {
 }
 
 const brief = (r) => `${r.status} ${r.text.slice(0, 160).replace(/\s+/g, ' ')}`;
+
+/** A call with a personal token, as the CLI and the hooks make them (no cookie, no CSRF). */
+async function bearer(token, method, path, body, org) {
+  const headers = { authorization: `Bearer ${token}` };
+  if (org) headers['ostrom-org'] = org;
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  const r = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const text = await r.text();
+  let json;
+  try {
+    json = text ? JSON.parse(text) : undefined;
+  } catch {
+    json = undefined;
+  }
+  return { status: r.status, json: json ?? {}, text };
+}
+
+/** The receipt id an answer names (`receiptId`, `approval.receiptId`, `receipt.id`, `gate.receiptId`), or ''. */
+const receiptIn = (json) => json.receiptId ?? json.approval?.receiptId ?? json.gate?.receiptId ?? json.receipt?.id ?? (typeof json.receipt === 'string' ? json.receipt : '');
 
 /** The newest mail to `to` in Mailpit whose text holds `marker`, polled for up to 20 s. */
 async function mailTo(to, marker) {
@@ -229,6 +251,101 @@ async function journey() {
       record('I1', 'Base TeamCode factice (MySQL)', RED, `${e.stdout ?? ''}${e.stderr ?? ''}`.trim() || e.message);
     }
   }
+
+  // (i) The TeamCode import, as `ostrom import teamcode` posts it: the plan, the import, then the owner's cutover, which
+  // renews the shared accounts' tokens at their provider (the fake's token endpoints) and revives those left waiting.
+  if (orgId && joined && teamcodeCheck) {
+    try {
+      const members = (await owner.call('GET', `/api/v1/orgs/${orgId}/members`)).json.items ?? [];
+      // As the CLI maps them: by e-mail, else by login (an e-mail sign-up's login is the e-mail's local part).
+      const idOf = (email) => members.find((m) => m.email === email || m.login === email.split('@')[0])?.id;
+      const memberMap = Object.fromEntries([['m-alice', idOf(ownerEmail)], ['m-rev', idOf(reviewerEmail)]].filter(([, id]) => id));
+      const tables = readTables(dockerQuery(env('TEAMCODE_DB_CONTAINER', 'ostrom-teamcode-db-1')), TEAM);
+      const { body } = teamCodeImport(tables, demoKey(), TEAM, memberMap);
+      const count = (r, action) => (r.json.items ?? []).filter((i) => i.action === action).length;
+      const plan = await owner.call('POST', '/api/v1/import/teamcode?dryRun=true', body);
+      const done = plan.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode', body) : plan;
+      const again = done.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode?dryRun=true', body) : done;
+      // Once the server gives the members' ids (server#63), both people of the journey must be mapped.
+      const mapped = !members.some((m) => m.id) || Object.keys(memberMap).length === 2;
+      const imported = done.status === 200 && done.json.created > 0 && again.json.created === 0 && mapped;
+      record('I2', 'Import TeamCode (plan, import, second passage sans changement)', imported ? GREEN : RED,
+        imported
+          ? `${Object.keys(memberMap).length} membres associés${Object.keys(memberMap).length ? '' : members.some((m) => m.id) ? ` (aucun membre Ostrom ne correspond : ${members.map((m) => m.login).join(', ')})` : ' (le serveur ne donne pas encore l’id des membres, server#63 : leurs affectations sont laissées)'} ; plan ${plan.status} (${count(plan, 'planned')} lignes prévues), import : ${done.json.created} créées, ${done.json.skipped} sautées, ${done.json.reviveAtCutover} compte(s) en attente de la bascule ; second plan : ${again.json.created} à créer`
+          : `plan → ${brief(plan)} ; import → ${brief(done)} ; second plan → ${brief(again)}`);
+      const cutPlan = imported ? await owner.call('POST', '/api/v1/import/teamcode?dryRun=true&cutover=true', body) : { status: 0, text: 'I2 a échoué', json: {} };
+      const cut = cutPlan.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode?cutover=true', body) : cutPlan;
+      const accounts = (cut.json.items ?? []).filter((i) => i.kind === 'account');
+      const kept = accounts.filter((i) => i.action !== 'skipped');
+      // The cutover is recorded in the audit log in the owner's name, before anything is written (ostrom-server#86).
+      const audit = cut.status === 200 ? await owner.call('GET', '/api/v1/audit?limit=50') : { status: 0, text: '' };
+      const audited = audit.status === 200 && audit.text.includes('import.teamcode.cutover');
+      const cutOk = cut.status === 200 && cut.json.reviveAtCutover === 0 && kept.length === accounts.length && accounts.length > 0 && (audit.status !== 200 || audited);
+      const cutState = cut.status === 503 ? NOT_YET : cutOk ? GREEN : RED;
+      // A revival needs an account Ostrom already holds as `reconnect_required`; the demo's are fresh, so the cutover
+      // finds them up to date. The revival through the provider's token endpoint is covered by the server's tests.
+      record('I3', 'Bascule de l’import par l’owner (cutover)', cutState,
+        `plan ${cutPlan.status}, bascule ${cut.status} : comptes ${accounts.map((a) => `${a.name} ${a.action}`).join(', ') || 'aucun'}, ${cut.json.reviveAtCutover ?? '?'} en attente ; journal d’audit de l’org ${audit.status === 200 ? (audited ? 'avec la bascule au nom de l’owner' : 'SANS la bascule') : `pas encore servi (GET /audit → ${audit.status})`}${cutOk ? '' : ` ; ${brief(cut)}`}`);
+    } catch (e) {
+      record('I2', 'Import TeamCode', RED, e.message);
+    }
+  } else record('I2', 'Import TeamCode', NOT_YET, 'pas d’organisation, de second membre ou de base TeamCode');
+
+  // (y) The yes, end to end: a workflow whose push-main gate names the second member; the owner's token asks a push to
+  // main, which waits; the second member says yes from their browser with the digest they were shown; the receipt.
+  if (orgId && joined) {
+    const who = (await reviewer.call('GET', '/api/v1/auth/me', undefined, { org: '' })).json;
+    const members = (await owner.call('GET', `/api/v1/orgs/${orgId}/members`)).json.items ?? [];
+    const login = who.login ?? who.dev?.login ?? '';
+    const repo = `acme/api-${run}`;
+    if (!login) record('Y1', 'Porte en attente d’un oui', RED, `le second membre n’a pas de login (/auth/me → ${JSON.stringify(who).slice(0, 120)})`);
+    const flow = !login ? { status: 0, text: '', json: {} } : await owner.call('POST', '/api/v1/workflows', {
+      id: `demo-${run}`, name: 'Demo delivery', domain: 'delivery', status: 'accepted', foundAt: new Date().toISOString(),
+      nodes: [{ id: 'push-main', kind: 'gate', label: 'Push to main', approvers: [login], actions: [{ class: 'push-main', label: 'Push to the main branch', patterns: [], repos: [repo] }] }],
+      edges: [],
+    });
+    const pat = flow.status < 300 ? await owner.call('POST', '/api/v1/tokens', { name: `demo asker ${run}`, scopes: ['gates:ask', 'gates:read'], expiresInDays: 1 }) : flow;
+    const secret = pat.json.secret ?? '';
+    const sha = randomUUID().replaceAll('-', '').padEnd(40, '0').slice(0, 40);
+    const ask = { repo, class: 'push-main', tool: 'Bash', command: 'git push origin main', push: { remote: 'origin', refs: [{ ref: 'refs/heads/main', sha }] } };
+    const asked = secret ? await bearer(secret, 'POST', '/api/v1/gates', ask, orgId) : pat;
+    const gate = asked.json.gate ?? {};
+    const pending = gate.status === 'pending';
+    if (login) record('Y1', 'Porte en attente d’un oui (push sur main)', pending ? GREEN : RED,
+      `workflow ${flow.status}, jeton ${pat.status}, POST /gates → ${asked.status}, porte ${gate.status ?? '?'}${pending ? ` (${gate.id}), approbateur ${login}` : ` : ${brief(asked)}`}`);
+    let yes = { status: 0, text: '', json: {} };
+    if (pending) {
+      const list = await reviewer.call('GET', '/api/v1/approvals?mine=true&status=pending&limit=50');
+      const mine = (list.json.items ?? []).find((a) => a.group === gate.id || a.gate === gate.id);
+      yes = mine ? await reviewer.call('POST', `/api/v1/approvals/${encodeURIComponent(mine.id)}/answer`, { answer: 'approve', shownDigest: mine.shownDigest }) : { status: 0, text: `aucune demande pour ${login} : ${brief(list)}`, json: {} };
+      record('Y2', 'Le second membre dit oui depuis son navigateur', yes.status === 200 ? GREEN : RED, mine ? `demande ${mine.id}, oui → ${brief(yes)}` : yes.text);
+    } else record('Y2', 'Le second membre dit oui', NOT_YET, 'aucune porte en attente (Y1)');
+    if (yes.status === 200) {
+      // The yes lets exactly that SHA through; another commit is a new request. The receipt is signed, names the gate
+      // and who said yes; it binds the push (its refs and SHA) through the subject's digest, checked by `ostrom verify`.
+      const after = await bearer(secret, 'POST', '/api/v1/gates', ask, orgId);
+      const other = { ...ask, push: { ...ask.push, refs: [{ ref: 'refs/heads/main', sha: sha.replace(/^./, (c) => (c === 'f' ? '0' : 'f')) }] } };
+      const next = await bearer(secret, 'POST', '/api/v1/gates', other, orgId);
+      const receipt = receiptIn(yes.json) || receiptIn(after.json);
+      const kept = receipt ? await owner.call('GET', `/api/v1/receipts/${encodeURIComponent(receipt)}`) : { status: 0, text: '', json: {} };
+      const decision = kept.json.decisions?.[0] ?? {};
+      const reviewerIds = [login, who.id, who.dev?.id, members.find((m) => m.email === reviewerEmail)?.id].filter(Boolean);
+      const checks = {
+        'même SHA laissé passer': after.json.gate?.status === 'approved',
+        'autre SHA de nouveau en attente': next.json.gate?.status === 'pending' && next.json.gate?.id !== gate.id,
+        'reçu signé': kept.status === 200 && typeof kept.json.signature === 'string',
+        'porte du reçu': kept.json.subject?.kind === 'gate' && kept.json.subject?.id === gate.id && /^[0-9a-f]{64}$/.test(kept.json.subject?.digest ?? ''),
+        'oui du second membre': decision.result === 'approved' && reviewerIds.includes(decision.by),
+      };
+      const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([k]) => k);
+      record('Y3', 'Le oui ne vaut que pour ce SHA, et son reçu signé nomme le second membre', failed.length === 0 ? GREEN : RED,
+        failed.length === 0
+          ? `même push → porte ${after.json.gate.status}, autre SHA → porte ${next.json.gate.status} (nouvelle demande) ; reçu ${receipt} signé : porte ${gate.id.slice(0, 8)}, digest ${kept.json.subject.digest.slice(0, 12)}…, oui de ${decision.by} (${decision.at})`
+          : `en défaut : ${failed.join(', ')} ; même push → ${after.status} ${after.json.gate?.status ?? ''}, autre SHA → ${next.status} ${next.json.gate?.status ?? ''}, reçu ${receipt || 'absent'} → ${kept.status}, décision ${JSON.stringify(decision)}`);
+    } else record('Y3', 'Reçu du oui', NOT_YET, 'pas de oui (Y2)');
+    // The journey's token goes with it: no demo run leaves a live token behind.
+    if (pat !== flow && pat.json.id) await owner.call('DELETE', `/api/v1/tokens/${encodeURIComponent(pat.json.id)}`);
+  } else record('Y1', 'Porte en attente d’un oui', NOT_YET, 'pas d’organisation ou de second membre');
 
   // (g) Isolation: the GitHub person (no membership of Acme) sees nothing of it.
   if (orgId && a2.ok) {
