@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# What every pod the chart renders must hold (AUDIT-SECU-HELM-2 M6), checked by the Kyverno CLI on every render the CI
+# validates (ci/policy-check.sh). That script turns each Deployment, StatefulSet, Job and CronJob into the Pod it
+# would create, so the rules are written for Pods only. Never applied to a cluster: the chart creates nothing
+# cluster-wide.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: ostrom-chart-restricted
+  annotations:
+    # ci/policy-check.sh already turns the controllers into Pods.
+    pod-policies.kyverno.io/autogen-controllers: none
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    # The Pod Security Standard `restricted`, by the same library as the Kubernetes admission controller.
+    - name: pod-security-restricted
+      match:
+        any:
+          - resources: { kinds: [Pod] }
+      validate:
+        podSecurity:
+          level: restricted
+          version: latest
+    # Beyond `restricted`: a read-only root filesystem. Ory Polis is the documented exception (Next.js writes its cache
+    # next to the app, AUDIT-SECU-HELM-2 B4; off by default).
+    - name: read-only-root-filesystem
+      match:
+        any:
+          - resources: { kinds: [Pod] }
+      exclude:
+        any:
+          - resources:
+              kinds: [Pod]
+              selector:
+                matchLabels: { app.kubernetes.io/component: polis }
+      validate:
+        message: every container runs with readOnlyRootFilesystem true
+        pattern:
+          spec:
+            =(initContainers):
+              - securityContext: { readOnlyRootFilesystem: true }
+            containers:
+              - securityContext: { readOnlyRootFilesystem: true }
+    - name: requests-and-memory-limit
+      match:
+        any:
+          - resources: { kinds: [Pod] }
+      validate:
+        message: every container declares its CPU and memory requests and a memory limit
+        pattern:
+          spec:
+            =(initContainers):
+              - resources:
+                  requests: { cpu: "?*", memory: "?*" }
+                  limits: { memory: "?*" }
+            containers:
+              - resources:
+                  requests: { cpu: "?*", memory: "?*" }
+                  limits: { memory: "?*" }
+    - name: no-moving-tag
+      match:
+        any:
+          - resources: { kinds: [Pod] }
+      validate:
+        message: an image is pinned by a version tag or a digest, never a branch-like tag (latest, edge, main…) or no tag
+        foreach:
+          - list: "request.object.spec.[containers, initContainers][]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ regex_match('(?i)^[^@]+:(latest|edge|main|master|nightly|dev|stable)$', element.image) }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ regex_match('^[^:@]+(:[0-9]+/[^:@]+)?$', element.image) }}"
+                    operator: Equals
+                    value: true
+    # Only the server may get a Kubernetes token (cloud sessions); every other pod says no, explicitly.
+    - name: no-service-account-token
+      match:
+        any:
+          - resources: { kinds: [Pod] }
+      exclude:
+        any:
+          - resources:
+              kinds: [Pod]
+              selector:
+                matchLabels: { app.kubernetes.io/component: server }
+      validate:
+        message: automountServiceAccountToken is false on the pod
+        pattern:
+          spec:
+            automountServiceAccountToken: false
+    - name: server-token-explicit
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              selector:
+                matchLabels: { app.kubernetes.io/component: server }
+      validate:
+        message: the server pod says whether it mounts a Kubernetes token
+        pattern:
+          spec:
+            automountServiceAccountToken: "?*"
