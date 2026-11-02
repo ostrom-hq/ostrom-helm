@@ -7,9 +7,13 @@ cd "$(dirname "$0")"
 command -v docker >/dev/null 2>&1 || { echo "docker is required: https://docs.docker.com/engine/install/" >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "docker compose v2 is required" >&2; exit 1; }
 
-# `head` closes the pipe once it has its characters: `tr` then dies of SIGPIPE, which is expected, and its
-# « write error: Broken pipe » is not an error of the install, so it is not printed.
-secret() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "$1"; }
+# A fixed 4 KiB of randomness, so no reader closes its pipe early (no « tr: Broken pipe »): about 990 of its bytes
+# are letters or digits, far more than a secret needs; one shorter than asked stops the install.
+secret() {
+  value=$(head -c 4096 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c "1-$1")
+  [ "${#value}" -eq "$1" ] || { echo "could not generate a secret of $1 characters" >&2; exit 1; }
+  printf %s "$value"
+}
 
 umask 077
 if [ ! -f .env ]; then

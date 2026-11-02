@@ -384,7 +384,7 @@ async function journey() {
         'même SHA laissé passer': after.json.gate?.status === 'approved',
         'autre SHA de nouveau en attente': next.json.gate?.status === 'pending' && next.json.gate?.id !== gate.id,
         'reçu signé': kept.status === 200 && typeof kept.json.signature === 'string',
-        'reçu dans la réponse au oui': receiptIn(yes.json) === receipt,
+        'reçu dans la réponse au oui': typeof yes.json.receipt?.id === 'string' && yes.json.receipt.id === receipt,
         'reçu de la porte': receipt === `rcpt_gate_${gate.id}`,
         'commit du reçu': kept.json.subject?.kind === 'gate' && kept.json.subject?.id === sha && /^[0-9a-f]{64}$/.test(kept.json.subject?.digest ?? ''),
         'oui du second membre': decision.result === 'approved' && reviewerIds.includes(decision.by),

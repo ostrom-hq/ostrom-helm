@@ -20,8 +20,16 @@ agent=$(docker ps -q --filter "label=ostrom.run/session=$hex" --filter "name=-ag
 [ "$(docker exec "$agent" id -u)" = 1000 ] || { echo "the agent does not run as 1000"; exit 1; }
 checks=$(docker ps -q --filter "label=ostrom.run/session=$hex" --filter "name=-checks")
 [ -n "$checks" ] || { echo "no check host container"; exit 1; }
-[ "$(docker inspect -f '{{.Config.User}}' "$checks")" = 1000:1000 ] || { echo "the check host does not run as 1000"; exit 1; }
-if docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' "$agent" | grep -q -- '-checks '; then echo "the agent mounts the check socket"; exit 1; fi
+[ "$(docker exec "$checks" id -u)" = 1000 ] || { echo "the check host does not run as 1000"; exit 1; }
+# The check socket's volume is the one the check host and the runner share; the agent must not mount it.
+# The runner's container is the execution's own name, without a suffix: the one that is neither of the others.
+runner=$(printf '%s\n' $ids | grep -vx -e "$agent" -e "$checks")
+volumes() { docker inspect -f '{{range .Mounts}}{{if .Name}}{{.Name}}{{"\n"}}{{end}}{{end}}' "$1" | sort -u; }
+shared=$(volumes "$checks" | while read -r v; do volumes "$runner" | grep -qx "$v" && echo "$v"; done)
+[ -n "$shared" ] || { echo "the check host and the runner share no volume: no check socket found"; exit 1; }
+for v in $shared; do
+  if volumes "$agent" | grep -qx "$v"; then echo "the agent mounts the check socket ($v)"; exit 1; fi
+done
 docker exec "$agent" sh -c 'curl -fsS -m 5 http://server:8080/health' | grep -q '"status":"ok"' || { echo "the agent cannot reach the server"; exit 1; }
 for host in postgres docker-api; do
   if docker exec "$agent" getent hosts "$host" > /dev/null 2>&1; then echo "the agent resolves $host"; exit 1; fi
