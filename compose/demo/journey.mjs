@@ -219,6 +219,17 @@ async function journey() {
     }
   } else record('D1', 'Session cloud', NOT_YET, 'pas d’organisation');
 
+  // TeamCode import: the fake TeamCode base the CLI reads (`ostrom import teamcode` itself runs on the laptop, in the film).
+  const teamcodeCheck = env('OSTROM_DEMO_TEAMCODE_CHECK', '');
+  if (teamcodeCheck) {
+    try {
+      const out = execFileSync('sh', ['-c', teamcodeCheck], { encoding: 'utf8' });
+      record('I1', 'Base TeamCode factice (MySQL) lue comme par `ostrom import teamcode`', GREEN, out.trim());
+    } catch (e) {
+      record('I1', 'Base TeamCode factice (MySQL)', RED, `${e.stdout ?? ''}${e.stderr ?? ''}`.trim() || e.message);
+    }
+  }
+
   // (g) Isolation: the GitHub person (no membership of Acme) sees nothing of it.
   if (orgId && a2.ok) {
     const probes = [

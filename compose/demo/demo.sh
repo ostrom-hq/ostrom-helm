@@ -4,7 +4,8 @@
 # Usage: demo/demo.sh up | journey | down | logs
 #   up       fresh secrets in .env (install.sh), then the stack; Stripe's test mode too when OSTROM_DEMO_STRIPE_KEY_FILE
 #            names a test key file (mode 600, outside git)
-#   journey  the customer's journey against it (journey.mjs), report in demo-report.md
+#   journey  the customer's journey against it (journey.mjs, with check-session.sh and teamcode/check.sh), report in
+#            demo-report.md
 #   down     stops it and removes its containers, volumes and the cloud sessions' containers and volumes
 set -eu
 cd "$(dirname "$0")/.."
@@ -18,7 +19,10 @@ case "${1:-up}" in
     dc up -d --wait
     echo "Console http://app.localhost · API http://api.localhost · mails http://mail.localhost · GitHub (fake) http://github.localtest.me"
     ;;
-  journey) node demo/journey.mjs ;;
+  journey)
+    OSTROM_DEMO_SESSION_CHECK=${OSTROM_DEMO_SESSION_CHECK-demo/check-session.sh} \
+      OSTROM_DEMO_TEAMCODE_CHECK=${OSTROM_DEMO_TEAMCODE_CHECK-demo/teamcode/check.sh} node demo/journey.mjs
+    ;;
   # Every service but the Stripe CLI's, whose log holds its webhook signing secret.
   logs)
     # shellcheck disable=SC2046 # one service name per word
