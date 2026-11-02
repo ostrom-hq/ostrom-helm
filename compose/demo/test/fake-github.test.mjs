@@ -113,4 +113,6 @@ test('the providers\' token endpoints: a refresh token for a new pair, a revoked
     assert.deepEqual(await r.json(), { error: 'invalid_grant' });
   }
   assert.deepEqual(fake.refreshed, ['claude', 'codex']);
+  // The journey reads the renewals (providers only, never a token) to see the cutover's revival.
+  assert.deepEqual(await fetch(`${base}/_demo/refreshed`).then((r) => r.json()), { refreshed: ['claude', 'codex'] });
 });
