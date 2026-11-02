@@ -86,7 +86,21 @@ spec:
         {{- end }}
       ports: [{ protocol: TCP, port: {{ $np.kubeApi.port }} }]
     {{- end }}
+    {{- $srv := $np.server | default dict }}
+    {{- range $i, $rule := $srv.extraEgress | default list }}
+    {{- if or (not (kindIs "map" $rule)) (not $rule.to) (not $rule.ports) }}
+    {{- fail (printf "networkPolicy.server.extraEgress[%d] needs `to` and `ports`: a rule without them allows every destination" $i) }}
+    {{- end }}
+    {{- range $peer := $rule.to }}
+    {{- if and (kindIs "map" $peer) $peer.ipBlock (has (toString $peer.ipBlock.cidr) (list "0.0.0.0/0" "::/0")) }}
+    {{- fail (printf "networkPolicy.server.extraEgress[%d] opens %s: use networkPolicy.server.allowInternet" $i $peer.ipBlock.cidr) }}
+    {{- end }}
+    {{- end }}
+    - {{- toYaml $rule | nindent 6 }}
+    {{- end }}
+    {{- if ternary true $srv.allowInternet (kindIs "invalid" $srv.allowInternet) }}
     {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
+    {{- end }}
 {{- if and .Values.cloudSessions.enabled $np.kubeApi.cilium }}
 ---
 # Cilium: the API server is an entity, not an address; this namespaced policy lets the server reach it.

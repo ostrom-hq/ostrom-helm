@@ -13,7 +13,7 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 | `polis` | Ory Polis, the SAML ↔ OIDC bridge. **Coming soon**: off by default (`polis.enabled: false`), the server has no SAML code yet |
 | `cloudSessions` | runner image, resources, deadline; `allowedOrgs` (S2-10); RBAC of the controller |
 | `ingress` | class, hosts, TLS secret or cert-manager issuer, API annotations (streaming, body size) |
-| `networkPolicy` | ingress controller location, DNS, denied egress CIDRs, Kubernetes API access |
+| `networkPolicy` | ingress controller location, DNS, denied egress CIDRs, the server's internet and extra egress rules, Kubernetes API access |
 
 ## Server environment
 
@@ -145,6 +145,22 @@ Turn them on only where that is acceptable (dedicated nodes, a sandboxed runtime
   allow rule can reopen (see below);
 - `cloudSessions.runner.priorityClassName` names an existing PriorityClass, lower than your other workloads (the
   chart creates none: it is a cluster-wide object).
+
+## Network isolation
+
+Every pod of the release is denied in and out by default; each part gets only what it needs: the ingress controller
+in, DNS out, the server to PostgreSQL (and Polis), web to the server, the site nothing.
+
+- `networkPolicy.server.allowInternet` (default `true`): the server reaches the internet minus
+  `networkPolicy.egress.deniedCidrs` and `extraDeniedCidrs` (the private ranges, the metadata service). `false`: no
+  internet at all, only PostgreSQL, Polis, DNS and `networkPolicy.server.extraEgress`, where you list the CIDRs of
+  the providers you use (GitHub, your model provider, e-mail, billing).
+- `networkPolicy.server.extraEgress`: NetworkPolicy `egress` rules added to the server, for what lives on a private
+  range (an external database, an in-cluster collector, the proxy). Each names its destination (`to`) and its `ports`;
+  the chart refuses a rule without them, or towards `0.0.0.0/0`, since either opens everything.
+- `tests.networkPolicyEnforced` (default `true`): `helm test` tries PostgreSQL (the server, with an external
+  database) from a pod no policy allows, and fails if it gets through. A CNI that ignores NetworkPolicy (flannel
+  alone, some managed networks) installs the chart without a word: this test is what tells you.
 
 ## Cilium egress deny (shared clusters)
 

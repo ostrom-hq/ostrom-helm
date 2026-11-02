@@ -89,10 +89,33 @@ externalDatabase:
   polisExistingSecret: ostrom-polis-db  # key `url`: postgres://user:pass@db.example.com:5432/polis
 ```
 
-The server's egress allows the internet minus the private ranges in `networkPolicy.egress.deniedCidrs`. If your
-database is on a private range, remove that range from the list or set `networkPolicy.enabled: false`. If it runs
-as pods of another namespace of the same cluster, `networkPolicy.ciliumEgressDeny` (Cilium, off by default) denies
-it too: keep that off, or move the database out of the cluster.
+The server's egress allows the internet minus the private ranges in `networkPolicy.egress.deniedCidrs`. A database
+on a private range gets one rule of its own, its address and its port only; never remove a range from the list nor
+turn the NetworkPolicies off for it, which opens the whole range (or everything):
+
+```yaml
+networkPolicy:
+  server:
+    extraEgress:
+      - to: [{ ipBlock: { cidr: 10.20.0.15/32 } }]
+        ports: [{ protocol: TCP, port: 5432 }]
+```
+
+The same goes for an in-cluster OTLP collector (a `namespaceSelector` and `podSelector` in `to`) or an egress proxy.
+If the database runs as pods of another namespace of the same cluster, `networkPolicy.ciliumEgressDeny` (Cilium, off
+by default) denies it too: keep that off, or move the database out of the cluster.
+
+### Traffic to the database is not encrypted
+
+The server's PostgreSQL driver has no TLS today: it cannot connect with `sslmode=require` and refuses a URL with a
+query string. Everything between the server and PostgreSQL crosses the network in the clear (the password does not:
+SCRAM). A managed database that forces TLS (RDS PostgreSQL 15 and later, `rds.force_ssl=1` by default) refuses the
+server. Until the driver supports it:
+
+- keep the database in the release namespace (the chart's own PostgreSQL), or on a network you trust;
+- encrypt the pod network: Cilium or Calico with WireGuard, or the mTLS of a service mesh (Linkerd, Istio) between
+  the server and the database;
+- on a managed database, allow non-TLS connections from the cluster's addresses only.
 
 Create the two roles yourself before installing: the owner (`CREATE DATABASE … OWNER ostrom`) and the serving role
 (`NOSUPERUSER NOBYPASSRLS`, `CONNECT` on the database, `USAGE` on the schema, and `ALTER DEFAULT PRIVILEGES FOR

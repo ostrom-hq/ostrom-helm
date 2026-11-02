@@ -1,0 +1,40 @@
+suite: network — helm test proves the NetworkPolicies are enforced
+templates:
+  - templates/tests/test-network.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: tries PostgreSQL from a pod no policy allows, and fails if it gets through
+    asserts:
+      - isKind: { of: Pod }
+      - equal: { path: 'metadata.annotations["helm.sh/hook"]', value: test }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/component"]', value: network-probe }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: o }
+      - equal: { path: 'spec.containers[0].image', value: 'docker.io/library/postgres:17.6' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'pg_isready -h o-ostrom-postgresql -p 5432 -t 5' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'NetworkPolicy not enforced' }
+      - equal: { path: spec.automountServiceAccountToken, value: false }
+      - equal: { path: 'spec.containers[0].securityContext.allowPrivilegeEscalation', value: false }
+  - it: with an external database, tries the server instead
+    set:
+      postgresql.enabled: false
+      externalDatabase: { url: postgresql://db:5432/o, username: u, password: p, migrationUsername: o, migrationPassword: p }
+    asserts:
+      - equal: { path: 'spec.containers[0].image', value: 'docker.io/curlimages/curl:8.11.1' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'http://o-ostrom-server:8080/health' }
+      - equal: { path: spec.securityContext.runAsUser, value: 100 }
+  - it: no probe without NetworkPolicies, without tests, or when turned off
+    set: { networkPolicy.enabled: false }
+    asserts:
+      - hasDocuments: { count: 0 }
+  - it: no probe when tests are off
+    set: { tests.enabled: false }
+    asserts:
+      - hasDocuments: { count: 0 }
+  - it: no probe when the check is turned off
+    set: { tests.networkPolicyEnforced: false }
+    asserts:
+      - hasDocuments: { count: 0 }
+  - it: no probe with nothing to reach
+    set: { postgresql.enabled: false, server.enabled: false, externalDatabase.url: postgresql://db:5432/o }
+    asserts:
+      - hasDocuments: { count: 0 }
