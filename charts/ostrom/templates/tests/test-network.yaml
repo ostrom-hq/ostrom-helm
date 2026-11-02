@@ -1,0 +1,72 @@
+{{- if include "ostrom.networkProbe.enabled" . }}
+{{- $full := include "ostrom.fullname" . -}}
+{{- $pg := .Values.postgresql -}}
+# The isolation the NetworkPolicies declare, checked for real: this pod carries the release's labels but a component
+# no policy allows, so the default deny cuts it from PostgreSQL (or the server). If it gets through, the cluster's CNI
+# does not enforce NetworkPolicy and nothing of this chart's network isolation holds. It runs after the other tests
+# (hook weight): they reach the same target from an allowed pod, so a target that is down fails there, not here.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ $full }}-test-network
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "network-probe") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  {{- include "ostrom.imagePullSecrets" . | nindent 2 }}
+  enableServiceLinks: false
+  securityContext:
+    runAsNonRoot: true
+    {{- if .Values.postgresql.enabled }}
+    runAsUser: 999
+    runAsGroup: 999
+    {{- else }}
+    runAsUser: 100
+    {{- end }}
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: test
+      {{- if .Values.postgresql.enabled }}
+      image: {{ printf "%s:%s" $pg.image.repository $pg.image.tag }}
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          host={{ include "ostrom.postgresql.host" . }}
+          # The name must resolve (DNS is allowed): a resolution failure would pass for a blocked connection.
+          getent hosts "$host" >/dev/null || { echo "cannot resolve $host: the probe proves nothing"; exit 1; }
+          # pg_isready: 0 accepting, 1 rejecting (both mean the packets got through), 2 no response, 3 no attempt.
+          pg_isready -h "$host" -p 5432 -t 5
+          code=$?
+          if [ "$code" -le 1 ]; then
+            echo "NetworkPolicy not enforced: a pod no policy allows reached PostgreSQL. Use a CNI that enforces NetworkPolicy (Cilium, Calico...)."
+            exit 1
+          fi
+          echo "network: PostgreSQL unreachable from a pod no policy allows (pg_isready exit $code)"
+      {{- else }}
+      image: {{ .Values.tests.image }}
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          url=http://{{ $full }}-server:{{ .Values.server.service.port }}{{ .Values.server.probes.liveness.path }}
+          curl -sS -o /dev/null --connect-timeout 5 --max-time 8 "$url"
+          code=$?
+          # 0: through. 7 (refused, as some CNIs answer) or 28 (timeout, a dropped packet): blocked. Anything else, a
+          # name that does not resolve (6) above all, proves nothing.
+          case $code in
+            0) echo "NetworkPolicy not enforced: a pod no policy allows reached the server. Use a CNI that enforces NetworkPolicy (Cilium, Calico...)."; exit 1 ;;
+            7|28) echo "network: the server unreachable from a pod no policy allows (curl exit $code)" ;;
+            *) echo "curl exit $code on $url: the probe proves nothing"; exit 1 ;;
+          esac
+      {{- end }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { memory: 64Mi }
+{{- end }}
