@@ -37,6 +37,13 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_TRUSTED_PROXIES` | `server.trustedProxies`: CIDRs (comma separated) of the ingress controller's pods and of the nodes, whose forwarded client address the server believes; unset by default |
 | `OSTROM_SHUTDOWN_DELAY_SECONDS` | `server.shutdownDelaySeconds` (0 to 10, default 5): after SIGTERM, `/ready` answers 503 this long before the server stops, so the Service drops the pod first; readiness probes `/ready`, liveness and startup `/health` |
 
+A secret never goes in `server.config` (a ConfigMap), `server.extraEnv` with a plain `value`, `web.config` (served to
+every browser) or `site.env`: the chart refuses a key that looks like one (`SECRET`, `PASSWORD`, `TOKEN`, `CREDENTIAL`,
+`API_KEY`, `PRIVATE_KEY`, `LICENSE_KEY`, or ending in `_KEY`; not a path `_FILE`, an address `_URL`, a pull Secret
+name, nor PostHog's public project key). Kubernetes' `view` role reads ConfigMaps and pod specs, never Secrets. Ory
+Polis's external database URL (`externalDatabase.polisUrl`) goes into Secret `<release>-polis-db`. The CI renders
+the chart with a witness in every secret input and fails if one shows up outside a Secret (`ci/secrets-in-render.sh`).
+
 Everything else goes through `server.config` (plain) or `server.existingSecret` / `server.secretEnv` (secret),
 whose keys are environment variable names, e.g. `OSTROM_GITHUB_CLIENT_ID`, `OSTROM_GITHUB_CLIENT_SECRET`,
 `OSTROM_GOOGLE_CLIENT_ID`, `OSTROM_GOOGLE_CLIENT_SECRET`, `OSTROM_RESEND_API_KEY`, `OSTROM_MAIL_FROM`,

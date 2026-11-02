@@ -131,6 +131,26 @@ key: {{ if .Values.postgresql.enabled }}owner-password{{ else }}migration-passwo
 {{- if .Values.polis.existingSecret -}}{{ .Values.polis.existingSecret }}{{- else -}}{{ printf "%s-polis" (include "ostrom.fullname" .) }}{{- end -}}
 {{- end -}}
 
+{{/* Secret of Ory Polis's external database URL (key `url`): the user's, or the one the chart writes from polisUrl. */}}
+{{- define "ostrom.polis.dbSecretName" -}}
+{{- .Values.externalDatabase.polisExistingSecret | default (printf "%s-polis-db" (include "ostrom.fullname" .)) -}}
+{{- end -}}
+
+{{/*
+Refuses a secret-looking key in a place that is not a Secret (AUDIT-SECU-HELM-2 M4): a ConfigMap, a plain env value,
+or the console's public config. Call with (dict "keys" (list …) "where" "server.config" "instead" "…").
+Secret-looking: SECRET, PASSWORD, PASSWD, TOKEN, CREDENTIAL, API_KEY, PRIVATE_KEY, LICENSE_KEY or a name ending in
+_KEY; except a path (_FILE), an address (_URL), the name of a pull Secret, and PostHog's project key (public by design).
+*/}}
+{{- define "ostrom.refuseSecretKeys" -}}
+{{- range $k := .keys -}}
+{{- $u := upper (toString $k) -}}
+{{- if and (regexMatch "(SECRET|PASSWORD|PASSWD|TOKEN|CREDENTIAL|API_KEY|PRIVATE_KEY|LICENSE_KEY|_KEY$)" $u) (not (regexMatch "(_FILE|_URL|_PULL_SECRET)$" $u)) (ne $u "OSTROM_POSTHOG_API_KEY") -}}
+{{- fail (printf "%s.%s looks like a secret, and %s is not a Secret: %s" $.where $k $.what $.instead) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "ostrom.polis.externalUrl" -}}
 {{- .Values.polis.externalUrl | default (printf "https://%s" .Values.ingress.hosts.sso) -}}
 {{- end -}}

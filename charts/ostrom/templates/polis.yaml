@@ -47,12 +47,11 @@ spec:
                 secretKeyRef: { name: {{ include "ostrom.postgresql.secretName" . }}, key: polis-password }
             - name: DB_URL
               value: {{ printf "postgres://$(PG_USER):$(PG_PASSWORD)@%s:5432/polis" (include "ostrom.postgresql.host" .) | quote }}
-            {{- else if .Values.externalDatabase.polisExistingSecret }}
+            {{- else }}
+            # The URL holds a password: always from a Secret, never in the pod spec.
             - name: DB_URL
               valueFrom:
-                secretKeyRef: { name: {{ .Values.externalDatabase.polisExistingSecret }}, key: url }
-            {{- else }}
-            - { name: DB_URL, value: {{ required "externalDatabase.polisUrl or polisExistingSecret is required when polis.enabled and postgresql.enabled is false" .Values.externalDatabase.polisUrl | quote }} }
+                secretKeyRef: { name: {{ include "ostrom.polis.dbSecretName" . }}, key: url }
             {{- end }}
             - name: JACKSON_API_KEYS
               valueFrom:

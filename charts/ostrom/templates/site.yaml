@@ -1,6 +1,7 @@
 {{- if .Values.site.enabled }}
 {{- $full := include "ostrom.fullname" . -}}
 {{- $st := .Values.site -}}
+{{- include "ostrom.refuseSecretKeys" (dict "keys" (keys ($st.env | default dict)) "where" "site.env" "what" "a plain value, written in the pod spec," "instead" "the site is static and needs no secret") }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

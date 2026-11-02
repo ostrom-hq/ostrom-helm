@@ -1,6 +1,10 @@
 {{- if .Values.server.enabled }}
 {{- $full := include "ostrom.fullname" . -}}
 {{- $s := .Values.server -}}
+{{- include "ostrom.refuseSecretKeys" (dict "keys" (keys ($s.config | default dict)) "where" "server.config" "what" "it lands in a ConfigMap, which" "instead" "put it in server.existingSecret (or server.secretEnv)") }}
+{{- $plain := list }}
+{{- range $e := $s.extraEnv | default list }}{{ if and (kindIs "map" $e) (hasKey $e "value") }}{{ $plain = append $plain $e.name }}{{ end }}{{ end }}
+{{- include "ostrom.refuseSecretKeys" (dict "keys" $plain "where" "server.extraEnv" "what" "a plain value, written in the pod spec," "instead" "use valueFrom.secretKeyRef, or server.existingSecret") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
