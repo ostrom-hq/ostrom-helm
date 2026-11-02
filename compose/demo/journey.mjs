@@ -91,7 +91,7 @@ async function bearer(token, method, path, body, org) {
 }
 
 /** The receipt id an answer names (`receiptId`, `approval.receiptId`, `receipt.id`, `gate.receiptId`), or ''. */
-const receiptIn = (text) => /"receiptId"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? /"receipt"\s*:\s*\{[^{}]*"id"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? '';
+const receiptIn = (json) => json.receiptId ?? json.approval?.receiptId ?? json.gate?.receiptId ?? json.receipt?.id ?? (typeof json.receipt === 'string' ? json.receipt : '');
 
 /** The newest mail to `to` in Mailpit whose text holds `marker`, polled for up to 20 s. */
 async function mailTo(to, marker) {
@@ -266,7 +266,9 @@ async function journey() {
       const plan = await owner.call('POST', '/api/v1/import/teamcode?dryRun=true', body);
       const done = plan.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode', body) : plan;
       const again = done.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode?dryRun=true', body) : done;
-      const imported = done.status === 200 && done.json.created > 0 && again.json.created === 0;
+      // Once the server gives the members' ids (server#63), both people of the journey must be mapped.
+      const mapped = !members.some((m) => m.id) || Object.keys(memberMap).length === 2;
+      const imported = done.status === 200 && done.json.created > 0 && again.json.created === 0 && mapped;
       record('I2', 'Import TeamCode (plan, import, second passage sans changement)', imported ? GREEN : RED,
         imported
           ? `${Object.keys(memberMap).length} membres associés${Object.keys(memberMap).length ? '' : members.some((m) => m.id) ? ` (aucun membre Ostrom ne correspond : ${members.map((m) => m.login).join(', ')})` : ' (le serveur ne donne pas encore l’id des membres, server#63 : leurs affectations sont laissées)'} ; plan ${plan.status} (${count(plan, 'planned')} lignes prévues), import : ${done.json.created} créées, ${done.json.skipped} sautées, ${done.json.reviveAtCutover} compte(s) en attente de la bascule ; second plan : ${again.json.created} à créer`
@@ -296,7 +298,8 @@ async function journey() {
     const members = (await owner.call('GET', `/api/v1/orgs/${orgId}/members`)).json.items ?? [];
     const login = who.login ?? who.dev?.login ?? '';
     const repo = `acme/api-${run}`;
-    const flow = await owner.call('POST', '/api/v1/workflows', {
+    if (!login) record('Y1', 'Porte en attente d’un oui', RED, `le second membre n’a pas de login (/auth/me → ${JSON.stringify(who).slice(0, 120)})`);
+    const flow = !login ? { status: 0, text: '', json: {} } : await owner.call('POST', '/api/v1/workflows', {
       id: `demo-${run}`, name: 'Demo delivery', domain: 'delivery', status: 'accepted', foundAt: new Date().toISOString(),
       nodes: [{ id: 'push-main', kind: 'gate', label: 'Push to main', approvers: [login], actions: [{ class: 'push-main', label: 'Push to the main branch', patterns: [], repos: [repo] }] }],
       edges: [],
@@ -308,7 +311,7 @@ async function journey() {
     const asked = secret ? await bearer(secret, 'POST', '/api/v1/gates', ask, orgId) : pat;
     const gate = asked.json.gate ?? {};
     const pending = gate.status === 'pending';
-    record('Y1', 'Porte en attente d’un oui (push sur main)', pending ? GREEN : RED,
+    if (login) record('Y1', 'Porte en attente d’un oui (push sur main)', pending ? GREEN : RED,
       `workflow ${flow.status}, jeton ${pat.status}, POST /gates → ${asked.status}, porte ${gate.status ?? '?'}${pending ? ` (${gate.id}), approbateur ${login}` : ` : ${brief(asked)}`}`);
     let yes = { status: 0, text: '', json: {} };
     if (pending) {
@@ -323,7 +326,7 @@ async function journey() {
       const after = await bearer(secret, 'POST', '/api/v1/gates', ask, orgId);
       const other = { ...ask, push: { ...ask.push, refs: [{ ref: 'refs/heads/main', sha: sha.replace(/^./, (c) => (c === 'f' ? '0' : 'f')) }] } };
       const next = await bearer(secret, 'POST', '/api/v1/gates', other, orgId);
-      const receipt = receiptIn(yes.text) || receiptIn(after.text);
+      const receipt = receiptIn(yes.json) || receiptIn(after.json);
       const kept = receipt ? await owner.call('GET', `/api/v1/receipts/${encodeURIComponent(receipt)}`) : { status: 0, text: '', json: {} };
       const decision = kept.json.decisions?.[0] ?? {};
       const reviewerIds = [login, who.id, who.dev?.id, members.find((m) => m.email === reviewerEmail)?.id].filter(Boolean);
@@ -340,6 +343,8 @@ async function journey() {
           ? `même push → porte ${after.json.gate.status}, autre SHA → porte ${next.json.gate.status} (nouvelle demande) ; reçu ${receipt} signé : porte ${gate.id.slice(0, 8)}, digest ${kept.json.subject.digest.slice(0, 12)}…, oui de ${decision.by} (${decision.at})`
           : `en défaut : ${failed.join(', ')} ; même push → ${after.status} ${after.json.gate?.status ?? ''}, autre SHA → ${next.status} ${next.json.gate?.status ?? ''}, reçu ${receipt || 'absent'} → ${kept.status}, décision ${JSON.stringify(decision)}`);
     } else record('Y3', 'Reçu du oui', NOT_YET, 'pas de oui (Y2)');
+    // The journey's token goes with it: no demo run leaves a live token behind.
+    if (pat !== flow && pat.json.id) await owner.call('DELETE', `/api/v1/tokens/${encodeURIComponent(pat.json.id)}`);
   } else record('Y1', 'Porte en attente d’un oui', NOT_YET, 'pas d’organisation ou de second membre');
 
   // (g) Isolation: the GitHub person (no membership of Acme) sees nothing of it.

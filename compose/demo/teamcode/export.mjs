@@ -39,6 +39,15 @@ export function toolModeOf(mode) {
   return m === 'ALLOWLIST' || m === 'ALLOW' ? 'allow' : m === 'DENYLIST' || m === 'DENY' ? 'deny' : null;
 }
 
+/** `text` as JSON, or an error that says `what` was not the JSON expected. */
+function jsonOf(text, what) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${what} is not the JSON TeamCode writes`);
+  }
+}
+
 const PROVIDERS = { anthropic: 'claude', claude: 'claude', openai: 'codex', codex: 'codex' };
 const truthy = (v) => v === true || v === 1 || v === '1';
 
@@ -92,7 +101,7 @@ export function teamCodeImport(tables, key, team, memberMap) {
   const accounts = [];
   for (const row of tables.accounts) {
     const label = row.display_name ?? '';
-    const credential = row.credential_envelope ? JSON.parse(open(row.credential_envelope, `${team}:${row.id}`, `account ${label}`)) : null;
+    const credential = row.credential_envelope ? jsonOf(open(row.credential_envelope, `${team}:${row.id}`, `account ${label}`), `account ${label}: its credential`) : null;
     const provider = String(row.provider ?? '').trim().toLowerCase();
     const fields = [provider, row.provider_account_id, credential?.accessToken, credential?.refreshToken];
     if (typeof credential?.expiresAtMillis !== 'number' || fields.some((f) => !f)) {
@@ -121,9 +130,9 @@ export function teamCodeImport(tables, key, team, memberMap) {
 }
 
 /** The SQL that reads one table of `team` as a single JSON array (MySQL 8 JSON_ARRAYAGG), `[]` when empty. */
-export function tableQuery(table, columns, team) {
+export function tableQuery(table, columns, team, mcpOnly = false) {
   const pairs = columns.map((c) => `'${c}', \`${c}\``).join(', ');
-  return `SELECT COALESCE(JSON_ARRAYAGG(JSON_OBJECT(${pairs})), JSON_ARRAY()) FROM \`${table}\` WHERE team_id = '${team.replaceAll("'", "''")}'`;
+  return `SELECT COALESCE(JSON_ARRAYAGG(JSON_OBJECT(${pairs})), JSON_ARRAY()) FROM \`${table}\` WHERE ${mcpOnly ? "kind = 'MCP' AND " : ''}team_id = '${team.replaceAll("'", "''")}'`;
 }
 
 export const COLUMNS = {
@@ -137,10 +146,9 @@ const TABLES = { members: 'members', variants: 'variants', policies: 'mcp_tool_p
 
 /** The team's tables, each read by `query(sql)` (which returns MySQL's text answer), as `ostrom import teamcode` reads them. */
 export function readTables(query, team) {
-  const variantsOnlyMcp = (sql) => sql.replace('WHERE team_id', "WHERE kind = 'MCP' AND team_id");
   return Object.fromEntries(Object.entries(TABLES).map(([name, table]) => {
-    const sql = tableQuery(table, COLUMNS[name], team);
-    return [name, JSON.parse(query(name === 'variants' || name === 'assignments' ? variantsOnlyMcp(sql) : sql).trim())];
+    const sql = tableQuery(table, COLUMNS[name], team, name === 'variants' || name === 'assignments');
+    return [name, jsonOf(query(sql).trim(), `the answer for table ${table}`)];
   }));
 }
 

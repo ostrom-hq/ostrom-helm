@@ -107,3 +107,11 @@ test('TeamCode\'s tool modes become the contract\'s: allow, deny, or none for ev
   assert.equal(toolModeOf('ALL'), null);
   assert.equal(toolModeOf(undefined), null);
 });
+
+test('an answer or a credential that is not JSON names what it was', () => {
+  const key = demoKey();
+  assert.throws(() => readTables(() => 'Warning: something\n[]', TEAM), /the answer for table members is not the JSON TeamCode writes/);
+  const tables = { members: [], variants: [], policies: [], assignments: [], accounts: [{ id: 'a', provider: 'anthropic', provider_account_id: 'p', display_name: 'Max', email: null, credential_envelope: seal(key, 'not json', `${TEAM}:a`), disabled: 0 }] };
+  assert.throws(() => teamCodeImport(tables, key, TEAM, {}), /account Max: its credential is not the JSON TeamCode writes/);
+  assert.doesNotMatch(tableQuery('members', ['id'], TEAM), /kind/);
+});
