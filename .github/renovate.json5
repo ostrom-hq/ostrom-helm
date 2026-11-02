@@ -29,6 +29,12 @@
       groupName: 'third-party images (chart and Compose)',
     },
     {
+      description: 'CloudNativePG tags PgBouncer as <version>-<build stamp>-<Debian release>: compare the version, then the stamp, same Debian release',
+      matchDatasources: ['docker'],
+      matchPackageNames: ['ghcr.io/cloudnative-pg/pgbouncer'],
+      versioning: 'regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<build>\\d+)-(?<compatibility>[a-z]+)$',
+    },
+    {
       description: 'The digest-pinned third-party images belong to the regex manager below, not to the Helm values one',
       matchManagers: ['helm-values'],
       matchDepNames: ['docker.io/library/postgres', 'docker.io/boxyhq/jackson', 'docker.io/curlimages/curl', 'ghcr.io/cloudnative-pg/pgbouncer'],
