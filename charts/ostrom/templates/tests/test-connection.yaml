@@ -17,7 +17,7 @@ spec:
     seccompProfile: { type: RuntimeDefault }
   containers:
     - name: test
-      image: {{ .Values.tests.image }}
+      image: {{ include "ostrom.testsImage" . }}
       imagePullPolicy: {{ .Values.global.imagePullPolicy }}
       command: ["/bin/sh", "-ec"]
       args:

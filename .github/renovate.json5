@@ -23,6 +23,12 @@
       groupName: 'non-major dependencies',
     },
     {
+      description: 'One pull request per third-party image for the chart and the Compose stack, so they never drift',
+      matchDatasources: ['docker'],
+      matchPackageNames: ['docker.io/library/postgres', 'postgres', 'library/postgres', 'docker.io/boxyhq/jackson', 'boxyhq/jackson'],
+      groupName: 'third-party images (chart and Compose)',
+    },
+    {
       description: 'The digest-pinned third-party images belong to the regex manager below, not to the Helm values one',
       matchManagers: ['helm-values'],
       matchDepNames: ['docker.io/library/postgres', 'docker.io/boxyhq/jackson', 'docker.io/curlimages/curl'],

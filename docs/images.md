@@ -38,8 +38,18 @@ default, so a tag rewritten upstream never reaches your cluster:
 | `polis.image` | `docker.io/boxyhq/jackson:26.2.0` | Ory Polis (off by default) |
 | `tests.image` | `docker.io/curlimages/curl:8.11.1` | the `helm test` pod |
 
-`postgresql.image` and `polis.image` take `repository`, `tag` and `digest` (`sha256:` and 64 hex characters); the
-digest wins over the tag, and `digest: ""` follows the tag. `tests.image` is one full reference. To pull them from
-your own mirror, set `repository` (or the full `tests.image`) to the mirror and keep the digest: a mirror serves the
-same digest. `global.imagePullPolicy` applies to every image of the chart, these included (`Always` behind a mirror
-that you trust more than the node's cache). Renovate moves the tags and the digests together.
+`postgresql.image` and `polis.image` take `repository`, `tag` and `digest` (`sha256:` and 64 hex characters); they
+render as `repository:tag@digest`, the runtime pulls the digest and the tag stays readable. `digest: ""` follows the
+tag. `tests.image` is one full reference (`repository:tag@digest`), checked the same way.
+
+- **Another version**: set the tag **and** its digest, or `digest: ""`. A tag alone (`postgresql.image.tag: "16"`)
+  is refused: with the chart's digest it would run 17.6 without a word, and PostgreSQL 17 does not start on a 16
+  data directory.
+- **A mirror**: set `repository` (or the full `tests.image`) and keep the digest only if the mirror holds the same
+  multi-arch index, byte for byte (`skopeo copy --all`, `crane copy`). A mirror filled by `docker pull`, `tag` and
+  `push` serves another digest: set that one, or `digest: ""`.
+- `global.imagePullPolicy` applies to every image of the chart, these included (`Always` behind a mirror that you
+  trust more than the node's cache).
+- Renovate moves the tags and the digests together, in `values.yaml` and `compose/docker-compose.yml` in one pull
+  request; the chart's table of its own pins (`ostrom.thirdPartyPins`, `_helpers.tpl`) moves with them, or the unit
+  tests fail.

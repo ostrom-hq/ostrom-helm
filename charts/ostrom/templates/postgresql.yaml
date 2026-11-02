@@ -75,7 +75,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: postgresql
-          image: {{ include "ostrom.thirdPartyImage" $pg.image }}
+          image: {{ include "ostrom.thirdPartyImage" (merge (dict "where" "postgresql.image") $pg.image) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           args:
             {{- range $k, $v := $pg.parameters }}
@@ -199,7 +199,7 @@ spec:
             seccompProfile: { type: RuntimeDefault }
           containers:
             - name: backup
-              image: {{ include "ostrom.thirdPartyImage" $pg.image }}
+              image: {{ include "ostrom.thirdPartyImage" (merge (dict "where" "postgresql.image") $pg.image) }}
               imagePullPolicy: {{ .Values.global.imagePullPolicy }}
               command: ["/bin/sh", "-ec"]
               args:
