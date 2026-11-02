@@ -1,6 +1,9 @@
 {{- if .Values.server.enabled }}
 {{- $full := include "ostrom.fullname" . -}}
 {{- $s := .Values.server -}}
+{{- /* The token is mounted only when the server drives cloud sessions through the Kubernetes API: said on the
+ServiceAccount and on the pod, from this one value. */ -}}
+{{- $token := .Values.cloudSessions.enabled -}}
 {{- if and .Values.cloudSessions.enabled (or (gt (int $s.replicas) 1) $s.autoscaling.enabled) }}
 {{- fail "cloudSessions.enabled needs exactly one server replica (server.replicas: 1, no autoscaling): the terminal relay lives in memory" }}
 {{- end }}
@@ -12,8 +15,7 @@ metadata:
   {{- with .Values.serviceAccount.annotations }}
   annotations: {{- toYaml . | nindent 4 }}
   {{- end }}
-# The token is mounted only when the server drives cloud sessions through the Kubernetes API.
-automountServiceAccountToken: {{ .Values.cloudSessions.enabled }}
+automountServiceAccountToken: {{ $token }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -43,6 +45,7 @@ spec:
         {{- with $s.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
     spec:
       serviceAccountName: {{ $full }}-server
+      automountServiceAccountToken: {{ $token }}
       {{- include "ostrom.imagePullSecrets" . | nindent 6 }}
       # The image's user (distroless nonroot); fsGroup lets it read the mounted signing key.
       securityContext:

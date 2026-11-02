@@ -42,6 +42,9 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
   replica, the server waits for it). A values file that sets `postgresql.image.tag` or `polis.image.tag` now also
   sets the matching `digest`, or `digest: ""`: a tag alone is refused. With `helm upgrade --reuse-values`, the old
   values have no digest and the images stay on their tag: pass `--reset-then-reuse-values` to take the pins.
+- `values.schema.json` refuses an unknown top-level key and a security context below `restricted`: a values file
+  with a leftover key (one the chart never read) now stops the upgrade with `additional properties ... not allowed`.
+  Remove the key; with `--reuse-values`, the stored values are checked too.
 - `cloudSessions.allowedOrgs` (S2-10): with sessions on, list the organizations they are open to; empty refuses all.
 - The console's host serves `/api/v1` from the server (one origin for the browser), and `/api/v1/artifacts` takes
   32m on both hosts. A pre-upgrade Job adds the `ostrom_router` role.
