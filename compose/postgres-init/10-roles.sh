@@ -30,7 +30,32 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_router') \gexec
 GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
-SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON %I FROM %I', relname, :'app')
-FROM pg_class WHERE relkind = 'r' AND relnamespace = 'public'::regnamespace AND relname LIKE '\_migrations\_%' \gexec
+-- AUDIT-RLS R8: the migrations' history is written by its owner alone. Any other role (the serving role, ostrom_tenant
+-- that it inherits, PUBLIC) holding more than SELECT, on the table or a column, loses it all and keeps SELECT.
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT quote_ident(c.relname) AS tbl,
+      CASE WHEN g.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(g.grantee)) END AS name,
+      bool_or(g.privilege_type = 'SELECT' AND NOT g.on_column) AS reads
+    FROM pg_class c
+    CROSS JOIN LATERAL (
+      SELECT a.grantee, a.privilege_type, false AS on_column FROM aclexplode(c.relacl) a
+      UNION ALL
+      SELECT a.grantee, a.privilege_type, true FROM pg_attribute t, aclexplode(t.attacl) a WHERE t.attrelid = c.oid
+    ) g
+    WHERE c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace AND c.relname LIKE '\_migrations\_%'
+      AND g.grantee <> c.relowner
+    GROUP BY c.relname, g.grantee
+    HAVING bool_or(g.privilege_type <> 'SELECT' OR g.on_column)
+  LOOP
+    EXECUTE format('REVOKE ALL ON public.%s FROM %s CASCADE', r.tbl, r.name);
+    IF r.reads THEN
+      EXECUTE format('GRANT SELECT ON public.%s TO %s', r.tbl, r.name);
+    END IF;
+  END LOOP;
+END
+$$;
 SQL
 

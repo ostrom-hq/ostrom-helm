@@ -37,10 +37,10 @@ tests:
         documentIndex: 2
       - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;' }
         documentIndex: 2
-      # AUDIT-RLS R8: the migrations' history already there loses the serving role's write.
-      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: "REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON %I FROM %I', relname, :'app'\\)" }
+      # AUDIT-RLS R8: every role but the owner loses the write on the migrations' histories already there, keeps SELECT.
+      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: "c\\.relnamespace = 'public'::regnamespace AND c\\.relname LIKE '\\\\_migrations\\\\_%'\\n      AND g\\.grantee <> c\\.relowner" }
         documentIndex: 2
-      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: "relname LIKE '\\\\_migrations\\\\_%' \\\\gexec" }
+      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: "EXECUTE format\\('REVOKE ALL ON public\\.%s FROM %s CASCADE', r\\.tbl, r\\.name\\);\\n    IF r\\.reads THEN\\n      EXECUTE format\\('GRANT SELECT ON public\\.%s TO %s'" }
         documentIndex: 2
       - equal: { path: 'spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem', value: true }
         documentIndex: 2

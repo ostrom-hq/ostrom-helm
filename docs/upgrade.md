@@ -37,6 +37,10 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
 - The server's ConfigMap keeps only what the server reads: `OSTROM_API_URL`, `OSTROM_APP_URL`, `OSTROM_SITE_URL`,
   `OSTROM_EXTRACTION_*`, `OSTROM_SAML_POLIS_*` and `OSTROM_CLOUD_MAX_CONCURRENT` are gone, with `byok.*` and
   `cloudSessions.runner.maxConcurrent` (remove them from your values; they are ignored). <!-- docs-truth: ignore (variables removed) -->
+- The migrations' histories (`_migrations_<module>`) are written by the owner alone (AUDIT-RLS R8): the pre-upgrade
+  Job takes the write off every other role and keeps their read, and `helm test` checks it. An external database:
+  play the end of the block in [values.md](values.md#database-roles) once (a server with ostrom-server#144 also does
+  it at every `migrate`).
 - `cloudSessions.allowedOrgs` (S2-10): with sessions on, list the organizations they are open to; empty refuses all.
 - The console's host serves `/api/v1` from the server (one origin for the browser), and `/api/v1/artifacts` takes
   32m on both hosts. A pre-upgrade Job adds the `ostrom_router` role.

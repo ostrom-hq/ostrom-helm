@@ -69,8 +69,9 @@ tests:
       - isKind: { of: Pod }
       - equal: { path: 'metadata.annotations["helm.sh/hook"]', value: test }
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: "rolsuper OR rolbypassrls" }
-      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: "has_table_privilege\\(current_user, oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'\\)" }
-      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: "can write the migrations' history" }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: "has_table_privilege\\(current_user, oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'\\) OR has_any_column_privilege\\(current_user, oid, 'INSERT, UPDATE, REFERENCES'\\)" }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: "relnamespace = 'public'::regnamespace AND relname LIKE" }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: "can write \\$writable of the migrations' histories" }
       - contains:
           path: spec.containers[0].env
           content: { name: OWNER_PASSWORD, valueFrom: { secretKeyRef: { name: o-ostrom-postgresql, key: owner-password } } }
