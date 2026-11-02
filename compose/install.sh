@@ -7,7 +7,9 @@ cd "$(dirname "$0")"
 command -v docker >/dev/null 2>&1 || { echo "docker is required: https://docs.docker.com/engine/install/" >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "docker compose v2 is required" >&2; exit 1; }
 
-secret() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; }
+# `head` closes the pipe once it has its characters: `tr` then dies of SIGPIPE, which is expected, and its
+# « write error: Broken pipe » is not an error of the install, so it is not printed.
+secret() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "$1"; }
 
 umask 077
 if [ ! -f .env ]; then
