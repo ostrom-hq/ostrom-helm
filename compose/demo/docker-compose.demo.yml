@@ -3,7 +3,8 @@
 # It adds, for the demo only:
 #   - Mailpit and a relay, in place of Resend: the server writes its mails to a directory (OSTROM_MAIL_DIR), the relay
 #     hands them to Mailpit, read at http://mail.localhost;
-#   - a fake GitHub for « Continue with GitHub » (fake-github.mjs), at http://github.localtest.me;
+#   - a fake GitHub for « Continue with GitHub » (fake-github.mjs), at http://github.localtest.me, which also answers
+#     for the providers' token endpoints the import's cutover calls;
 #   - a fake TeamCode team in MySQL (demo/teamcode), for `ostrom import teamcode`;
 #   - cloud sessions on this machine's Docker (OSTROM_RUNNERS_DRIVER=docker): the server reaches the engine through a
 #     socket proxy on a network of its own, and each session's two containers (the agent host and the runner, S2-49)
@@ -21,6 +22,9 @@ services:
       OSTROM_GITHUB_CLIENT_SECRET: demo-client-secret-of-the-fake-github
       OSTROM_GITHUB_WEB_URL: http://github.localtest.me
       OSTROM_GITHUB_API_URL: http://github.localtest.me/api
+      # The import's cutover renews the shared accounts' tokens at their provider: the fake answers in its place.
+      OSTROM_SHARING_CLAUDE_TOKEN_URL: http://github.localtest.me/claude/oauth/token
+      OSTROM_SHARING_CODEX_TOKEN_URL: http://github.localtest.me/codex/oauth/token
       OSTROM_RUNNERS_DRIVER: docker
       OSTROM_RUNNERS_DOCKER_API_URL: http://docker-api:2375
       OSTROM_RUNNERS_DOCKER_NETWORK: ostrom-sessions

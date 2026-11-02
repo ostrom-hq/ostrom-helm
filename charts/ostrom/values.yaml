@@ -374,6 +374,21 @@ networkPolicy:
       - 169.254.0.0/16
       - 100.64.0.0/10
     extraDeniedCidrs: []
+  server:
+    # false: no internet for the server, only PostgreSQL, Polis, DNS and `extraEgress` (the CIDRs of the providers you
+    # declare). true (default): the internet minus the denied CIDRs above.
+    allowInternet: true
+    # Extra egress rules of the server, NetworkPolicy `egress` entries: what lives on a private range, such as an external
+    # database, an in-cluster OTLP collector or an egress proxy. Each rule names its destination (`to`) and its
+    # `ports`. Refused, since they open everything or close to it: a rule without `to` or `ports`, an ipBlock wider
+    # than /16 (IPv6: /48), a peer selecting every namespace or every pod. Never remove a range from `deniedCidrs`
+    # for this: that opens the whole range.
+    #   - to: [{ ipBlock: { cidr: 10.20.0.15/32 } }]
+    #     ports: [{ protocol: TCP, port: 5432 }]
+    extraEgress: []
+  polis:
+    # The same for Ory Polis (its external database on a private range), with the same checks.
+    extraEgress: []
   # The server needs the Kubernetes API for cloud sessions. With Cilium, a CiliumNetworkPolicy
   # (namespaced) allows the kube-apiserver entity; otherwise give the API server CIDR.
   kubeApi:
@@ -414,3 +429,6 @@ containerSecurityContext:
 tests:
   enabled: true
   image: docker.io/curlimages/curl:8.11.1
+  # `helm test` also tries PostgreSQL (or the server) from a pod no policy allows, and fails if it gets through: on a
+  # CNI that ignores NetworkPolicy, the isolation this chart declares does not exist.
+  networkPolicyEnforced: true

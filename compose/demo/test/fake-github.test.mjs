@@ -7,8 +7,10 @@ import { authorizePage, createFakeGitHub } from '../fake-github.mjs';
 
 let base = '';
 let server;
+let fake;
 before(async () => {
-  server = createServer(createFakeGitHub({ clientId: 'cid', clientSecret: 'csec' }).listener);
+  fake = createFakeGitHub({ clientId: 'cid', clientSecret: 'csec' });
+  server = createServer(fake.listener);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -92,4 +94,25 @@ test('bodies that would crash a careless fake: a redirect_uri that is no URL, JS
     assert.equal(r.status, 400, body);
   }
   assert.deepEqual(await fetch(`${base}/health`).then((r) => r.json()), { status: 'ok' });
+});
+
+test('the providers\' token endpoints: a refresh token for a new pair, a revoked or missing one refused', async () => {
+  const post = (path, body) => fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const claude = await post('/claude/oauth/token', { grant_type: 'refresh_token', refresh_token: 'sk-ant-ort-demo-1', client_id: 'x' });
+  assert.equal(claude.status, 200);
+  const pair = await claude.json();
+  assert.match(pair.access_token, /^claude-access-demo-[0-9a-f]{16}$/);
+  assert.match(pair.refresh_token, /^claude-refresh-demo-/);
+  assert.equal(pair.expires_in, 28800);
+  const codex = await fetch(`${base}/codex/oauth/token`, form({ grant_type: 'refresh_token', refresh_token: 'rt' }));
+  assert.equal(codex.status, 200);
+  assert.deepEqual(fake.refreshed, ['claude', 'codex']);
+  for (const body of [{ grant_type: 'refresh_token', refresh_token: 'revoked-1' }, { grant_type: 'refresh_token' }, { grant_type: 'password', refresh_token: 'rt' }]) {
+    const r = await post('/claude/oauth/token', body);
+    assert.equal(r.status, 400);
+    assert.deepEqual(await r.json(), { error: 'invalid_grant' });
+  }
+  assert.deepEqual(fake.refreshed, ['claude', 'codex']);
+  // The journey reads the renewals (providers only, never a token) to see the cutover's revival.
+  assert.deepEqual(await fetch(`${base}/_demo/refreshed`).then((r) => r.json()), { refreshed: ['claude', 'codex'] });
 });
