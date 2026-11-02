@@ -208,6 +208,47 @@ podSelector:
   matchExpressions:
     - { key: ostrom.run/session, operator: Exists }
 {{- end -}}
+{{/* "true" or "" for a boolean value that defaults to `default` when unset (null or absent, e.g. --reuse-values). */}}
+{{- define "ostrom.flag" -}}
+{{- if ternary .default .value (kindIs "invalid" .value) }}true{{ end -}}
+{{- end -}}
+
+{{/*
+Extra egress rules (networkPolicy.<part>.extraEgress), each one destination and its ports. A guard against the
+mistakes that open everything, not a policy engine: no rule without `to` or `ports`, no ipBlock wider than /16 (IPv4)
+or /48 (IPv6), and no peer that selects every namespace or every pod of the namespace.
+Call with (dict "rules" list "where" "networkPolicy.server.extraEgress").
+*/}}
+{{- define "ostrom.np.extraEgress" -}}
+{{- range $i, $rule := .rules }}
+{{- if or (not (kindIs "map" $rule)) (not $rule.to) (not $rule.ports) }}
+{{- fail (printf "%s[%d] needs `to` and `ports`: a rule without them allows every destination" $.where $i) }}
+{{- end }}
+{{- range $peer := $rule.to }}
+{{- if not (kindIs "map" $peer) }}{{ fail (printf "%s[%d]: every `to` entry is a NetworkPolicy peer" $.where $i) }}{{ end }}
+{{- with $peer.ipBlock }}
+{{- $parts := splitList "/" (toString .cidr) }}
+{{- $v6 := contains ":" (toString .cidr) }}
+{{- if or (ne (len $parts) 2) (lt (atoi (last $parts)) (ternary 48 16 $v6)) }}
+{{- fail (printf "%s[%d] opens %s: name the destination itself (a /32, a subnet of /16 or narrower); for the internet use networkPolicy.server.allowInternet" $.where $i .cidr) }}
+{{- end }}
+{{- end }}
+{{- if and (hasKey $peer "namespaceSelector") (empty $peer.namespaceSelector) (empty $peer.podSelector) }}
+{{- fail (printf "%s[%d] selects every pod of every namespace: name the namespace and the pods" $.where $i) }}
+{{- end }}
+{{- if and (not $peer.ipBlock) (not (hasKey $peer "namespaceSelector")) (empty $peer.podSelector) }}
+{{- fail (printf "%s[%d] selects every pod of the namespace: name the pods" $.where $i) }}
+{{- end }}
+{{- end }}
+- {{- toYaml $rule | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{/* Whether `helm test` runs the NetworkPolicy probe (templates/tests/test-network.yaml); NOTES says so only then. */}}
+{{- define "ostrom.networkProbe.enabled" -}}
+{{- if and .Values.tests.enabled .Values.networkPolicy.enabled (include "ostrom.flag" (dict "value" .Values.tests.networkPolicyEnforced "default" true)) (or .Values.postgresql.enabled .Values.server.enabled) }}true{{ end -}}
+{{- end -}}
+
 {{- define "ostrom.np.internet" -}}
 - to:
     - ipBlock:

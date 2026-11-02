@@ -86,7 +86,10 @@ spec:
         {{- end }}
       ports: [{ protocol: TCP, port: {{ $np.kubeApi.port }} }]
     {{- end }}
+    {{- include "ostrom.np.extraEgress" (dict "rules" (dig "server" "extraEgress" list $np) "where" "networkPolicy.server.extraEgress") | nindent 4 }}
+    {{- if include "ostrom.flag" (dict "value" (dig "server" "allowInternet" nil $np) "default" true) }}
     {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
+    {{- end }}
 {{- if and .Values.cloudSessions.enabled $np.kubeApi.cilium }}
 ---
 # Cilium: the API server is an entity, not an address; this namespaced policy lets the server reach it.
@@ -155,6 +158,7 @@ spec:
         - {{- include "ostrom.np.peer" (dict "root" . "component" "postgresql") | nindent 10 }}
       ports: [{ protocol: TCP, port: 5432 }]
     {{- end }}
+    {{- include "ostrom.np.extraEgress" (dict "rules" (dig "polis" "extraEgress" list $np) "where" "networkPolicy.polis.extraEgress") | nindent 4 }}
     # Identity providers' metadata and the external database, if any.
     {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
 {{- end }}
