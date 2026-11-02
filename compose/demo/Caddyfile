@@ -1,0 +1,14 @@
+# Local demo only: the install's Caddyfile, plus the fake GitHub and the Mailpit inbox on their own hosts.
+import /etc/caddy/Caddyfile.install
+
+# The fake GitHub (fake-github.mjs). Not *.localhost: the server's HTTP client (libcurl) answers every *.localhost
+# name with its own loopback, so the server would never reach it. github.localtest.me resolves to 127.0.0.1 in a
+# browser, and to Caddy inside the stack (a network alias of this service).
+http://github.localtest.me {
+	reverse_proxy fake-github:8080
+}
+
+# Mailpit's inbox: the sign-in and invitation mails.
+{$OSTROM_SITE_SCHEME}://{$OSTROM_MAIL_HOST} {
+	reverse_proxy mailpit:8025
+}
