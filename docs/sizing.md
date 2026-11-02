@@ -22,7 +22,17 @@ requests below cover them; the server's memory limit stays 256 MiB.
 
 Startup and drains are measured by the chart's CI on kind with the real server (`ci/perf-drill.sh`, figures in the
 job summary): a server pod must be ready within 30 s of its init containers (the `migrate` step), and a node drain
-of a two-replica release keeps a ready server all along (the PodDisruptionBudget refuses the last eviction).
+of a two-replica release keeps a ready server all along (the PodDisruptionBudget refuses the last eviction). Run
+[41534671735](https://github.com/ostrom-hq/ostrom-helm/actions/runs/41534671735), seconds from the pod's creation on a
+fresh install:
+
+| Pod | Scheduled | Initialized | Started | Ready |
+|---|---|---|---|---|
+| PostgreSQL (empty data directory, initdb) | 4 | 4 | 5 | 7 |
+| server × 2 (init: waits for PostgreSQL, then `migrate`) | 0 | 9 | 10 | 11 |
+
+The server itself is ready 2 s after its init containers. The drain of the same run: 85 samples of the Service, 84
+with one ready endpoint and 1 with two, never zero; the eviction of the last pod refused by the budget.
 
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|

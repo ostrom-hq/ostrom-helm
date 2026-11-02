@@ -52,8 +52,70 @@ spec:
         {{- toYaml (mergeOverwrite (deepCopy .Values.podSecurityContext) (dict "runAsUser" $s.runAsUser "runAsGroup" $s.runAsUser "fsGroup" $s.runAsUser)) | nindent 8 }}
       enableServiceLinks: false
       terminationGracePeriodSeconds: 30
-      {{- if .Values.migrations.initContainer }}
+      {{- $proxy := include "ostrom.dbProxy.enabled" . }}
+      {{- if or .Values.migrations.initContainer $proxy }}
       initContainers:
+        {{- if $proxy }}
+        {{- $t := .Values.externalDatabase.tls }}
+        # externalDatabase.tls (AUDIT-SECU-HELM-2 H1): the server's driver has no TLS. The config step writes the
+        # proxy's password file in memory; the proxy (a native sidecar: it starts before `migrate` and lives with the
+        # pod) dials the database in TLS and checks its certificate. The server and `migrate` reach it on 127.0.0.1.
+        - name: db-proxy-config
+          image: {{ include "ostrom.thirdPartyImage" (merge (dict "where" "externalDatabase.tls.proxy.image") $t.proxy.image) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              umask 077
+              # PgBouncer's auth_file: "user" "password", a double quote doubled.
+              q() { printf '%s' "$1" | sed 's/"/""/g'; }
+              {
+                printf '"%s" "%s"\n' "$(q "$APP_USER")" "$(q "$APP_PASSWORD")"
+                if [ -n "${OWNER_USER:-}" ]; then printf '"%s" "%s"\n' "$(q "$OWNER_USER")" "$(q "$OWNER_PASSWORD")"; fi
+              } > /run/ostrom/db-proxy/userlist.txt
+          env:
+            - { name: APP_USER, value: {{ include "ostrom.database.user" . | quote }} }
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef: {{- include "ostrom.database.passwordRef" . | nindent 18 }}
+            {{- if .Values.migrations.initContainer }}
+            # The owner's password, for `migrate` only: the proxy asks every client for its password (SCRAM), so the
+            # server container, which never receives this one, cannot log in as the owner through it.
+            - { name: OWNER_USER, value: {{ include "ostrom.database.ownerUser" . | quote }} }
+            - name: OWNER_PASSWORD
+              valueFrom:
+                secretKeyRef: {{- include "ostrom.database.ownerPasswordRef" . | nindent 18 }}
+            {{- end }}
+          {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
+          resources: {{- toYaml $t.proxy.resources | nindent 12 }}
+          volumeMounts:
+            - { name: db-proxy, mountPath: /run/ostrom/db-proxy }
+        - name: db-proxy
+          image: {{ include "ostrom.thirdPartyImage" (merge (dict "where" "externalDatabase.tls.proxy.image") $t.proxy.image) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          restartPolicy: Always
+          args: ["/etc/ostrom/db-proxy/pgbouncer.ini"]
+          # It listens on the pod's loopback only, which a kubelet tcpSocket probe cannot reach: bash's /dev/tcp.
+          startupProbe:
+            exec: { command: ["/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/{{ include "ostrom.dbProxy.port" . }}"] }
+            periodSeconds: 1
+            timeoutSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            exec: { command: ["/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/{{ include "ostrom.dbProxy.port" . }}"] }
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
+          resources: {{- toYaml $t.proxy.resources | nindent 12 }}
+          volumeMounts:
+            - { name: db-proxy, mountPath: /run/ostrom/db-proxy, readOnly: true }
+            - { name: db-proxy-config, mountPath: /etc/ostrom/db-proxy, readOnly: true }
+            {{- if ne $t.mode "require" }}
+            - { name: db-ca, mountPath: /etc/ostrom/db-ca, readOnly: true }
+            {{- end }}
+        {{- end }}
+        {{- if .Values.migrations.initContainer }}
         - name: migrate
           image: {{ include "ostrom.image" (dict "root" . "image" $s.image "name" "ostrom-server") }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
@@ -69,6 +131,7 @@ spec:
               value: {{ regexReplaceAll "^([a-z]+)://" (include "ostrom.database.url" .) "${1}://$(OSTROM_DATABASE_MIGRATION_USER):$(OSTROM_DATABASE_MIGRATION_PASSWORD)@" | quote }}
           {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
           resources: {{- toYaml $s.resources | nindent 12 }}
+        {{- end }}
       {{- end }}
       containers:
         - name: server
@@ -146,6 +209,21 @@ spec:
           emptyDir: { sizeLimit: 256Mi }
         - name: data
           emptyDir: { sizeLimit: 64Mi }
+        {{- if include "ostrom.dbProxy.enabled" . }}
+        {{- $t := .Values.externalDatabase.tls }}
+        - name: db-proxy
+          emptyDir: { medium: Memory, sizeLimit: 1Mi }
+        - name: db-proxy-config
+          configMap: { name: {{ $full }}-db-proxy }
+        {{- if ne $t.mode "require" }}
+        - name: db-ca
+          {{- if $t.ca.secretName }}
+          secret: { secretName: {{ $t.ca.secretName }}, items: [{ key: {{ $t.ca.key }}, path: {{ $t.ca.key }} }] }
+          {{- else }}
+          configMap: { name: {{ $t.ca.configMapName }}, items: [{ key: {{ $t.ca.key }}, path: {{ $t.ca.key }} }] }
+          {{- end }}
+        {{- end }}
+        {{- end }}
       {{- with $s.nodeSelector }}
       nodeSelector: {{- toYaml . | nindent 8 }}
       {{- end }}

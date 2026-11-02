@@ -81,8 +81,8 @@ demo/demo.sh down      # removes everything it created, cloud sessions included
   behind a resolver that refuses such answers, add `127.0.0.1 github.localtest.me` to `/etc/hosts`. The demo needs
   Caddy on port 80 (`OSTROM_HTTP_PORT`, the default).
 - **Cloud sessions**: they run on this machine's Docker (`OSTROM_RUNNERS_DRIVER=docker`). The server reaches the engine
-  through a socket proxy, on a network only the server joins. Each session's two containers, the agent host and the
-  runner, join the `ostrom-sessions` network, which is internal. There they reach the server and nothing else: not
+  through a socket proxy, on a network only the server joins. Each session's three containers, the agent host, the
+  check host (it runs the hooks' checks, out of the agent's reach) and the runner, join the `ostrom-sessions` network, which is internal. There they reach the server and nothing else: not
   the database, not the engine, not this machine's published ports, not the internet. The session image is `OSTROM_RUNNER_IMAGE` (default
   `ghcr.io/ostrom-hq/ostrom-runner:latest`).
 - **TeamCode import**: a fake TeamCode team sits in MySQL, in TeamCode's own tables and data shapes

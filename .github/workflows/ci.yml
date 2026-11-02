@@ -67,7 +67,7 @@ jobs:
         run: |
           if [ "$EVENT" != pull_request ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           changed=$(git diff --name-only "$BASE"...HEAD)
-          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|networkpolicy\.yaml|availability\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/(migrate|perf)-drill\.sh|\.github/workflows/ci\.yml)'; then
+          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|server-config\.yaml|networkpolicy\.yaml|availability\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/(migrate|perf)-drill\.sh|\.github/workflows/ci\.yml)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -138,6 +138,12 @@ jobs:
               --set externalDatabase.migrationUsername=o --set externalDatabase.migrationPassword=p \
               --set server.autoscaling.enabled=true --set postgresql.backup.enabled=true \
               | ./kubeconform -strict -summary -kubernetes-version "$v" -
+            helm template o charts/ostrom -n ostrom --set postgresql.enabled=false \
+              --set externalDatabase.url=postgresql://db:5432/o --set externalDatabase.username=u \
+              --set externalDatabase.password=p --set externalDatabase.migrationUsername=o \
+              --set externalDatabase.migrationPassword=p --set externalDatabase.tls.enabled=true \
+              --set externalDatabase.tls.ca.secretName=db-ca \
+              | ./kubeconform -strict -summary -kubernetes-version "$v" -
             helm template o charts/ostrom -n ostrom --set cloudSessions.enabled=true --set server.replicas=1 \
               --set networkPolicy.kubeApi.cilium=true --set networkPolicy.ciliumEgressDeny.enabled=true \
               | ./kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version "$v" -
@@ -166,6 +172,11 @@ jobs:
             --set externalDatabase.password=p --set externalDatabase.polisUrl=postgres://u:p@db/polis \
             --set externalDatabase.migrationUsername=o --set externalDatabase.migrationPassword=p \
             --set server.autoscaling.enabled=true --set postgresql.backup.enabled=true --set polis.enabled=true
+          ci/policy-check.sh tls --set postgresql.enabled=false \
+            --set externalDatabase.url=postgresql://db:5432/o --set externalDatabase.username=u \
+            --set externalDatabase.password=p --set externalDatabase.migrationUsername=o \
+            --set externalDatabase.migrationPassword=p --set externalDatabase.tls.enabled=true \
+            --set externalDatabase.tls.ca.secretName=db-ca
           ci/policy-check.sh cloud --set cloudSessions.enabled=true --set server.replicas=1 \
             --set networkPolicy.kubeApi.cilium=true --set networkPolicy.ciliumEgressDeny.enabled=true \
             --set postgresql.backup.enabled=true

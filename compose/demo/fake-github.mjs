@@ -9,11 +9,14 @@
 //   GET  /api/user, /api/user/emails  who the token is
 // It also stands in for the token endpoints of the shared accounts' providers (the server's
 // OSTROM_SHARING_CLAUDE_TOKEN_URL and OSTROM_SHARING_CODEX_TOKEN_URL), for the import's cutover:
-//   POST /claude/oauth/token, /codex/oauth/token   a refresh token for a new pair; `invalid_grant` for a revoked one
+//   POST /claude/oauth/token, /codex/oauth/token   a refresh token for a new pair, naming the account it is of when
+//                                                  the fake knows it (the seeded TeamCode accounts); `invalid_grant`
+//                                                  for a revoked one
 //   GET  /_demo/refreshed                          the providers renewed so far, in order (read by the journey)
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
+import { SEED_ACCOUNT_OF } from './teamcode/seed.mjs';
 
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 
@@ -34,8 +37,16 @@ button{margin-top:16px;width:100%;padding:8px;font:inherit;font-weight:600;color
 ${hidden}<button type="submit" id="authorize">Authorize</button></form></body></html>`;
 }
 
+/** A JWT with [claims] and no signature: the server reads an id_token's claims, it does not verify them. */
+function unsignedJwt(claims) {
+  const part = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  return `${part({ alg: 'none', typ: 'JWT' })}.${part(claims)}.`;
+}
+
 /** The fake's state and request handler; `clientId` and `clientSecret` are the OAuth app the server is given. */
-export function createFakeGitHub({ clientId, clientSecret }) {
+export function createFakeGitHub({ clientId, clientSecret, accountOf = {} }) {
+  // Whose each refresh token is (refresh token → provider account id); a pair the fake issues stays its account's.
+  const owners = new Map(Object.entries(accountOf));
   const codes = new Map();
   const tokens = new Map();
   const users = new Map();
@@ -85,7 +96,16 @@ export function createFakeGitHub({ clientId, clientSecret }) {
       if (form.grant_type !== 'refresh_token' || refresh === '' || refresh.startsWith('revoked')) return send(res, 400, { error: 'invalid_grant' });
       const provider = path.split('/')[1];
       refreshed.push(provider);
-      return send(res, 200, { access_token: `${provider}-access-demo-${randomBytes(8).toString('hex')}`, refresh_token: `${provider}-refresh-demo-${randomBytes(8).toString('hex')}`, expires_in: 28800 });
+      const pair = { access_token: `${provider}-access-demo-${randomBytes(8).toString('hex')}`, refresh_token: `${provider}-refresh-demo-${randomBytes(8).toString('hex')}`, expires_in: 28800 };
+      // The provider names the account the tokens are of, as the real ones do (Claude: `account.uuid`; OpenAI: the
+      // `chatgpt_account_id` claim of the id_token); a token the fake does not know is nobody's, and named so: not at all.
+      const owner = owners.get(refresh);
+      if (owner) {
+        owners.set(pair.refresh_token, owner);
+        if (provider === 'claude') pair.account = { uuid: owner, email_address: `${owner}@users.provider.demo` };
+        else pair.id_token = unsignedJwt({ 'https://api.openai.com/auth': { chatgpt_account_id: owner } });
+      }
+      return send(res, 200, pair);
     }
     const user = tokens.get(authorization.replace(/^(token|bearer)\s+/i, ''));
     if (method === 'GET' && (path === '/api/user' || path === '/api/user/emails')) {
@@ -126,6 +146,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const { listener } = createFakeGitHub({
     clientId: process.env.FAKE_GITHUB_CLIENT_ID ?? '',
     clientSecret: process.env.FAKE_GITHUB_CLIENT_SECRET ?? '',
+    accountOf: SEED_ACCOUNT_OF,
   });
   const port = Number(process.env.PORT ?? 8080);
   createServer(listener).listen(port, '0.0.0.0', () => console.log(`fake GitHub on :${port}`));

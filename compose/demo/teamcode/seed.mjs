@@ -11,6 +11,18 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const TEAM = 'default';
+
+/** The tokens of the team's Claude accounts; an account's provider id is `acct-<id>`. */
+const SEED_TOKENS = {
+  'a-max-1': { accessToken: 'sk-ant-oat-demo-1', refreshToken: 'sk-ant-ort-demo-1' },
+  'a-max-2': { accessToken: 'sk-ant-oat-demo-2', refreshToken: 'sk-ant-ort-demo-2' },
+};
+
+/**
+ * Whose each seeded refresh token is, as the provider knows it (refresh token → provider account id): the fake's token
+ * endpoint names that account when it renews them, as Claude's does (`account.uuid`, ostrom-server#134).
+ */
+export const SEED_ACCOUNT_OF = Object.fromEntries(Object.entries(SEED_TOKENS).map(([id, t]) => [t.refreshToken, `acct-${id}`]));
 const AT = 1793318400000; // 2026-10-30T00:00:00Z, every created_at and updated_at
 const EXPIRES = 2108937600000; // 2036-10-30T00:00:00Z: the demo's tokens never expire during a demo
 
@@ -68,8 +80,8 @@ export function seedRows(key) {
     pool_id: null, priority: 0, state: credential ? 'ACTIVE' : 'PENDING', cooldown_until: 0, refresh_pending: false, refresh_started_at: 0, enrolled_by: 'm-alice',
   });
   const accounts = [
-    account('a-max-1', 'Claude Max 1', 'max1@acme.demo', { accessToken: 'sk-ant-oat-demo-1', refreshToken: 'sk-ant-ort-demo-1', expiresAtMillis: EXPIRES }),
-    account('a-max-2', 'Claude Max 2 (paused)', 'max2@acme.demo', { accessToken: 'sk-ant-oat-demo-2', refreshToken: 'sk-ant-ort-demo-2', expiresAtMillis: EXPIRES }, true),
+    account('a-max-1', 'Claude Max 1', 'max1@acme.demo', { ...SEED_TOKENS['a-max-1'], expiresAtMillis: EXPIRES }),
+    account('a-max-2', 'Claude Max 2 (paused)', 'max2@acme.demo', { ...SEED_TOKENS['a-max-2'], expiresAtMillis: EXPIRES }, true),
     account('a-never', 'Never finished', null, null),
   ];
   return { teams: [{ id: TEAM, name: 'Acme (TeamCode)' }], members, variants, mcp_tool_policies: policies, variant_assignments: assignments, accounts };
