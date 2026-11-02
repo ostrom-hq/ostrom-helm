@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { COLUMNS, openEnvelope, readTables, tableQuery, teamCodeImport, toolModeOf } from '../teamcode/export.mjs';
-import { demoKey, seal, seedRows, TEAM } from '../teamcode/seed.mjs';
+import { demoKey, seal, SEED_ACCOUNT_OF, seedRows, TEAM } from '../teamcode/seed.mjs';
 
 const TABLE_OF = { members: 'members', variants: 'variants', mcp_tool_policies: 'policies', variant_assignments: 'assignments', accounts: 'accounts' };
 
@@ -114,4 +114,13 @@ test('an answer or a credential that is not JSON names what it was', () => {
   const tables = { members: [], variants: [], policies: [], assignments: [], accounts: [{ id: 'a', provider: 'anthropic', provider_account_id: 'p', display_name: 'Max', email: null, credential_envelope: seal(key, 'not json', `${TEAM}:a`), disabled: 0 }] };
   assert.throws(() => teamCodeImport(tables, key, TEAM, {}), /account Max: its credential is not the JSON TeamCode writes/);
   assert.doesNotMatch(tableQuery('members', ['id'], TEAM), /kind/);
+});
+
+test('the fake provider knows whose each seeded refresh token is: the account TeamCode stores it under', () => {
+  const key = demoKey();
+  for (const row of seedRows(key).accounts.filter((a) => a.credential_envelope)) {
+    const { refreshToken } = JSON.parse(openEnvelope(key, row.credential_envelope, `${TEAM}:${row.id}`));
+    assert.equal(SEED_ACCOUNT_OF[refreshToken], row.provider_account_id);
+  }
+  assert.equal(Object.keys(SEED_ACCOUNT_OF).length, 2);
 });

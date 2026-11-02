@@ -67,7 +67,7 @@ jobs:
         run: |
           if [ "$EVENT" != pull_request ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           changed=$(git diff --name-only "$BASE"...HEAD)
-          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|networkpolicy\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/migrate-drill\.sh|\.github/workflows/ci\.yml)'; then
+          if echo "$changed" | grep -qE '^(charts/ostrom/templates/(_helpers\.tpl|postgresql\.yaml|database-roles-job\.yaml|server\.yaml|server-config\.yaml|networkpolicy\.yaml|availability\.yaml)|charts/ostrom/values\.yaml|compose/postgres-init/|ci/(migrate|perf)-drill\.sh|\.github/workflows/ci\.yml)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -138,6 +138,12 @@ jobs:
               --set externalDatabase.migrationUsername=o --set externalDatabase.migrationPassword=p \
               --set server.autoscaling.enabled=true --set postgresql.backup.enabled=true \
               | ./kubeconform -strict -summary -kubernetes-version "$v" -
+            helm template o charts/ostrom -n ostrom --set postgresql.enabled=false \
+              --set externalDatabase.url=postgresql://db:5432/o --set externalDatabase.username=u \
+              --set externalDatabase.password=p --set externalDatabase.migrationUsername=o \
+              --set externalDatabase.migrationPassword=p --set externalDatabase.tls.enabled=true \
+              --set externalDatabase.tls.ca.secretName=db-ca \
+              | ./kubeconform -strict -summary -kubernetes-version "$v" -
             helm template o charts/ostrom -n ostrom --set cloudSessions.enabled=true --set server.replicas=1 \
               --set networkPolicy.kubeApi.cilium=true --set networkPolicy.ciliumEgressDeny.enabled=true \
               | ./kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version "$v" -
@@ -147,6 +153,34 @@ jobs:
               | ./kubeconform -strict -summary -kubernetes-version "$v" -schema-location default \
                 -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/3eb90d47aba8d61919d4419dd38301536e32a94b/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' -
           done
+      # AUDIT-SECU-HELM-2 M6: every pod of every render holds the Pod Security Standard `restricted` (the admission
+      # library, through Kyverno's podSecurity rule), a read-only root, requests and a memory limit, no moving tag and
+      # no Kubernetes token (ci/policies/restricted.yaml). Blocking. The CLI is checked against its release checksum.
+      - name: Policy (Kyverno CLI, restricted and the chart's rules)
+        env:
+          KYVERNO_VERSION: v1.19.2
+          KYVERNO_SHA256: 357eaf1df8bc24ddd5a73979fadeaae6a032e8710f11af264229756e4956bf4a
+        run: |
+          curl -fsSL -o kyverno.tar.gz "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VERSION}/kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+          echo "${KYVERNO_SHA256}  kyverno.tar.gz" | sha256sum -c -
+          tar xzf kyverno.tar.gz kyverno && rm kyverno.tar.gz
+          export KYVERNO="$PWD/kyverno"
+          ci/policy-check.sh default
+          ci/policy-check.sh standin -f charts/ostrom/ci/standin-values.yaml
+          ci/policy-check.sh external --set postgresql.enabled=false \
+            --set externalDatabase.url=postgresql://db:5432/o --set externalDatabase.username=u \
+            --set externalDatabase.password=p --set externalDatabase.polisUrl=postgres://u:p@db/polis \
+            --set externalDatabase.migrationUsername=o --set externalDatabase.migrationPassword=p \
+            --set server.autoscaling.enabled=true --set postgresql.backup.enabled=true --set polis.enabled=true
+          ci/policy-check.sh tls --set postgresql.enabled=false \
+            --set externalDatabase.url=postgresql://db:5432/o --set externalDatabase.username=u \
+            --set externalDatabase.password=p --set externalDatabase.migrationUsername=o \
+            --set externalDatabase.migrationPassword=p --set externalDatabase.tls.enabled=true \
+            --set externalDatabase.tls.ca.secretName=db-ca
+          ci/policy-check.sh cloud --set cloudSessions.enabled=true --set server.replicas=1 \
+            --set networkPolicy.kubeApi.cilium=true --set networkPolicy.ciliumEgressDeny.enabled=true \
+            --set postgresql.backup.enabled=true
+          rm -f kyverno
       # Only what the server emits today (ostrom-server main: Tracing.kt, ProcessMetrics.kt; ostrom-core telemetry), and their labels.
       - name: The dashboards and alerts are portable and query only metrics the server emits
         run: |
@@ -175,6 +209,10 @@ jobs:
           if echo "$out" | grep -E '^kind: (ClusterRole|ClusterRoleBinding|CustomResourceDefinition|Namespace|MutatingWebhookConfiguration|ValidatingWebhookConfiguration|PriorityClass|StorageClass|IngressClass|CiliumClusterwideNetworkPolicy)$'; then
             echo "the chart must only create namespaced objects"; exit 1
           fi
+      # AUDIT-SECU-HELM-2 M4: a witness in every secret input, and every value of the rendered Secrets, must appear in
+      # no other object (ConfigMap, pod spec, annotation), on three value sets.
+      - name: No secret in clear outside a Secret
+        run: ci/secrets-in-render.sh
       - name: Shell scripts
         run: shellcheck compose/*.sh compose/demo/*.sh compose/demo/teamcode/*.sh ci/*.sh
       # The local demo stack (compose/demo): its helpers at 100 % of lines, branches and functions, and its Compose
@@ -220,6 +258,9 @@ jobs:
         run: |
           kind load docker-image ostrom-server:chart-ci --name chart-testing
           SERVER_IMAGE=ostrom-server:chart-ci ci/migrate-drill.sh
+      - name: Startup to ready, and the server's PodDisruptionBudget against a node drain (real server)
+        if: steps.real.outputs.run == 'true'
+        run: SERVER_IMAGE=ostrom-server:chart-ci ci/perf-drill.sh
       - name: Cluster state on failure
         if: failure()
         run: |

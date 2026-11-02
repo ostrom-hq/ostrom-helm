@@ -9,11 +9,32 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 | `migrations` | `initContainer: true` runs `ostrom-server migrate` before each pod starts |
 | `observability` | `otel` (OTLP/HTTP endpoint and headers), `langfuse`, `posthog` |
 | `web`, `site` | the console (nginx) and the site (Next.js) |
-| `postgresql` / `externalDatabase` | built-in StatefulSet with optional daily `pg_dump`, or your own database |
+| `postgresql` / `externalDatabase` | built-in StatefulSet with optional daily `pg_dump`, or your own database; `externalDatabase.tls` puts a TLS proxy (PgBouncer) in the server pod |
 | `polis` | Ory Polis, the SAML ↔ OIDC bridge. **Coming soon**: off by default (`polis.enabled: false`), the server has no SAML code yet |
 | `cloudSessions` | runner image, resources, deadline; `allowedOrgs` (S2-10); RBAC of the controller |
 | `ingress` | class, hosts, TLS secret or cert-manager issuer, API annotations (streaming, body size) |
 | `networkPolicy` | ingress controller location, DNS, denied egress CIDRs, the server's internet and extra egress rules, Kubernetes API access |
+
+## Guardrails
+
+`charts/ostrom/values.schema.json` refuses, before anything renders:
+
+- an unknown top-level key (`networkPolicyy`: a typo would keep the default without a word);
+- a security context below the Pod Security Standard `restricted` plus a read-only root: `podSecurityContext` keeps
+  `runAsNonRoot: true` and a `RuntimeDefault` (or `Localhost`) seccomp profile; `containerSecurityContext` keeps
+  `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `drop: [ALL]`, no added capability, never
+  `privileged`; `server.runAsUser` is never 0;
+- a malformed image digest, an unknown `global.imagePullPolicy`, an external database URL with a query string (the
+  server refuses it at start).
+
+The two security contexts are the server's, the console's and the site's; the other pods (PostgreSQL, its Jobs, Ory
+Polis, the tests) have theirs written in the chart, which no value changes. The CI then checks the pods of four
+renders (default, the CI stand-in, an external database with Polis and autoscaling, cloud sessions with Cilium and
+backups) with the Kyverno CLI (`ci/policy-check.sh`, `ci/policies/restricted.yaml`): `restricted`, a read-only root
+(Ory Polis excepted), requests and a memory limit, no branch-like tag (`latest`, `edge`, `main`…) nor a missing one,
+and no Kubernetes token but on the server with cloud sessions. One failure fails the run. Session pods are created by
+the server at run time, not rendered by the chart: this check does not see them. Install in a namespace
+labelled `pod-security.kubernetes.io/enforce=restricted` all the same: the chart is tested there.
 
 ## Server environment
 
@@ -36,6 +57,17 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_POD_NAME` | the pod name (downward API) |
 | `OSTROM_TRUSTED_PROXIES` | `server.trustedProxies`: CIDRs (comma separated) of the ingress controller's pods and of the nodes, whose forwarded client address the server believes; unset by default |
 | `OSTROM_SHUTDOWN_DELAY_SECONDS` | `server.shutdownDelaySeconds` (0 to 10, default 5): after SIGTERM, `/ready` answers 503 this long before the server stops, so the Service drops the pod first; readiness probes `/ready`, liveness and startup `/health` |
+
+A secret never goes in `server.config` (a ConfigMap), `server.extraEnv` with a plain `value`, `web.config` (served to
+every browser) or `site.env`: the chart refuses a key that looks like one (`SECRET`, `PASSWORD`, `TOKEN`, `CREDENTIAL`,
+`API_KEY`, `PRIVATE_KEY`, `LICENSE_KEY`, or ending in `_KEY`; not a path `_FILE`, an address `_URL`, the runners'
+pull Secret name, nor PostHog's public project key), and any value that carries a credential whatever its name: a
+URL with a password (`redis://:pw@…`, `externalDatabase.url` included) or a token in a query string. A setting the
+check takes for a secret by mistake goes in `server.secretEnv` or `server.existingSecret`: it is the same
+environment variable. Kubernetes' `view` role reads ConfigMaps and pod specs, never Secrets. Ory Polis's external
+database URL (`externalDatabase.polisUrl`) goes into Secret `<release>-polis-db`, and a change of it rolls the Polis
+pods. Not checked: a ConfigMap of yours given in `server.extraEnvFrom`. The CI renders the chart with a witness in
+every secret input and fails if one shows up outside a Secret, or never reaches one (`ci/secrets-in-render.sh`).
 
 Everything else goes through `server.config` (plain) or `server.existingSecret` / `server.secretEnv` (secret),
 whose keys are environment variable names, e.g. `OSTROM_GITHUB_CLIENT_ID`, `OSTROM_GITHUB_CLIENT_SECRET`,
@@ -83,19 +115,51 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_router') \gexec
 GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
+-- AUDIT-RLS R8: the migrations' history is written by its owner alone. Any other role (the serving role, ostrom_tenant
+-- that it inherits, PUBLIC) holding more than SELECT, on the table or a column, loses it all and keeps SELECT.
+DO $lock$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT quote_ident(c.relname) AS tbl,
+      CASE WHEN g.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(g.grantee)) END AS name,
+      bool_or(g.privilege_type = 'SELECT' AND NOT g.on_column) AS reads
+    FROM pg_class c
+    CROSS JOIN LATERAL (
+      SELECT a.grantee, a.privilege_type, false AS on_column FROM aclexplode(c.relacl) a
+      UNION ALL
+      SELECT a.grantee, a.privilege_type, true FROM pg_attribute t, aclexplode(t.attacl) a WHERE t.attrelid = c.oid
+    ) g
+    WHERE c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace AND c.relname LIKE '\_migrations\_%'
+      AND g.grantee <> c.relowner
+    GROUP BY c.relname, g.grantee
+    HAVING bool_or(g.privilege_type <> 'SELECT' OR g.on_column)
+  LOOP
+    EXECUTE format('REVOKE ALL ON public.%s FROM %s CASCADE', r.tbl, r.name);
+    IF r.reads THEN
+      EXECUTE format('GRANT SELECT ON public.%s TO %s', r.tbl, r.name);
+    END IF;
+  END LOOP;
+END
+$lock$;
 ```
 
 (`psql -v ON_ERROR_STOP=1 -v owner=ostrom -v app=ostrom_app -v db=ostrom`). Never give the serving role
 `CREATEROLE`, membership of the owner nor `ostrom_router`.
 
 `helm test` checks it on the live database (`templates/tests/test-database.yaml`): the serving role is neither
-superuser nor `BYPASSRLS`, cannot create or alter a table, reads what the owner creates; Polis cannot open
-the `ostrom` database.
+superuser nor `BYPASSRLS`, cannot create or alter a table, reads what the owner creates, reads the migrations' history and writes none of it
+(directly, through `ostrom_tenant` or `PUBLIC`, AUDIT-RLS R8); Polis cannot open the `ostrom` database.
 
 With `postgresql.enabled: false`, create the same roles on your server (the block above included: the chart runs no
 Job against an external database) and give both: `externalDatabase.username`
 (serving) and `externalDatabase.migrationUsername` (owner), passwords in `externalDatabase.existingSecret` under
 `password` and `migration-password`.
+
+`externalDatabase.tls` (`enabled`, `mode` `verify-full` | `verify-ca` | `require`, `ca.secretName` or
+`ca.configMapName` with `ca.key`, `host`, `proxy.image`, `proxy.resources`): the server's driver has no TLS, so a
+PgBouncer sidecar dials the database in TLS and the server and `migrate` use it on `127.0.0.1:6432`. See "TLS to an
+external database" in [install-kubernetes.md](install-kubernetes.md).
 
 ## Availability
 
@@ -104,7 +168,9 @@ Job against an external database) and give both: `externalDatabase.username`
   default; add `topologySpreadConstraints` to spread over zones too.
 - **PodDisruptionBudget**, `minAvailable: 1`. It is rendered only when the fewest replicas that can run (`replicas`, or
   `autoscaling.minReplicas` with the HPA) are two or more: with one, the budget would block every node drain. The
-  chart refuses a `minAvailable` equal to or above that number, for the same reason.
+  chart refuses a `minAvailable` equal to or above that number, for the same reason. The CI drains the node of a two-replica
+  release on kind (`ci/perf-drill.sh`): one server pod is evicted, the other is refused by the budget, and the Service
+  keeps a ready endpoint all along.
 - **HPA**, `autoscaling.enabled` (needs metrics-server). The Deployment then has no `replicas`, so an upgrade never resets
   the HPA's count. The server's `autoscaling.behavior` scales up at once and down by one pod a minute, after 5 minutes
   of low load; any [HPA `behavior`](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior)

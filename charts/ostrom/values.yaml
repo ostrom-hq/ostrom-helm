@@ -5,6 +5,7 @@ global:
   imageRegistry: ghcr.io/ostrom-hq
   # Version of every Ostrom image when an image tag is not set; defaults to the chart appVersion.
   imageTag: ""
+  # Every image of the chart, Ostrom's and the third-party ones (PostgreSQL, Ory Polis, the helm test image).
   imagePullPolicy: IfNotPresent
   # Names of existing docker-registry Secrets (GHCR is private until the public release).
   imagePullSecrets: []
@@ -58,11 +59,12 @@ server:
   existingSecret: ""
   extraEnv: []
   extraEnvFrom: []
-  # Measured in kind through the ingress (ostrom-e2e chart-load.yml, runs 41053122493 and 41055002838): about 50 req/s per replica
-  # peaks at 130-194m CPU and 90-114 MiB; at rest a few millicores and under 10 MiB. Requests cover that peak,
-  # the limit keeps twice its memory.
+  # Measured in kind through the ingress (ostrom-e2e chart-load.yml, runs 41507938323, 41519346164 and 41530106515: reads,
+  # writes, gates with their yes, the race of 100 yes; 0 restarts): about 50 req/s per replica peaks at 134-240m CPU
+  # and 128-165 MiB (kubectl top, 15 s windows); at rest a few millicores and under 10 MiB. Requests cover that peak.
+  # The 256 MiB limit stays: memory under the race is the server's to fix (AUDIT-GATES-2), not the limit's to hide.
   resources:
-    requests: { cpu: 100m, memory: 128Mi }
+    requests: { cpu: 250m, memory: 192Mi }
     limits: { memory: 256Mi }
   probes:
     startup: { path: /health, periodSeconds: 2, failureThreshold: 60 }
@@ -73,8 +75,9 @@ server:
     enabled: false            # needs metrics-server in the cluster
     minReplicas: 2
     maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
+    targetCPUUtilizationPercentage: 70       # of the 250m request: about 175m, below the measured load peak
+    # Of the 192Mi request: about 173 MiB, above the 128-165 MiB of the measured load peak, below the 256Mi limit.
+    targetMemoryUtilizationPercentage: 90
     # Scale up at once, scale down slowly: one pod a minute after 5 minutes of low load (requests stay spread).
     behavior:
       scaleDown:
@@ -210,9 +213,12 @@ site:
 # Either the chart runs PostgreSQL itself (StatefulSet in the release namespace), or you point it at yours.
 postgresql:
   enabled: true
+  # Pinned by digest (the multi-arch index): the PostgreSQL and roles containers hold the superuser password, a
+  # rewritten tag must not reach them. The digest wins over the tag; set it to "" to follow the tag.
   image:
     repository: docker.io/library/postgres
     tag: "17.6"
+    digest: "sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929"
   database: ostrom
   # The serving role: owns nothing, NOSUPERUSER NOBYPASSRLS, so row-level security always applies to it.
   username: ostrom_app
@@ -226,8 +232,9 @@ postgresql:
   persistence:
     size: 20Gi
     storageClass: ""
+  # Measured with the server above (same runs): 128-245m CPU and 77-82 MiB at peak; shared_buffers alone is 128 MB.
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
+    requests: { cpu: 250m, memory: 256Mi }
     limits: { memory: 1Gi }
   parameters:
     max_connections: "200"
@@ -257,6 +264,31 @@ externalDatabase:
   # Ory Polis database URL with credentials (postgres://user:pass@host:5432/polis) when polis.enabled.
   polisUrl: ""
   polisExistingSecret: ""     # key `url`
+  # TLS to the database (AUDIT-SECU-HELM-2 H1). The server's PostgreSQL driver has no TLS yet: with `enabled`, a
+  # PgBouncer sidecar in the server pod (native sidecar, before `migrate`) dials the database in TLS and checks its
+  # certificate; the server and `migrate` talk to it in clear on the pod's loopback only (127.0.0.1:6432). Needed for
+  # a database that refuses plain connections (RDS with rds.force_ssl, Cloud SQL, Azure, `hostssl` only).
+  tls:
+    enabled: false
+    # verify-full (the certificate is signed by `ca` and names `host`), verify-ca (signed by `ca`), or require
+    # (encrypted, not verified: never in production).
+    mode: verify-full
+    # The CA bundle that signs the database's certificate, in a Secret or ConfigMap of the namespace (RDS:
+    # global-bundle.pem). Needed for verify-full and verify-ca.
+    ca:
+      secretName: ""
+      configMapName: ""
+      key: ca.crt
+    # The host the proxy dials and checks the certificate against; empty: the host of `url`.
+    host: ""
+    proxy:
+      image:
+        repository: ghcr.io/cloudnative-pg/pgbouncer
+        tag: "1.26.1-202610291052-trixie"
+        digest: "sha256:c96417dce3f7ee82a1cb6df65309ebb7efec0a449363c333c043e2fe0c636097"
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { memory: 64Mi }
 
 # --- Ory Polis (SAML ↔ OIDC bridge) ---------------------------------------------------------------------------------
 # Coming soon: SAML single sign-on. The server has no SAML code yet, so Polis stays off by default (an unused service
@@ -267,6 +299,7 @@ polis:
   image:
     repository: docker.io/boxyhq/jackson
     tag: "26.2.0"
+    digest: "sha256:9165f3db9d9f5d3262f23446e860f4929f462d1d9c954af13f3bb44910c3a699"
   replicas: 1
   port: 5225
   # The server talks to Polis inside the cluster; browsers and identity providers reach it on its own host
@@ -428,7 +461,8 @@ containerSecurityContext:
 
 tests:
   enabled: true
-  image: docker.io/curlimages/curl:8.11.1
+  # A full reference, pinned by digest.
+  image: docker.io/curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
   # `helm test` also tries PostgreSQL (or the server) from a pod no policy allows, and fails if it gets through: on a
   # CNI that ignores NetworkPolicy, the isolation this chart declares does not exist.
   networkPolicyEnforced: true

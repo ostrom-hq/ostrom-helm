@@ -1,0 +1,135 @@
+suite: images — third-party images pinned by digest, one pull policy
+templates:
+  - templates/postgresql.yaml
+  - templates/database-roles-job.yaml
+  - templates/polis.yaml
+  - templates/tests/test-connection.yaml
+  - templates/tests/test-database.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: PostgreSQL runs from the digest of its multi-arch index
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - matchRegex: { path: 'spec.template.spec.containers[0].image', pattern: '^docker\.io/library/postgres:17\.6@sha256:[a-f0-9]{64}$' }
+      - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: IfNotPresent }
+  - it: the backup, the roles Job and the database test use the same pinned image
+    set: { postgresql.backup.enabled: true }
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: CronJob }
+    asserts:
+      - matchRegex: { path: 'spec.jobTemplate.spec.template.spec.containers[0].image', pattern: '^docker\.io/library/postgres:17\.6@sha256:[a-f0-9]{64}$' }
+  - it: the roles Job is pinned
+    template: templates/database-roles-job.yaml
+    documentSelector: { path: kind, value: Job }
+    asserts:
+      - matchRegex: { path: 'spec.template.spec.containers[0].image', pattern: '@sha256:[a-f0-9]{64}$' }
+  - it: the database test is pinned
+    template: templates/tests/test-database.yaml
+    asserts:
+      - matchRegex: { path: 'spec.containers[0].image', pattern: '@sha256:[a-f0-9]{64}$' }
+  - it: the helm test image is pinned
+    template: templates/tests/test-connection.yaml
+    asserts:
+      - matchRegex: { path: 'spec.containers[0].image', pattern: '^docker\.io/curlimages/curl:[0-9.]+@sha256:[a-f0-9]{64}$' }
+  - it: Polis is pinned
+    set: { polis.enabled: true }
+    template: templates/polis.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - matchRegex: { path: 'spec.template.spec.containers[0].image', pattern: '^docker\.io/boxyhq/jackson:26\.2\.0@sha256:[a-f0-9]{64}$' }
+  - it: an empty digest follows the tag
+    set: { postgresql.image.digest: "" }
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: 'docker.io/library/postgres:17.6' }
+  - it: a mirror keeps the digest
+    set: { postgresql.image.repository: registry.corp.example/mirror/postgres }
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - matchRegex: { path: 'spec.template.spec.containers[0].image', pattern: '^registry\.corp\.example/mirror/postgres:17\.6@sha256:' }
+  - it: refuses a malformed digest
+    set: { postgresql.image.digest: "sha256:abc" }
+    # The first template that renders the image stops the render.
+    template: templates/tests/test-database.yaml
+    asserts:
+      - failedTemplate: { errorPattern: 'must be sha256:<64 hex>' }
+  - it: global.imagePullPolicy applies to the third-party images too
+    set: { global.imagePullPolicy: Always, polis.enabled: true }
+    template: templates/polis.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: Always }
+  - it: global.imagePullPolicy reaches the roles Job
+    set: { global.imagePullPolicy: Always }
+    template: templates/database-roles-job.yaml
+    documentSelector: { path: kind, value: Job }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: Always }
+  - it: an old values file without a digest key still renders (helm upgrade --reuse-values)
+    set: { postgresql.image.digest: null }
+    template: templates/postgresql.yaml
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: 'docker.io/library/postgres:17.6' }
+  - it: a tag changed without its digest is refused, never run as the pinned version
+    template: templates/tests/test-database.yaml
+    set: { postgresql.image.tag: "16" }
+    asserts:
+      - failedTemplate: { errorPattern: 'postgresql.image: tag "16" with the chart.s digest of 17.6' }
+  - it: a tag with digest "" follows the tag
+    template: templates/postgresql.yaml
+    set: { postgresql.image.tag: "16", postgresql.image.digest: "" }
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: docker.io/library/postgres:16 }
+  - it: a tag with its own digest is taken as given
+    template: templates/postgresql.yaml
+    set: { postgresql.image.tag: "16", postgresql.image.digest: "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+    documentSelector: { path: kind, value: StatefulSet }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "docker.io/library/postgres:16@sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+  - it: neither a tag nor a digest is refused
+    template: templates/tests/test-database.yaml
+    set: { postgresql.image.tag: "", postgresql.image.digest: "" }
+    asserts:
+      - failedTemplate: { errorPattern: 'postgresql.image: a tag or a digest is required' }
+  - it: Polis refuses a malformed digest
+    template: templates/polis.yaml
+    set: { polis.enabled: true, polis.image.digest: "sha256:abc" }
+    asserts:
+      - failedTemplate: { errorPattern: 'polis.image: image digest of docker.io/boxyhq/jackson must be sha256' }
+  - it: Polis refuses a tag changed without its digest
+    template: templates/polis.yaml
+    set: { polis.enabled: true, polis.image.tag: "27.0.0" }
+    asserts:
+      - failedTemplate: { errorPattern: 'with the chart.s digest of 26.2.0' }
+  - it: tests.image refuses a malformed digest
+    template: templates/tests/test-connection.yaml
+    set: { tests.image: "docker.io/curlimages/curl:8.11.1@sha256:abc" }
+    asserts:
+      - failedTemplate: { errorPattern: 'tests.image: image digest' }
+  - it: tests.image refuses another tag with the chart's digest
+    template: templates/tests/test-connection.yaml
+    set: { tests.image: "docker.io/curlimages/curl:8.12.0@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69" }
+    asserts:
+      - failedTemplate: { errorPattern: 'with the chart.s digest of 8.11.1' }
+  - it: tests.image on a mirror with a port, by tag only
+    template: templates/tests/test-connection.yaml
+    set: { tests.image: "registry.corp.example:5000/curl:8.11.1" }
+    asserts:
+      - equal: { path: 'spec.containers[0].image', value: "registry.corp.example:5000/curl:8.11.1" }
+  # Tripwire: every digest values.yaml pins is in ostrom.thirdPartyPins (a Renovate bump must move both), or these renders
+  # would pass instead of failing.
+  - it: the pin table knows the PostgreSQL digest of values.yaml
+    template: templates/tests/test-database.yaml
+    set: { postgresql.image.tag: "0.0" }
+    asserts:
+      - failedTemplate: { errorPattern: 'chart.s digest of' }
+  - it: the pin table knows the Polis digest of values.yaml
+    template: templates/polis.yaml
+    set: { polis.enabled: true, polis.image.tag: "0.0" }
+    asserts:
+      - failedTemplate: { errorPattern: 'chart.s digest of' }

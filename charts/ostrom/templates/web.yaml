@@ -1,6 +1,7 @@
 {{- if .Values.web.enabled }}
 {{- $full := include "ostrom.fullname" . -}}
 {{- $w := .Values.web -}}
+{{- include "ostrom.refuseSecrets" (dict "values" ($w.config | default dict) "where" "web.config" "what" "it is served to every browser as window.__OSTROM_CONFIG__, which" "instead" "the console needs no secret; a server secret goes in server.existingSecret") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

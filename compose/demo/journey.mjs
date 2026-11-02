@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The customer's journey on the local demo stack, from outside, through Caddy, as a browser and the CLI would call it:
 // sign-up by e-mailed link (read in Mailpit), sign-in with the fake GitHub, an organization, an invitation accepted,
-// the CLI's device login, a cloud session on this machine's Docker with its terminal, the TeamCode import and its
-// cutover, the yes end to end (a push to main waiting, the second member's yes, its receipt), isolation between two
-// organizations, billing. Each step is green, red, or not possible yet (a route main does not serve, or a step it needs
-// failed), with what it saw. Writes a Markdown report (REPORT, default demo-report.md) and exits 1 on a red step.
+// the CLI's device login, a cloud session on this machine's Docker with its terminal, a check Ostrom runs itself
+// (isolated_runner, D5), the TeamCode import and its cutover, the yes end to end (a push to main waiting, the second
+// member's yes, its receipt), isolation between two organizations, billing. Each step is green, red, or not possible
+// yet (a route main does not serve, or a step it needs failed), with what it saw. Writes a Markdown report (REPORT,
+// default demo-report.md) and exits 1 on a red step.
 // Node 22 or later (fetch, WebSocket), no dependency. Usage: node demo/journey.mjs
 import { execFileSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -242,6 +243,10 @@ async function journey() {
     }
   } else record('D1', 'Session cloud', NOT_YET, 'pas d’organisation');
 
+  // (d5) A check run by Ostrom, not declared by the workstation: a governed cloud session's runner runs it.
+  if (orgId) await isolatedRunner(owner);
+  else record('D5', 'Check exécuté par Ostrom (isolated_runner)', NOT_YET, 'pas d’organisation');
+
   // TeamCode import: the fake TeamCode base the CLI reads (`ostrom import teamcode` itself runs on the laptop, in the film).
   const teamcodeCheck = env('OSTROM_DEMO_TEAMCODE_CHECK', '');
   if (teamcodeCheck) {
@@ -369,8 +374,10 @@ async function journey() {
       record('Y2', 'Le second membre dit oui depuis son navigateur', yes.status === 200 ? GREEN : RED, mine ? `demande ${mine.id}, oui → ${brief(yes)}` : yes.text);
     } else record('Y2', 'Le second membre dit oui', NOT_YET, 'aucune porte en attente (Y1)');
     if (yes.status === 200) {
-      // The yes lets exactly that SHA through; another commit is a new request. The receipt is signed, names the gate
-      // and who said yes; it binds the push (its refs and SHA) through the subject's digest, checked by `ostrom verify`.
+      // The yes lets exactly that SHA through; another commit is a new request. The answer is the contract's
+      // ApprovalView, its signed receipt in `receipt` (ostrom-server#127, #148). The receipt is the gate's
+      // (`rcpt_gate_<gate>`), names the pushed commit in clear (`subject.id`, decided 02/11/2026) and who said yes; the
+      // subject's digest binds the whole request, checked by `ostrom verify`.
       const after = await bearer(secret, 'POST', '/api/v1/gates', ask, orgId);
       const other = { ...ask, push: { ...ask.push, refs: [{ ref: 'refs/heads/main', sha: sha.replace(/^./, (c) => (c === 'f' ? '0' : 'f')) }] } };
       const next = await bearer(secret, 'POST', '/api/v1/gates', other, orgId);
@@ -382,14 +389,16 @@ async function journey() {
         'même SHA laissé passer': after.json.gate?.status === 'approved',
         'autre SHA de nouveau en attente': next.json.gate?.status === 'pending' && next.json.gate?.id !== gate.id,
         'reçu signé': kept.status === 200 && typeof kept.json.signature === 'string',
-        'porte du reçu': kept.json.subject?.kind === 'gate' && kept.json.subject?.id === gate.id && /^[0-9a-f]{64}$/.test(kept.json.subject?.digest ?? ''),
+        'reçu dans la réponse au oui': typeof yes.json.receipt?.id === 'string' && yes.json.receipt.id === receipt,
+        'reçu de la porte': receipt === `rcpt_gate_${gate.id}`,
+        'commit du reçu': kept.json.subject?.kind === 'gate' && kept.json.subject?.id === sha && /^[0-9a-f]{64}$/.test(kept.json.subject?.digest ?? ''),
         'oui du second membre': decision.result === 'approved' && reviewerIds.includes(decision.by),
       };
       const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([k]) => k);
       record('Y3', 'Le oui ne vaut que pour ce SHA, et son reçu signé nomme le second membre', failed.length === 0 ? GREEN : RED,
         failed.length === 0
-          ? `même push → porte ${after.json.gate.status}, autre SHA → porte ${next.json.gate.status} (nouvelle demande) ; reçu ${receipt} signé : porte ${gate.id.slice(0, 8)}, digest ${kept.json.subject.digest.slice(0, 12)}…, oui de ${decision.by} (${decision.at})`
-          : `en défaut : ${failed.join(', ')} ; même push → ${after.status} ${after.json.gate?.status ?? ''}, autre SHA → ${next.status} ${next.json.gate?.status ?? ''}, reçu ${receipt || 'absent'} → ${kept.status}, décision ${JSON.stringify(decision)}`);
+          ? `même push → porte ${after.json.gate.status}, autre SHA → porte ${next.json.gate.status} (nouvelle demande) ; reçu ${receipt} signé, rendu avec le oui : commit ${sha.slice(0, 12)}, digest ${kept.json.subject.digest.slice(0, 12)}…, oui de ${decision.by} (${decision.at})`
+          : `en défaut : ${failed.join(', ')} ; même push → ${after.status} ${after.json.gate?.status ?? ''}, autre SHA → ${next.status} ${next.json.gate?.status ?? ''}, reçu ${receipt || 'absent'} → ${kept.status}, sujet ${JSON.stringify(kept.json.subject ?? null)}, décision ${JSON.stringify(decision)}`);
     } else record('Y3', 'Reçu du oui', NOT_YET, 'pas de oui (Y2)');
     // The journey's token goes with it: no demo run leaves a live token behind.
     if (pat !== flow && pat.json.id) await owner.call('DELETE', `/api/v1/tokens/${encodeURIComponent(pat.json.id)}`);
@@ -457,6 +466,111 @@ function writeReport() {
   writeFileSync(REPORT, lines.join('\n'));
   console.log(`report: ${REPORT}`);
   process.exitCode = red ? 1 : 0;
+}
+
+/** What `isolated_runner` proves, written wherever the attestation is shown. */
+const ISOLATED_LIMIT = 'Ostrom a lancé le script et lu son code de sortie ; ce n’est pas la preuve que l’agent n’a pas touché à l’espace de travail.';
+
+/** The hook's side of the checks' socket (cli#68): one JSON line out, one JSON object back, then the runner closes. */
+const CHECK_CLIENT = [
+  'import os, socket, sys',
+  's = socket.socket(socket.AF_UNIX)',
+  's.settimeout(120)',
+  "s.connect(os.environ.get('OSTROM_RUNNER_CHECKS', '/run/ostrom/checks.sock'))",
+  's.sendall(sys.stdin.buffer.read())',
+  "out = b''",
+  'while True:',
+  '    chunk = s.recv(65536)',
+  '    if not chunk: break',
+  '    out += chunk',
+  'sys.stdout.write(out.decode())',
+].join('\n');
+
+/** The first value of a variable in the environment of a process of the container (the agent's, UID 1000). */
+function containerVariable(container, name) {
+  const read = `for p in /proc/[0-9]*; do tr '\\0' '\\n' < "$p/environ" 2>/dev/null | grep -m1 '^${name}=' && break; done; true`;
+  return execFileSync('docker', ['exec', container, 'sh', '-c', read], { encoding: 'utf8' }).trim().slice(name.length + 1);
+}
+
+/**
+ * D5: a governed cloud session (Claude, not a shell) whose runner opens its launch; the agent's session takes the
+ * repository's package; its check is asked over the runner's socket, as the hook asks it, and run on the check host;
+ * the workflow receipt then says `isolated_runner` for that node, and verifies.
+ */
+async function isolatedRunner(owner) {
+  const title = 'Check exécuté par Ostrom (isolated_runner), reçu signé';
+  const repo = `acme/checks-${run}`;
+  const steps = [];
+  let cloudId = '';
+  try {
+    const flow = await owner.call('POST', '/api/v1/workflows', {
+      // The workflow names the repository: a package takes the workflows whose text mentions it (or whose gates act on it).
+      id: `demo-checks-${run}`, name: `Checks of ${repo}`, domain: 'delivery', status: 'accepted', foundAt: new Date().toISOString(),
+      nodes: [{ id: 'tests', kind: 'check', label: 'Tests', detail: `The tests of ${repo}`, run: { command: 'echo "tests ok on $(hostname)"' } }],
+      edges: [],
+    });
+    steps.push(`workflow ${flow.status}`);
+    if (flow.status >= 300) return record('D5', title, RED, `${steps.join(', ')} : ${brief(flow)}`);
+
+    const made = await owner.call('POST', '/api/v1/cloud/sessions', { agent: 'claude', name: `d5-${run}` });
+    cloudId = made.json.id ?? '';
+    if (!cloudId) return record('D5', title, RED, `session cloud → ${brief(made)}`);
+    let status = made.json.status;
+    const t0 = Date.now();
+    while (status !== 'running' && Date.now() - t0 < CLOUD_TIMEOUT_S * 1000 && !['failed', 'terminated'].includes(status)) {
+      await sleep(2000);
+      status = (await owner.call('GET', `/api/v1/cloud/sessions/${cloudId}`)).json.status;
+    }
+    steps.push(`session cloud claude ${status}`);
+    if (status !== 'running') return record('D5', title, RED, steps.join(', '));
+
+    // The agent's container: the runner hands it the launch's agent token (never the runner token) once it opened it.
+    const hex = cloudId.replaceAll('-', '');
+    const agent = execFileSync('docker', ['ps', '-q', '--filter', `label=ostrom.run/session=${hex}`, '--filter', 'name=-agent'], { encoding: 'utf8' }).trim();
+    let token = '';
+    let refused = '';
+    for (let i = 0; i < 45 && agent && !token && !refused; i++) {
+      token = containerVariable(agent, 'OSTROM_AGENT_TOKEN');
+      refused = token ? '' : containerVariable(agent, 'OSTROM_LAUNCH_REFUSED');
+      if (!token && !refused) await sleep(2000);
+    }
+    steps.push(token ? 'lancement ouvert par le runner' : `lancement : ${refused || 'aucun jeton d’agent dans le conteneur'}`);
+    if (!token) return record('D5', title, RED, steps.join(', '));
+
+    // The repository's package, as the hooks read it: the check's script is its text, which the runner hashes.
+    let current = await bearer(token, 'GET', `/api/v1/packages/current?repo=${encodeURIComponent(repo)}`);
+    if (current.status >= 300) current = await owner.call('GET', `/api/v1/packages/current?repo=${encodeURIComponent(repo)}`);
+    const payload = typeof current.json.payload === 'string' ? JSON.parse(current.json.payload) : current.json.payload ?? {};
+    const digest = current.json.digest ?? '';
+    const script = (payload.scripts ?? []).find((x) => x.nodeId === 'tests');
+    const text = (payload.files ?? []).find((f) => f.path === script?.path)?.content;
+    steps.push(`paquet ${current.status}${script ? `, script ${script.id} (${script.mode})` : `, pas de script pour le nœud (nœuds du paquet : ${(payload.nodes ?? []).map((n) => `${n.id}:${n.kind}`).join(' ') || 'aucun'}, scripts : ${(payload.scripts ?? []).length})`}`);
+    if (!digest || !script || text === undefined) return record('D5', title, RED, steps.join(', '));
+
+    const sid = `d5-${run}`;
+    const opened = await bearer(token, 'POST', '/api/v1/sessions', { id: sid, agent: 'claude-code', repo, packageDigest: digest });
+    steps.push(`session ${opened.status}`);
+    if (opened.status >= 300) return record('D5', title, RED, `${steps.join(', ')} : ${brief(opened)}`);
+
+    const request = { sessionId: sid, digest, nodeId: 'tests', scriptId: script.id, script: text, directory: '/workspace', timeoutMs: 60000 };
+    const raw = execFileSync('docker', ['exec', '-i', agent, 'python3', '-c', CHECK_CLIENT], { input: `${JSON.stringify(request)}\n`, encoding: 'utf8' });
+    const reply = JSON.parse(raw);
+    steps.push(`runner : started ${reply.started}, exit ${reply.exit}, reported ${reply.reported}, « ${String(reply.outputTail ?? '').trim().slice(-80)} »`);
+    if (!reply.started || reply.exit !== 0 || !reply.reported) return record('D5', title, RED, steps.join(', '));
+
+    await bearer(token, 'POST', `/api/v1/sessions/${sid}/end`, {});
+    const signed = await bearer(token, 'POST', `/api/v1/sessions/${sid}/workflow-receipt`, { digest, agent: 'claude-code' });
+    const receipt = signed.json.receipt ?? {};
+    const node = (receipt.nodes ?? []).find((n) => n.id === 'tests') ?? {};
+    const verified = signed.json.verification?.ok === true;
+    steps.push(`reçu ${signed.status}, nœud tests : ${node.attestation ?? '?'}, signature ${verified ? 'vérifiée' : `non vérifiée (${signed.json.verification?.reason ?? brief(signed)})`}`);
+    const green = node.attestation === 'isolated_runner' && verified;
+    return record('D5', title, green ? GREEN : RED, `${steps.join(', ')}. Limite : ${ISOLATED_LIMIT}`);
+  } catch (e) {
+    return record('D5', title, RED, `${steps.join(', ')} : ${`${e.stdout ?? ''}${e.stderr ?? ''}`.trim() || e.message}`);
+  } finally {
+    if (cloudId) await owner.call('DELETE', `/api/v1/cloud/sessions/${cloudId}`);
+  }
 }
 
 /** Attaches to the session's terminal, waits for the runner, types an echo and waits for its output. */

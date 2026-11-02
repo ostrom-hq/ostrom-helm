@@ -1,6 +1,10 @@
 {{- if .Values.server.enabled }}
 {{- $full := include "ostrom.fullname" . -}}
 {{- $s := .Values.server -}}
+{{- include "ostrom.refuseSecrets" (dict "values" ($s.config | default dict) "where" "server.config" "what" "it lands in a ConfigMap, which" "instead" "put it in server.existingSecret (or server.secretEnv)") }}
+{{- $plain := dict }}
+{{- range $e := $s.extraEnv | default list }}{{ if and (kindIs "map" $e) (hasKey $e "value") }}{{ $_ := set $plain (toString $e.name) $e.value }}{{ end }}{{ end }}
+{{- include "ostrom.refuseSecrets" (dict "values" $plain "where" "server.extraEnv" "what" "a plain value, written in the pod spec," "instead" "use valueFrom.secretKeyRef, or server.existingSecret") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -88,4 +92,16 @@ data:
   {{ $k }}: {{ $v | toString | quote }}
   {{- end }}
 
+{{- if include "ostrom.dbProxy.enabled" . }}
+---
+# The TLS proxy's configuration (externalDatabase.tls): no password in it, the config step writes those apart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-db-proxy
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "server") | nindent 4 }}
+data:
+  pgbouncer.ini: |
+    {{- include "ostrom.dbProxy.ini" . | nindent 4 }}
+{{- end }}
 {{- end }}

@@ -106,17 +106,46 @@ and for Ory Polis's database (`networkPolicy.polis.extraEgress`) when Polis is o
 If the database runs as pods of another namespace of the same cluster, `networkPolicy.ciliumEgressDeny` (Cilium, off
 by default) denies it too: keep that off, or move the database out of the cluster.
 
-### Traffic to the database is not encrypted
+### TLS to an external database
 
-The server's PostgreSQL driver has no TLS today: it cannot connect with `sslmode=require` and refuses a URL with a
-query string. Everything between the server and PostgreSQL crosses the network in the clear (the password does not:
-SCRAM). A managed database that forces TLS (RDS PostgreSQL 15 and later, `rds.force_ssl=1` by default) refuses the
-server. Until the driver supports it:
+The server's PostgreSQL driver has no TLS yet (it refuses a URL with a query string, so no `?sslmode=`). With
+`externalDatabase.tls.enabled`, the chart puts a TLS proxy in the server pod, on the model of Cloud SQL's
+auth proxy: PgBouncer (`ghcr.io/cloudnative-pg/pgbouncer`, pinned by digest) as a native sidecar, which starts
+before `migrate` and lives with the pod. It dials the database in TLS and checks its certificate; the server and
+`migrate` talk to it in clear on the pod's loopback only (`127.0.0.1:6432`), never over the network.
 
-- keep the database in the release namespace (the chart's own PostgreSQL), or on a network you trust;
-- encrypt the pod network: Cilium or Calico with WireGuard, or the mTLS of a service mesh (Linkerd, Istio) between
-  the server and the database;
-- on a managed database, allow non-TLS connections from the cluster's addresses only.
+```yaml
+externalDatabase:
+  url: postgresql://ostrom.cluster-x.eu-west-3.rds.amazonaws.com:5432/ostrom
+  username: ostrom_app
+  migrationUsername: ostrom
+  existingSecret: ostrom-db            # keys password and migration-password
+  tls:
+    enabled: true
+    mode: verify-full                  # verify-full, verify-ca, or require (encrypted, not verified)
+    ca: { configMapName: rds-ca, key: global-bundle.pem }   # or secretName
+    host: ""                           # empty: the host of url
+```
+
+- `verify-full` (default) checks that the certificate is signed by the CA and names the host; `verify-ca` only the
+  signature; `require` encrypts without checking anything (never in production: the NOTES say so).
+- The proxy asks every client for its password (SCRAM) and logs in to the database with it. The owner's password is
+  in the proxy's memory for `migrate` (an in-memory volume, never in the server container); with
+  `migrations.initContainer: false`, the proxy only knows the serving role's.
+- The proxy serves the one database of `url`, nothing else on the server. `url` takes a host name (the one the
+  certificate names, or set `host`), not an IPv6 literal.
+- Session pooling, one server connection per client connection: the server's prepared statements and the migration
+  lock need it. Pool size: `server.database.maxConnections` + 2.
+- A database that only accepts TLS (`hostssl`, RDS with `rds.force_ssl=1`, Cloud SQL, Azure) works this way; the CI
+  proves it on kind against a PostgreSQL that rejects any plain connection.
+- The proxy is the way out until the driver speaks TLS: `sqlx4k`'s Rust `sqlx` is built without a TLS backend. An
+  upstream change (`tls-rustls-ring-webpki`) is planned; once the server takes `sslmode` and `sslrootcert`, the
+  sidecar goes and `externalDatabase.tls` keeps its meaning.
+- Ory Polis (off by default) connects with its own driver, not through this proxy (the NOTES remind it).
+
+Without `externalDatabase.tls`, everything between the server and PostgreSQL crosses the network in the clear (the
+password does not: SCRAM), and a database that forces TLS refuses the server. The chart's own PostgreSQL stays in the
+release namespace, behind its NetworkPolicy.
 
 Create the two roles yourself before installing: the owner (`CREATE DATABASE … OWNER ostrom`) and the serving role
 (`NOSUPERUSER NOBYPASSRLS`, `CONNECT` on the database, `USAGE` on the schema, and `ALTER DEFAULT PRIVILEGES FOR
