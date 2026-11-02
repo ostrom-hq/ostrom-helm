@@ -29,6 +29,7 @@ common=(
 sets=(
   "builtin|--set postgresql.password=$(w pg-password) --set postgresql.backup.enabled=true"
   "external|--set postgresql.enabled=false --set externalDatabase.url=postgresql://db.example.com:5432/ostrom --set externalDatabase.username=ostrom_app --set externalDatabase.password=$(w ext-password) --set externalDatabase.migrationUsername=ostrom --set externalDatabase.migrationPassword=$(w ext-migration) --set externalDatabase.polisUrl=postgres://polis:$(w polis-db)@db.example.com:5432/polis"
+  "external-tls|--set postgresql.enabled=false --set externalDatabase.url=postgresql://db.example.com:5432/ostrom --set externalDatabase.username=ostrom_app --set externalDatabase.password=$(w ext-password) --set externalDatabase.migrationUsername=ostrom --set externalDatabase.migrationPassword=$(w ext-migration) --set externalDatabase.polisUrl=postgres://polis:$(w polis-db)@db.example.com:5432/polis --set externalDatabase.tls.enabled=true --set externalDatabase.tls.ca.secretName=db-ca"
   "cloud|--set cloudSessions.enabled=true --set server.replicas=1 --set postgresql.password=$(w pg-password)"
 )
 

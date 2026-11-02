@@ -25,13 +25,19 @@
     {
       description: 'One pull request per third-party image for the chart and the Compose stack, so they never drift',
       matchDatasources: ['docker'],
-      matchPackageNames: ['docker.io/library/postgres', 'postgres', 'library/postgres', 'docker.io/boxyhq/jackson', 'boxyhq/jackson'],
+      matchPackageNames: ['docker.io/library/postgres', 'postgres', 'library/postgres', 'docker.io/boxyhq/jackson', 'boxyhq/jackson', 'docker.io/curlimages/curl', 'ghcr.io/cloudnative-pg/pgbouncer'],
       groupName: 'third-party images (chart and Compose)',
+    },
+    {
+      description: 'CloudNativePG tags PgBouncer as <version>-<build stamp>-<Debian release>: compare the version, then the stamp, same Debian release',
+      matchDatasources: ['docker'],
+      matchPackageNames: ['ghcr.io/cloudnative-pg/pgbouncer'],
+      versioning: 'regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<build>\\d+)-(?<compatibility>[a-z]+)$',
     },
     {
       description: 'The digest-pinned third-party images belong to the regex manager below, not to the Helm values one',
       matchManagers: ['helm-values'],
-      matchDepNames: ['docker.io/library/postgres', 'docker.io/boxyhq/jackson', 'docker.io/curlimages/curl'],
+      matchDepNames: ['docker.io/library/postgres', 'docker.io/boxyhq/jackson', 'docker.io/curlimages/curl', 'ghcr.io/cloudnative-pg/pgbouncer'],
       enabled: false,
     },
   ],
@@ -42,8 +48,17 @@
       customType: 'regex',
       managerFilePatterns: ['/^charts/ostrom/values\\.yaml$/'],
       matchStrings: [
-        'repository: (?<depName>docker\\.io/[^\\s]+)\\s+tag: "(?<currentValue>[^"]+)"\\s+digest: "(?<currentDigest>sha256:[a-f0-9]{64})"',
+        'repository: (?<depName>(docker|ghcr)\\.io/[^\\s]+)\\s+tag: "(?<currentValue>[^"]+)"\\s+digest: "(?<currentDigest>sha256:[a-f0-9]{64})"',
         'image: (?<depName>docker\\.io/[^:\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})',
+      ],
+      datasourceTemplate: 'docker',
+    },
+    {
+      // The chart's table of its own pins (_helpers.tpl), moved in the same pull request as values.yaml.
+      customType: 'regex',
+      managerFilePatterns: ['/^charts/ostrom/templates/_helpers\\.tpl$/'],
+      matchStrings: [
+        '"(?<currentDigest>sha256:[a-f0-9]{64})": "(?<currentValue>[^"]+)" # renovate: (?<depName>[^\\s]+)',
       ],
       datasourceTemplate: 'docker',
     },

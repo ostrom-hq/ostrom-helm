@@ -92,4 +92,16 @@ data:
   {{ $k }}: {{ $v | toString | quote }}
   {{- end }}
 
+{{- if include "ostrom.dbProxy.enabled" . }}
+---
+# The TLS proxy's configuration (externalDatabase.tls): no password in it, the config step writes those apart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-db-proxy
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "server") | nindent 4 }}
+data:
+  pgbouncer.ini: |
+    {{- include "ostrom.dbProxy.ini" . | nindent 4 }}
+{{- end }}
 {{- end }}

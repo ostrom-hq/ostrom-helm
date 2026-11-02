@@ -29,7 +29,7 @@ The chart is published as an OCI artifact, `oci://ghcr.io/ostrom-hq/charts/ostro
 
 ## Third-party images
 
-The chart also runs three images it does not build. Each is **pinned by the digest of its multi-arch index** by
+The chart also runs four images it does not build. Each is **pinned by the digest of its multi-arch index** by
 default, so a tag rewritten upstream never reaches your cluster:
 
 | Value | Image | Runs |
@@ -37,8 +37,9 @@ default, so a tag rewritten upstream never reaches your cluster:
 | `postgresql.image` | `docker.io/library/postgres:17.6` | PostgreSQL, its backup CronJob, the roles Job and the database `helm test`: they hold the superuser password |
 | `polis.image` | `docker.io/boxyhq/jackson:26.2.0` | Ory Polis (off by default) |
 | `tests.image` | `docker.io/curlimages/curl:8.11.1` | the `helm test` pod |
+| `externalDatabase.tls.proxy.image` | `ghcr.io/cloudnative-pg/pgbouncer:1.26.1-202610291052-trixie` | the TLS proxy to an external database (off by default), with the passwords of the serving role and the owner |
 
-`postgresql.image` and `polis.image` take `repository`, `tag` and `digest` (`sha256:` and 64 hex characters); they
+`postgresql.image`, `polis.image` and `externalDatabase.tls.proxy.image` take `repository`, `tag` and `digest` (`sha256:` and 64 hex characters); they
 render as `repository:tag@digest`, the runtime pulls the digest and the tag stays readable. `digest: ""` follows the
 tag. `tests.image` is one full reference (`repository:tag@digest`), checked the same way.
 
@@ -51,5 +52,5 @@ tag. `tests.image` is one full reference (`repository:tag@digest`), checked the 
 - `global.imagePullPolicy` applies to every image of the chart, these included (`Always` behind a mirror that you
   trust more than the node's cache).
 - Renovate moves the tags and the digests together, in `values.yaml` and `compose/docker-compose.yml` in one pull
-  request; the chart's table of its own pins (`ostrom.thirdPartyPins`, `_helpers.tpl`) moves with them, or the unit
-  tests fail.
+  request; the chart's table of its own pins (`ostrom.thirdPartyPins`, `_helpers.tpl`, a `# renovate:` comment per
+  line) moves with them, or the unit tests fail.
