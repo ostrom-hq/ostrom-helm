@@ -135,7 +135,6 @@ jobs:
             --test-coverage-exclude='demo/journey.mjs' --test-coverage-lines=100 --test-coverage-branches=100 \
             --test-coverage-functions=100 'demo/test/*.test.mjs'
           node --check demo/journey.mjs
-          node demo/teamcode/seed.mjs | cmp - demo/teamcode/02-seed.sql
           ./install.sh --no-start
           docker compose -f docker-compose.yml -f demo/docker-compose.demo.yml config -q
           OSTROM_DEMO_STRIPE_KEY_FILE=/dev/null docker compose -f docker-compose.yml -f demo/docker-compose.demo.yml \

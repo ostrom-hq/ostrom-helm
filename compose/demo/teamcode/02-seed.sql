@@ -8,25 +8,23 @@ INSERT INTO `members` (`id`, `team_id`, `username`, `password_hash`, `role`, `is
   ('m-dev', 'default', 'dev-2', '$argon2id$demo', 'MEMBER', 0, 0, 0);
 
 INSERT INTO `variants` (`id`, `team_id`, `kind`, `target`, `name`, `binding`, `version`, `endpoint`, `config`, `shared_secret`, `created_at`, `updated_at`) VALUES
-  ('v-github', 'default', 'MCP', 'github', 'GitHub (team)', 'SHARED', 1, 'https://api.githubcopilot.com/mcp/', '{"transport":"http","CREDENTIAL_HEADER":"Authorization"}', 'v1:d20KAKBdkjAgT26G6_01szj9ktp7L7WHsZtRxdPiSJTjpjuqEw2EAZyz_WiNBr9n0sdvhuYSy6mBwuOP', 1793318400000, 1793318400000),
-  ('v-files', 'default', 'MCP', 'filesystem', 'Workspace files', 'SHARED', 1, NULL, '{"transport":"stdio","command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/workspace"]}', NULL, 1793318400000, 1793318400000),
-  ('v-linear', 'default', 'MCP', 'linear', 'Linear (each member)', 'PER_MEMBER', 1, NULL, '{"transport":"stdio","command":"npx","args":["-y","linear-mcp-server"]}', NULL, 1793318400000, 1793318400000),
-  ('v-docker', 'default', 'MCP', 'postgres', 'Local Postgres in Docker', 'SHARED', 1, NULL, '{"transport":"stdio","command":"docker","args":["run","-i","mcp/postgres"]}', NULL, 1793318400000, 1793318400000);
+  ('v-github', 'default', 'MCP', 'github', 'GitHub (team)', 'SHARED', 1, 'https://api.githubcopilot.com/mcp/', '{}', 'v1:d20KAKBdkjAgT26GzvAknjnq39JMMYWXi5dh6NjsUJT2liKqHPhPOceAsCClgx_3dS1Wy6c', 1793318400000, 1793318400000),
+  ('v-linear', 'default', 'MCP', 'linear', 'Linear (each member)', 'PER_MEMBER', 1, 'https://mcp.linear.app/mcp', '{}', NULL, 1793318400000, 1793318400000),
+  ('v-sentry', 'default', 'MCP', 'sentry', 'Sentry', 'SHARED', 1, 'https://mcp.sentry.dev/mcp', '{"credentialHeader":"X-Sentry-Token"}', 'v1:8Th_wcJS11s7EpLpUoEa0sStORaRo5Rgs3cwE34uTYbG6S95qi8xoc1VUer5qkm5b6j-z1b1J78', 1793318400000, 1793318400000),
+  ('v-docs', 'default', 'MCP', 'docs', 'Public docs', 'SHARED', 1, 'https://mcp.context7.com/mcp', '{}', NULL, 1793318400000, 1793318400000);
 
 INSERT INTO `mcp_tool_policies` (`variant_id`, `team_id`, `mode`, `tools`, `updated_at`) VALUES
   ('v-github', 'default', 'ALLOWLIST', '["get_issue","list_pull_requests","create_pull_request"]', 1793318400000),
-  ('v-files', 'default', 'ALL', '[]', 1793318400000),
-  ('v-linear', 'default', 'ALLOWLIST', '["list_issues","create_issue"]', 1793318400000),
-  ('v-docker', 'default', 'ALL', '[]', 1793318400000);
+  ('v-linear', 'default', 'ALLOWLIST', '["list_issues","create_issue"]', 1793318400000);
 
 INSERT INTO `variant_assignments` (`member_id`, `kind`, `target`, `team_id`, `variant_id`, `source`, `member_secret`, `assigned_at`) VALUES
-  ('m-alice', 'MCP', 'github', 'default', 'v-github', 'ADMIN', NULL, 1793318400000),
-  ('m-rev', 'MCP', 'github', 'default', 'v-github', 'ADMIN', NULL, 1793318400000),
-  ('m-alice', 'MCP', 'filesystem', 'default', 'v-files', 'ADMIN', NULL, 1793318400000),
-  ('m-alice', 'MCP', 'linear', 'default', 'v-linear', 'ADMIN', 'v1:uf0D-mTx4G0DGvrlj1Hr7U3B8vvyC9aj_xapHGveqh9Ob7wOIKyy7DcGRS-ltHLwM_2zTvNLFOpBt_RW5N8fNss1HQ', 1793318400000),
-  ('m-dev', 'MCP', 'linear', 'default', 'v-linear', 'ADMIN', 'v1:a8vf4xkAutczwNznFY4UBwTndg2dZ6s384IaRjVWISugKiUHXXHUOHSiR_JCTG3cwF2Q-6Ab39rerszTMlWtEjg', 1793318400000);
+  ('m-alice', 'MCP', 'github', 'default', 'v-github', 'DIRECT', NULL, 1793318400000),
+  ('m-rev', 'MCP', 'github', 'default', 'v-github', 'DIRECT', NULL, 1793318400000),
+  ('m-alice', 'MCP', 'linear', 'default', 'v-linear', 'DIRECT', 'v1:uf0D-mTx4G0DGvrlmBrJ-2L02vbJL-uF_zyALCqBBQyUyToAIN1WYulVrFV5DA', 1793318400000),
+  ('m-rev', 'MCP', 'linear', 'default', 'v-linear', 'DIRECT', 'v1:gVoOoWEqaLEAo2TYGKs4im3ucT-CM4APyR0jp7MccLYj2CCuvFpixOL8H9s', 1793318400000),
+  ('m-dev', 'MCP', 'sentry', 'default', 'v-sentry', 'DIRECT', NULL, 1793318400000);
 
 INSERT INTO `accounts` (`id`, `team_id`, `provider`, `provider_account_id`, `organization_id`, `display_name`, `email`, `credential_version`, `credential_envelope`, `disabled`, `pool_id`, `priority`, `state`, `cooldown_until`, `refresh_pending`, `refresh_started_at`, `enrolled_by`) VALUES
-  ('a-max-1', 'default', 'anthropic', 'acct-a-max-1', 'org-demo', 'Claude Max 1', 'max1@acme.demo', 1, 'v1:M3MgJ6sWi9e4SuRAjCucsl2R866Qsa4TEFGsaxuIMMQkDTZ5u74imVjhPSbEcgkzYYyiXTU7LvmmTLBK9vif6G12U73Kol4qH2MgbF8yUwlQTbhTsVx2yiIiEhBRX0OF8ZKyC3VdWQF8P55QJE-azS_7TXpvqP7kK-2UdQQOsX6pcg', 0, NULL, 0, 'ACTIVE', 0, 0, 0, 'm-alice'),
-  ('a-max-2', 'default', 'anthropic', 'acct-a-max-2', 'org-demo', 'Claude Max 2 (paused)', 'max2@acme.demo', 1, 'v1:_xto-_4seGqJKaL7OGzd0KJIpnyxUwSk30YzHMGbCyIdAAc8CjLwSps_l4ggAusYrIirXBFzCWC0ocG1ZrbQqizbaTFUoOZSiUPaCoKzAbU9EHIP6V-tsIInrny8Et7BmnwCMXzadsgVySkYw3JPhmBe8s_i-3uS9vDgcOa98sp2dg', 1, NULL, 0, 'ACTIVE', 0, 0, 0, 'm-alice'),
-  ('a-never', 'default', 'anthropic', '', 'org-demo', 'Never finished', NULL, 1, '', 0, NULL, 0, 'ACTIVE', 0, 0, 0, 'm-alice');
+  ('a-max-1', 'default', 'anthropic', 'acct-a-max-1', 'org-demo', 'Claude Max 1', 'max1@acme.demo', 1, 'v1:M3MgJ6sWi9e4SuRAjCucsl2R866Qsa4TEFGsaxuIMMQkDTZ5u74imVjhPSbEcgkzYYyiXTU7LvmmTLBK9vif6G12U73Kol4qH2MgbF8yUwlQTbhTsVx2yiIiEhBRX0OF8ZKyC3ZbUAx8PZlSJE-azS_7pgQ2HHRiihHMw9TGnx2b6g', 0, NULL, 0, 'ACTIVE', 0, 0, 0, 'm-alice'),
+  ('a-max-2', 'default', 'anthropic', 'acct-a-max-2', 'org-demo', 'Claude Max 2 (paused)', 'max2@acme.demo', 1, 'v1:_xto-_4seGqJKaL7OGzd0KJIpnyxUwSk30YzHMGbCyIdAAc8CjLwSps_l4ggAusYrIirXBFzCWC0ocG1ZrbQqizbaTFUoOZSiUPaCoKzAbU9EHIP6V-tsIInrny8Et7BmnwCMX_cf8UVyy4aw3JPhmBeGbG7T_EUVwy4xjZ13KlE7g', 1, NULL, 0, 'ACTIVE', 0, 0, 0, 'm-alice'),
+  ('a-never', 'default', 'anthropic', '', 'org-demo', 'Never finished', NULL, 1, '', 0, NULL, 0, 'PENDING', 0, 0, 0, 'm-alice');

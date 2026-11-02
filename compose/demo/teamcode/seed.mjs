@@ -12,6 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const TEAM = 'default';
 const AT = 1793318400000; // 2026-10-30T00:00:00Z, every created_at and updated_at
+const EXPIRES = 2108937600000; // 2036-10-30T00:00:00Z: the demo's tokens never expire during a demo
 
 /** TeamCode's envelope of `plaintext` for `context` under the 32-byte `key`. */
 export function seal(key, plaintext, context) {
@@ -28,46 +29,47 @@ const insert = (table, rows) =>
   rows.map((r) => `  (${Object.values(r).map(q).join(', ')})`).join(',\n') +
   ';\n';
 
-/** The team: three members, four MCP servers (one Ostrom cannot install), their policies, three accounts. */
+/** The team: three members, four remote MCP servers, two tool allowlists, five assignments, three accounts. */
 export function seedSql(key) {
   const member = (id, username, role) => ({ id, team_id: TEAM, username, password_hash: '$argon2id$demo', role, is_owner: role === 'OWNER', disabled: false, must_change_password: false });
   const members = [member('m-alice', 'alice', 'OWNER'), member('m-rev', 'rev', 'MEMBER'), member('m-dev', 'dev-2', 'MEMBER')];
+  // TeamCode's MCP servers are remote (HTTP) only; config is a flat map of strings (`credentialHeader`, else
+  // Authorization with `Bearer <secret>`); a secret is the bare token, shared or one per member.
   const variant = (id, target, name, binding, endpoint, config, secret) => ({
     id, team_id: TEAM, kind: 'MCP', target, name, binding, version: 1, endpoint, config: JSON.stringify(config),
     shared_secret: secret === null ? null : seal(key, secret, `variant:${TEAM}:${id}`), created_at: AT, updated_at: AT,
   });
   const variants = [
-    variant('v-github', 'github', 'GitHub (team)', 'SHARED', 'https://api.githubcopilot.com/mcp/', { transport: 'http', CREDENTIAL_HEADER: 'Authorization' }, 'Bearer ghp_demo_not_a_real_token'),
-    variant('v-files', 'filesystem', 'Workspace files', 'SHARED', null, { transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/workspace'] }, null),
-    variant('v-linear', 'linear', 'Linear (each member)', 'PER_MEMBER', null, { transport: 'stdio', command: 'npx', args: ['-y', 'linear-mcp-server'] }, null),
-    variant('v-docker', 'postgres', 'Local Postgres in Docker', 'SHARED', null, { transport: 'stdio', command: 'docker', args: ['run', '-i', 'mcp/postgres'] }, null),
+    variant('v-github', 'github', 'GitHub (team)', 'SHARED', 'https://api.githubcopilot.com/mcp/', {}, 'ghp_demo_not_a_real_token'),
+    variant('v-linear', 'linear', 'Linear (each member)', 'PER_MEMBER', 'https://mcp.linear.app/mcp', {}, null),
+    variant('v-sentry', 'sentry', 'Sentry', 'SHARED', 'https://mcp.sentry.dev/mcp', { credentialHeader: 'X-Sentry-Token' }, 'sntrys_demo_not_a_real_token'),
+    variant('v-docs', 'docs', 'Public docs', 'SHARED', 'https://mcp.context7.com/mcp', {}, null),
   ];
-  const policy = (variant_id, mode, tools) => ({ variant_id, team_id: TEAM, mode, tools: JSON.stringify(tools), updated_at: AT });
+  // TeamCode stores a row only for an allowlist: a server without one exposes every tool.
+  const policy = (variant_id, tools) => ({ variant_id, team_id: TEAM, mode: 'ALLOWLIST', tools: JSON.stringify(tools), updated_at: AT });
   const policies = [
-    policy('v-github', 'ALLOWLIST', ['get_issue', 'list_pull_requests', 'create_pull_request']),
-    policy('v-files', 'ALL', []),
-    policy('v-linear', 'ALLOWLIST', ['list_issues', 'create_issue']),
-    policy('v-docker', 'ALL', []),
+    policy('v-github', ['get_issue', 'list_pull_requests', 'create_pull_request']),
+    policy('v-linear', ['list_issues', 'create_issue']),
   ];
   const assign = (member_id, variant_id, target, secret) => ({
-    member_id, kind: 'MCP', target, team_id: TEAM, variant_id, source: 'ADMIN',
+    member_id, kind: 'MCP', target, team_id: TEAM, variant_id, source: 'DIRECT',
     member_secret: secret === null ? null : seal(key, secret, `variant:${TEAM}:${variant_id}:${member_id}`), assigned_at: AT,
   });
   const assignments = [
     assign('m-alice', 'v-github', 'github', null),
     assign('m-rev', 'v-github', 'github', null),
-    assign('m-alice', 'v-files', 'filesystem', null),
-    assign('m-alice', 'v-linear', 'linear', JSON.stringify({ LINEAR_API_KEY: 'lin_api_demo_alice' })),
-    assign('m-dev', 'v-linear', 'linear', JSON.stringify({ LINEAR_API_KEY: 'lin_api_demo_dev' })),
+    assign('m-alice', 'v-linear', 'linear', 'lin_api_demo_alice'),
+    assign('m-rev', 'v-linear', 'linear', 'lin_api_demo_rev'),
+    assign('m-dev', 'v-sentry', 'sentry', null),
   ];
   const account = (id, display_name, email, credential, disabled = false) => ({
     id, team_id: TEAM, provider: 'anthropic', provider_account_id: credential ? `acct-${id}` : '', organization_id: 'org-demo', display_name, email,
     credential_version: 1, credential_envelope: credential ? seal(key, JSON.stringify(credential), `${TEAM}:${id}`) : '', disabled,
-    pool_id: null, priority: 0, state: 'ACTIVE', cooldown_until: 0, refresh_pending: false, refresh_started_at: 0, enrolled_by: 'm-alice',
+    pool_id: null, priority: 0, state: credential ? 'ACTIVE' : 'PENDING', cooldown_until: 0, refresh_pending: false, refresh_started_at: 0, enrolled_by: 'm-alice',
   });
   const accounts = [
-    account('a-max-1', 'Claude Max 1', 'max1@acme.demo', { accessToken: 'sk-ant-oat-demo-1', refreshToken: 'sk-ant-ort-demo-1', expiresAtMillis: AT + 30 * 86400000 }),
-    account('a-max-2', 'Claude Max 2 (paused)', 'max2@acme.demo', { accessToken: 'sk-ant-oat-demo-2', refreshToken: 'sk-ant-ort-demo-2', expiresAtMillis: AT + 30 * 86400000 }, true),
+    account('a-max-1', 'Claude Max 1', 'max1@acme.demo', { accessToken: 'sk-ant-oat-demo-1', refreshToken: 'sk-ant-ort-demo-1', expiresAtMillis: EXPIRES }),
+    account('a-max-2', 'Claude Max 2 (paused)', 'max2@acme.demo', { accessToken: 'sk-ant-oat-demo-2', refreshToken: 'sk-ant-ort-demo-2', expiresAtMillis: EXPIRES }, true),
     account('a-never', 'Never finished', null, null),
   ];
   return [
