@@ -9,7 +9,7 @@ let base = '';
 let server;
 let fake;
 before(async () => {
-  fake = createFakeGitHub({ clientId: 'cid', clientSecret: 'csec' });
+  fake = createFakeGitHub({ clientId: 'cid', clientSecret: 'csec', accountOf: { 'sk-ant-ort-demo-1': 'acct-a-max-1', 'rt-codex': 'acct-c-1' } });
   server = createServer(fake.listener);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -104,15 +104,27 @@ test('the providers\' token endpoints: a refresh token for a new pair, a revoked
   assert.match(pair.access_token, /^claude-access-demo-[0-9a-f]{16}$/);
   assert.match(pair.refresh_token, /^claude-refresh-demo-/);
   assert.equal(pair.expires_in, 28800);
+  // Claude names the account its tokens are of (`account.uuid`), and the pair it issued stays that account's.
+  assert.equal(pair.account.uuid, 'acct-a-max-1');
+  const rotated = await post('/claude/oauth/token', { grant_type: 'refresh_token', refresh_token: pair.refresh_token }).then((r) => r.json());
+  assert.equal(rotated.account.uuid, 'acct-a-max-1');
   const codex = await fetch(`${base}/codex/oauth/token`, form({ grant_type: 'refresh_token', refresh_token: 'rt' }));
   assert.equal(codex.status, 200);
-  assert.deepEqual(fake.refreshed, ['claude', 'codex']);
+  // A token the fake does not know is nobody's: the answer names no account.
+  const nobody = await codex.json();
+  assert.equal(nobody.account, undefined);
+  assert.equal(nobody.id_token, undefined);
+  // OpenAI names it in the id_token's claims.
+  const known = await fetch(`${base}/codex/oauth/token`, form({ grant_type: 'refresh_token', refresh_token: 'rt-codex' })).then((r) => r.json());
+  const claims = JSON.parse(Buffer.from(known.id_token.split('.')[1], 'base64url').toString('utf8'));
+  assert.equal(claims['https://api.openai.com/auth'].chatgpt_account_id, 'acct-c-1');
+  assert.deepEqual(fake.refreshed, ['claude', 'claude', 'codex', 'codex']);
   for (const body of [{ grant_type: 'refresh_token', refresh_token: 'revoked-1' }, { grant_type: 'refresh_token' }, { grant_type: 'password', refresh_token: 'rt' }]) {
     const r = await post('/claude/oauth/token', body);
     assert.equal(r.status, 400);
     assert.deepEqual(await r.json(), { error: 'invalid_grant' });
   }
-  assert.deepEqual(fake.refreshed, ['claude', 'codex']);
+  assert.deepEqual(fake.refreshed, ['claude', 'claude', 'codex', 'codex']);
   // The journey reads the renewals (providers only, never a token) to see the cutover's revival.
-  assert.deepEqual(await fetch(`${base}/_demo/refreshed`).then((r) => r.json()), { refreshed: ['claude', 'codex'] });
+  assert.deepEqual(await fetch(`${base}/_demo/refreshed`).then((r) => r.json()), { refreshed: ['claude', 'claude', 'codex', 'codex'] });
 });
