@@ -64,13 +64,13 @@ spec:
         any:
           - resources: { kinds: [Pod] }
       validate:
-        message: an image is pinned by a version tag or a digest, never latest, edge or no tag
+        message: an image is pinned by a version tag or a digest, never a branch-like tag (latest, edge, main…) or no tag
         foreach:
           - list: "request.object.spec.[containers, initContainers][]"
             deny:
               conditions:
                 any:
-                  - key: "{{ regex_match('^[^@]+:(latest|edge)$', element.image) }}"
+                  - key: "{{ regex_match('(?i)^[^@]+:(latest|edge|main|master|nightly|dev|stable)$', element.image) }}"
                     operator: Equals
                     value: true
                   - key: "{{ regex_match('^[^:@]+(:[0-9]+/[^:@]+)?$', element.image) }}"

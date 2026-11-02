@@ -261,8 +261,8 @@
       "properties": {
         "url": {
           "type": "string",
-          "pattern": "^(postgres(ql)?://[^?#]*)?$",
-          "description": "no query string: the server refuses one"
+          "pattern": "^[^?]*$",
+          "description": "no query string: the server refuses one at start (TLS: externalDatabase.tls, not ?sslmode=)"
         }
       }
     },
@@ -481,10 +481,31 @@
             },
             "add": {
               "type": "array",
-              "maxItems": 0,
-              "description": "restricted allows NET_BIND_SERVICE only; the chart's images need none"
+              "items": {
+                "const": "NET_BIND_SERVICE"
+              },
+              "description": "restricted allows NET_BIND_SERVICE only"
             }
           }
+        },
+        "seccompProfile": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "RuntimeDefault",
+                "Localhost"
+              ]
+            }
+          }
+        },
+        "runAsUser": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "runAsGroup": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },

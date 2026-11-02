@@ -27,9 +27,13 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 - a malformed image digest, an unknown `global.imagePullPolicy`, an external database URL with a query string (the
   server refuses it at start).
 
-The CI then checks every pod of four renders (default, the CI stand-in, an external database with Polis and autoscaling, cloud sessions with Cilium and backups) with the Kyverno CLI (`ci/policy-check.sh`, `ci/policies/restricted.yaml`):
-`restricted`, a read-only root (Ory Polis excepted), requests and a memory limit, no `latest`, `edge` or missing tag,
-and no Kubernetes token but on the server with cloud sessions. One failure fails the run. Install in a namespace
+The two security contexts are the server's, the console's and the site's; the other pods (PostgreSQL, its Jobs, Ory
+Polis, the tests) have theirs written in the chart, which no value changes. The CI then checks the pods of four
+renders (default, the CI stand-in, an external database with Polis and autoscaling, cloud sessions with Cilium and
+backups) with the Kyverno CLI (`ci/policy-check.sh`, `ci/policies/restricted.yaml`): `restricted`, a read-only root
+(Ory Polis excepted), requests and a memory limit, no branch-like tag (`latest`, `edge`, `main`…) nor a missing one,
+and no Kubernetes token but on the server with cloud sessions. One failure fails the run. Session pods are created by
+the server at run time, not rendered by the chart: this check does not see them. Install in a namespace
 labelled `pod-security.kubernetes.io/enforce=restricted` all the same: the chart is tested there.
 
 ## Server environment

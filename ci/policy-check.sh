@@ -25,7 +25,7 @@ yq '
                   "labels": ($pod.metadata.labels // .metadata.labels)},
      "spec": $pod.spec}
 ' "$work/render.yaml" > "$work/pods.yaml"
-count=$(yq '.metadata.name' "$work/pods.yaml" | grep -cv '^---$')
+count=$(yq '.metadata.name' "$work/pods.yaml" | grep -cv '^---$' || true)
 [ "$count" -gt 0 ] || { echo "::error::[$name] no pod rendered"; exit 1; }
 echo "[$name] $count pods: $(yq '.metadata.name' "$work/pods.yaml" | grep -v '^---$' | tr '\n' ' ')"
 if ! "$kyverno" apply ci/policies/restricted.yaml --resource "$work/pods.yaml" 2> "$work/err" > "$work/out"; then
@@ -34,4 +34,4 @@ if ! "$kyverno" apply ci/policies/restricted.yaml --resource "$work/pods.yaml" 2
   echo "::error::[$name] a pod breaks the restricted policy"
   exit 1
 fi
-grep -E '^pass:' "$work/out"
+grep -E '^pass:' "$work/out" || cat "$work/out"
