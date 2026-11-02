@@ -1,0 +1,14 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# CI stand-in of the ostrom-server CLI: the same subcommands and exit codes as the real binary (0 ok, 2 refused),
+# without a server. `migrate` needs the owner's URL, as the real one does.
+case "$*" in
+  migrate)
+    [ -n "${OSTROM_DATABASE_MIGRATION_URL:-}" ] || { echo "migrate: OSTROM_DATABASE_MIGRATION_URL is required" >&2; exit 2; }
+    echo "migrations applied (stand-in)"
+    ;;
+  *)
+    echo "invalid command: $*" >&2
+    exit 2
+    ;;
+esac
