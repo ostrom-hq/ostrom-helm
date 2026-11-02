@@ -140,10 +140,71 @@ tests:
           ports: [{ protocol: TCP, port: 443 }]
     asserts:
       - failedTemplate:
-          errorPattern: "opens 0.0.0.0/0: use networkPolicy.server.allowInternet"
+          errorPattern: "opens 0.0.0.0/0: name the destination itself"
   - it: an old values file without networkPolicy.server keeps the internet egress (helm upgrade --reuse-values)
     set:
       networkPolicy.server: null
     documentSelector: { path: metadata.name, value: o-ostrom-server-egress }
     asserts:
       - equal: { path: 'spec.egress[1].to[0].ipBlock.cidr', value: 0.0.0.0/0 }
+  - it: refuses a range wider than /16, even split in halves
+    set:
+      networkPolicy.server.extraEgress:
+        - to: [{ ipBlock: { cidr: 0.0.0.0/1 } }, { ipBlock: { cidr: 128.0.0.0/1 } }]
+          ports: [{ protocol: TCP, port: 443 }]
+    asserts:
+      - failedTemplate: { errorPattern: "opens 0.0.0.0/1" }
+  - it: refuses a private range as a whole
+    set:
+      networkPolicy.server.extraEgress:
+        - to: [{ ipBlock: { cidr: 10.0.0.0/8, except: [10.1.0.0/16] } }]
+          ports: [{ protocol: TCP, port: 5432 }]
+    asserts:
+      - failedTemplate: { errorPattern: "opens 10.0.0.0/8" }
+  - it: refuses a peer that selects every pod of every namespace
+    set:
+      networkPolicy.server.extraEgress:
+        - to: [{ namespaceSelector: {} }]
+          ports: [{ protocol: TCP, port: 5432 }]
+    asserts:
+      - failedTemplate: { errorPattern: "selects every pod of every namespace" }
+  - it: refuses a peer that selects every pod of the namespace
+    set:
+      networkPolicy.server.extraEgress:
+        - to: [{ podSelector: {} }]
+          ports: [{ protocol: TCP, port: 5432 }]
+    asserts:
+      - failedTemplate: { errorPattern: "selects every pod of the namespace" }
+  - it: accepts an in-cluster collector named by namespace and pods
+    set:
+      networkPolicy.server.extraEgress:
+        - to:
+            - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: observability } }
+              podSelector: { matchLabels: { app: otel-collector } }
+          ports: [{ protocol: TCP, port: 4318 }]
+    documentSelector: { path: metadata.name, value: o-ostrom-server-egress }
+    asserts:
+      - equal: { path: 'spec.egress[1].ports[0].port', value: 4318 }
+  - it: accepts a /16 subnet and an IPv6 /64
+    set:
+      networkPolicy.server.extraEgress:
+        - to: [{ ipBlock: { cidr: 10.20.0.0/16 } }, { ipBlock: { cidr: "2001:db8:1:2::/64" } }]
+          ports: [{ protocol: TCP, port: 5432 }]
+    documentSelector: { path: metadata.name, value: o-ostrom-server-egress }
+    asserts:
+      - equal: { path: 'spec.egress[1].to[1].ipBlock.cidr', value: "2001:db8:1:2::/64" }
+  - it: Polis gets its own extra rules (its external database on a private range), with the same guard
+    set:
+      polis.enabled: true
+      networkPolicy.polis.extraEgress:
+        - to: [{ ipBlock: { cidr: 10.20.0.16/32 } }]
+          ports: [{ protocol: TCP, port: 5432 }]
+    documentSelector: { path: metadata.name, value: o-ostrom-polis-egress }
+    asserts:
+      - equal: { path: 'spec.egress[1].to[0].ipBlock.cidr', value: 10.20.0.16/32 }
+  - it: the Polis guard names its own key
+    set:
+      polis.enabled: true
+      networkPolicy.polis.extraEgress: [{ ports: [{ protocol: TCP, port: 5432 }] }]
+    asserts:
+      - failedTemplate: { errorPattern: "networkPolicy.polis.extraEgress\\[0\\] needs" }

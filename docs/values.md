@@ -153,14 +153,20 @@ in, DNS out, the server to PostgreSQL (and Polis), web to the server, the site n
 
 - `networkPolicy.server.allowInternet` (default `true`): the server reaches the internet minus
   `networkPolicy.egress.deniedCidrs` and `extraDeniedCidrs` (the private ranges, the metadata service). `false`: no
-  internet at all, only PostgreSQL, Polis, DNS and `networkPolicy.server.extraEgress`, where you list the CIDRs of
-  the providers you use (GitHub, your model provider, e-mail, billing).
-- `networkPolicy.server.extraEgress`: NetworkPolicy `egress` rules added to the server, for what lives on a private
-  range (an external database, an in-cluster collector, the proxy). Each names its destination (`to`) and its `ports`;
-  the chart refuses a rule without them, or towards `0.0.0.0/0`, since either opens everything.
+  internet for the server, only PostgreSQL, Polis, DNS and `networkPolicy.server.extraEgress`, where you list the
+  CIDRs of the providers you use (GitHub, your model provider, e-mail, billing). It is the server's only: Ory Polis
+  (identity providers' metadata) and cloud-session pods (agent code) keep their own internet egress.
+- `networkPolicy.server.extraEgress`, `networkPolicy.polis.extraEgress`: NetworkPolicy `egress` rules added to the
+  server or to Polis, for what lives on a private range (an external database, an in-cluster collector, a proxy).
+  Each names its destination (`to`) and its `ports`. The chart refuses the mistakes that open everything or close to
+  it: a rule without `to` or `ports`, an ipBlock wider than /16 (IPv6: /48), a peer that selects every namespace
+  (`namespaceSelector: {}`) or every pod (`podSelector: {}`). It is a guard against accidents, not a policy engine:
+  what you list is what opens.
 - `tests.networkPolicyEnforced` (default `true`): `helm test` tries PostgreSQL (the server, with an external
   database) from a pod no policy allows, and fails if it gets through. A CNI that ignores NetworkPolicy (flannel
-  alone, some managed networks) installs the chart without a word: this test is what tells you.
+  alone, some managed networks) installs the chart without a word: this test is what tells you. It runs after the
+  other tests, which reach the same target from an allowed pod, and it fails too when the name does not resolve,
+  so a target that is down or misnamed never passes for a blocked one.
 
 ## Cilium egress deny (shared clusters)
 

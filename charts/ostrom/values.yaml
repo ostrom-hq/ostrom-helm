@@ -370,10 +370,14 @@ networkPolicy:
     allowInternet: true
     # Extra egress rules of the server, NetworkPolicy `egress` entries: what lives on a private range, such as an external
     # database, an in-cluster OTLP collector or an egress proxy. Each rule names its destination (`to`) and its
-    # `ports`; a rule without them, or towards 0.0.0.0/0, is refused (it would open everything). Never remove a range
-    # from `deniedCidrs` for this: that opens the whole range.
+    # `ports`. Refused, since they open everything or close to it: a rule without `to` or `ports`, an ipBlock wider
+    # than /16 (IPv6: /48), a peer selecting every namespace or every pod. Never remove a range from `deniedCidrs`
+    # for this: that opens the whole range.
     #   - to: [{ ipBlock: { cidr: 10.20.0.15/32 } }]
     #     ports: [{ protocol: TCP, port: 5432 }]
+    extraEgress: []
+  polis:
+    # The same for Ory Polis (its external database on a private range), with the same checks.
     extraEgress: []
   # The server needs the Kubernetes API for cloud sessions. With Cilium, a CiliumNetworkPolicy
   # (namespaced) allows the kube-apiserver entity; otherwise give the API server CIDR.

@@ -10,7 +10,10 @@ tests:
       - equal: { path: 'metadata.labels["app.kubernetes.io/component"]', value: network-probe }
       - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: o }
       - equal: { path: 'spec.containers[0].image', value: 'docker.io/library/postgres:17.6' }
-      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'pg_isready -h o-ostrom-postgresql -p 5432 -t 5' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'host=o-ostrom-postgresql' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'getent hosts' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'pg_isready -h "[$]host" -p 5432 -t 5' }
+      - equal: { path: 'metadata.annotations["helm.sh/hook-weight"]', value: "10" }
       - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'NetworkPolicy not enforced' }
       - equal: { path: spec.automountServiceAccountToken, value: false }
       - equal: { path: 'spec.containers[0].securityContext.allowPrivilegeEscalation', value: false }
@@ -20,7 +23,8 @@ tests:
       externalDatabase: { url: postgresql://db:5432/o, username: u, password: p, migrationUsername: o, migrationPassword: p }
     asserts:
       - equal: { path: 'spec.containers[0].image', value: 'docker.io/curlimages/curl:8.11.1' }
-      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'http://o-ostrom-server:8080/health' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'url=http://o-ostrom-server:8080/health' }
+      - matchRegex: { path: 'spec.containers[0].args[0]', pattern: 'proves nothing' }
       - equal: { path: spec.securityContext.runAsUser, value: 100 }
   - it: no probe without NetworkPolicies, without tests, or when turned off
     set: { networkPolicy.enabled: false }
@@ -38,3 +42,7 @@ tests:
     set: { postgresql.enabled: false, server.enabled: false, externalDatabase.url: postgresql://db:5432/o }
     asserts:
       - hasDocuments: { count: 0 }
+  - it: uses the pull secrets of the other images
+    set: { global.imagePullSecrets: [ghcr] }
+    asserts:
+      - equal: { path: spec.imagePullSecrets, value: [{ name: ghcr }] }

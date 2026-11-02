@@ -101,7 +101,8 @@ networkPolicy:
         ports: [{ protocol: TCP, port: 5432 }]
 ```
 
-The same goes for an in-cluster OTLP collector (a `namespaceSelector` and `podSelector` in `to`) or an egress proxy.
+The same goes for an in-cluster OTLP collector (a `namespaceSelector` and `podSelector` in `to`) or an egress proxy,
+and for Ory Polis's database (`networkPolicy.polis.extraEgress`) when Polis is on.
 If the database runs as pods of another namespace of the same cluster, `networkPolicy.ciliumEgressDeny` (Cilium, off
 by default) denies it too: keep that off, or move the database out of the cluster.
 

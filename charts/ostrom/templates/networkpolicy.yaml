@@ -86,19 +86,8 @@ spec:
         {{- end }}
       ports: [{ protocol: TCP, port: {{ $np.kubeApi.port }} }]
     {{- end }}
-    {{- $srv := $np.server | default dict }}
-    {{- range $i, $rule := $srv.extraEgress | default list }}
-    {{- if or (not (kindIs "map" $rule)) (not $rule.to) (not $rule.ports) }}
-    {{- fail (printf "networkPolicy.server.extraEgress[%d] needs `to` and `ports`: a rule without them allows every destination" $i) }}
-    {{- end }}
-    {{- range $peer := $rule.to }}
-    {{- if and (kindIs "map" $peer) $peer.ipBlock (has (toString $peer.ipBlock.cidr) (list "0.0.0.0/0" "::/0")) }}
-    {{- fail (printf "networkPolicy.server.extraEgress[%d] opens %s: use networkPolicy.server.allowInternet" $i $peer.ipBlock.cidr) }}
-    {{- end }}
-    {{- end }}
-    - {{- toYaml $rule | nindent 6 }}
-    {{- end }}
-    {{- if ternary true $srv.allowInternet (kindIs "invalid" $srv.allowInternet) }}
+    {{- include "ostrom.np.extraEgress" (dict "rules" (dig "server" "extraEgress" list $np) "where" "networkPolicy.server.extraEgress") | nindent 4 }}
+    {{- if include "ostrom.flag" (dict "value" (dig "server" "allowInternet" nil $np) "default" true) }}
     {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
     {{- end }}
 {{- if and .Values.cloudSessions.enabled $np.kubeApi.cilium }}
@@ -169,6 +158,7 @@ spec:
         - {{- include "ostrom.np.peer" (dict "root" . "component" "postgresql") | nindent 10 }}
       ports: [{ protocol: TCP, port: 5432 }]
     {{- end }}
+    {{- include "ostrom.np.extraEgress" (dict "rules" (dig "polis" "extraEgress" list $np) "where" "networkPolicy.polis.extraEgress") | nindent 4 }}
     # Identity providers' metadata and the external database, if any.
     {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
 {{- end }}
