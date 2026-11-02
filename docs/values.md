@@ -39,10 +39,14 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 
 A secret never goes in `server.config` (a ConfigMap), `server.extraEnv` with a plain `value`, `web.config` (served to
 every browser) or `site.env`: the chart refuses a key that looks like one (`SECRET`, `PASSWORD`, `TOKEN`, `CREDENTIAL`,
-`API_KEY`, `PRIVATE_KEY`, `LICENSE_KEY`, or ending in `_KEY`; not a path `_FILE`, an address `_URL`, a pull Secret
-name, nor PostHog's public project key). Kubernetes' `view` role reads ConfigMaps and pod specs, never Secrets. Ory
-Polis's external database URL (`externalDatabase.polisUrl`) goes into Secret `<release>-polis-db`. The CI renders
-the chart with a witness in every secret input and fails if one shows up outside a Secret (`ci/secrets-in-render.sh`).
+`API_KEY`, `PRIVATE_KEY`, `LICENSE_KEY`, or ending in `_KEY`; not a path `_FILE`, an address `_URL`, the runners'
+pull Secret name, nor PostHog's public project key), and any value that carries a credential whatever its name: a
+URL with a password (`redis://:pw@…`, `externalDatabase.url` included) or a token in a query string. A setting the
+check takes for a secret by mistake goes in `server.secretEnv` or `server.existingSecret`: it is the same
+environment variable. Kubernetes' `view` role reads ConfigMaps and pod specs, never Secrets. Ory Polis's external
+database URL (`externalDatabase.polisUrl`) goes into Secret `<release>-polis-db`, and a change of it rolls the Polis
+pods. Not checked: a ConfigMap of yours given in `server.extraEnvFrom`. The CI renders the chart with a witness in
+every secret input and fails if one shows up outside a Secret, or never reaches one (`ci/secrets-in-render.sh`).
 
 Everything else goes through `server.config` (plain) or `server.existingSecret` / `server.secretEnv` (secret),
 whose keys are environment variable names, e.g. `OSTROM_GITHUB_CLIENT_ID`, `OSTROM_GITHUB_CLIENT_SECRET`,

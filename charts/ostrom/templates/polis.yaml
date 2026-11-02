@@ -15,6 +15,12 @@ spec:
   template:
     metadata:
       labels: {{- include "ostrom.labels" (dict "root" . "component" "polis") | nindent 8 }}
+      {{- if not (or .Values.postgresql.enabled .Values.externalDatabase.polisExistingSecret) }}
+      annotations:
+        # The URL is in a Secret, no longer in the pod spec: this rolls the pods when it changes. derivePassword is
+        # scrypt-based, so the annotation (readable by `view`) is no cheap test of a guessed password (audit B2).
+        checksum/polis-db: {{ derivePassword 1 "long" (include "ostrom.polis.dbUrl" .) "ostrom" "polis-db" | quote }}
+      {{- end }}
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false

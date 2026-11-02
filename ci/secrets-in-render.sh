@@ -12,6 +12,7 @@ chart=charts/ostrom
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 failures=0
+seen=""
 
 # One witness per secret input: long, unique, and never a substring of anything else the chart writes.
 w() { printf 'witness%s0d1f9c3e7b' "$1"; }
@@ -40,6 +41,8 @@ for entry in "${sets[@]}"; do
   { yq -r 'select(.kind == "Secret") | .stringData // {} | .[]' "$work/$name.yaml"
     yq -r 'select(.kind == "Secret") | .data // {} | .[] | @base64d' "$work/$name.yaml"
   } > "$work/$name.secret-values"
+  # Each witness must reach a Secret in at least one set: a renamed value would otherwise go untested.
+  for id in "${witnesses[@]}"; do grep -qF "$(w "$id")" "$work/$name.secret-values" && seen="$seen $id"; done
   for id in "${witnesses[@]}"; do
     if grep -qF "$(w "$id")" "$work/$name.public.yaml"; then
       echo "::error::[$name] the secret input '$id' appears outside a Secret:"
@@ -56,6 +59,10 @@ for entry in "${sets[@]}"; do
     fi
   done < "$work/$name.secret-values"
   echo "[$name] $(yq 'select(.kind == "Secret") | .metadata.name' "$work/$name.yaml" | grep -cv '^---$') Secrets, $(grep -cv -e "^---$" -e "^$" "$work/$name.secret-values") values, checked against $(yq 'select(.kind != "Secret") | .kind' "$work/$name.yaml" | grep -cv '^---$') other objects"
+done
+
+for id in "${witnesses[@]}"; do
+  case " $seen " in *" $id "*) ;; *) echo "::error::the secret input '$id' reached no Secret: the check would not test it"; failures=$((failures + 1)) ;; esac
 done
 
 [ "$failures" -eq 0 ] || { echo "secrets in clear: $failures"; exit 1; }
