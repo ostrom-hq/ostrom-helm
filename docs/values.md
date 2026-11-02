@@ -115,14 +115,41 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_router') \gexec
 GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
+-- AUDIT-RLS R8: the migrations' history is written by its owner alone. Any other role (the serving role, ostrom_tenant
+-- that it inherits, PUBLIC) holding more than SELECT, on the table or a column, loses it all and keeps SELECT.
+DO $lock$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT quote_ident(c.relname) AS tbl,
+      CASE WHEN g.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(g.grantee)) END AS name,
+      bool_or(g.privilege_type = 'SELECT' AND NOT g.on_column) AS reads
+    FROM pg_class c
+    CROSS JOIN LATERAL (
+      SELECT a.grantee, a.privilege_type, false AS on_column FROM aclexplode(c.relacl) a
+      UNION ALL
+      SELECT a.grantee, a.privilege_type, true FROM pg_attribute t, aclexplode(t.attacl) a WHERE t.attrelid = c.oid
+    ) g
+    WHERE c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace AND c.relname LIKE '\_migrations\_%'
+      AND g.grantee <> c.relowner
+    GROUP BY c.relname, g.grantee
+    HAVING bool_or(g.privilege_type <> 'SELECT' OR g.on_column)
+  LOOP
+    EXECUTE format('REVOKE ALL ON public.%s FROM %s CASCADE', r.tbl, r.name);
+    IF r.reads THEN
+      EXECUTE format('GRANT SELECT ON public.%s TO %s', r.tbl, r.name);
+    END IF;
+  END LOOP;
+END
+$lock$;
 ```
 
 (`psql -v ON_ERROR_STOP=1 -v owner=ostrom -v app=ostrom_app -v db=ostrom`). Never give the serving role
 `CREATEROLE`, membership of the owner nor `ostrom_router`.
 
 `helm test` checks it on the live database (`templates/tests/test-database.yaml`): the serving role is neither
-superuser nor `BYPASSRLS`, cannot create or alter a table, reads what the owner creates; Polis cannot open
-the `ostrom` database.
+superuser nor `BYPASSRLS`, cannot create or alter a table, reads what the owner creates, reads the migrations' history and writes none of it
+(directly, through `ostrom_tenant` or `PUBLIC`, AUDIT-RLS R8); Polis cannot open the `ostrom` database.
 
 With `postgresql.enabled: false`, create the same roles on your server (the block above included: the chart runs no
 Job against an external database) and give both: `externalDatabase.username`
