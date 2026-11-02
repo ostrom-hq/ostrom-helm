@@ -121,7 +121,7 @@ jobs:
             echo "the chart must only create namespaced objects"; exit 1
           fi
       - name: Shell scripts
-        run: shellcheck compose/*.sh compose/demo/*.sh ci/*.sh
+        run: shellcheck compose/*.sh compose/demo/*.sh compose/demo/teamcode/*.sh ci/*.sh
       # The local demo stack (compose/demo): its helpers at 100 % of lines, branches and functions, and its Compose
       # files valid on top of the install's. It runs for real, with the real images, in ostrom-server's demo-stack workflow.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -131,10 +131,11 @@ jobs:
       - name: Local demo stack (unit tests, coverage, Compose config)
         working-directory: compose
         run: |
-          node --test --experimental-test-coverage --test-coverage-include='demo/*.mjs' \
+          node --test --experimental-test-coverage --test-coverage-include='demo/*.mjs' --test-coverage-include='demo/teamcode/*.mjs' \
             --test-coverage-exclude='demo/journey.mjs' --test-coverage-lines=100 --test-coverage-branches=100 \
             --test-coverage-functions=100 'demo/test/*.test.mjs'
           node --check demo/journey.mjs
+          node demo/teamcode/seed.mjs | cmp - demo/teamcode/02-seed.sql
           ./install.sh --no-start
           docker compose -f docker-compose.yml -f demo/docker-compose.demo.yml config -q
           OSTROM_DEMO_STRIPE_KEY_FILE=/dev/null docker compose -f docker-compose.yml -f demo/docker-compose.demo.yml \

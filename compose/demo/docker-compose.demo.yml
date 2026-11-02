@@ -4,6 +4,7 @@
 #   - Mailpit and a relay, in place of Resend: the server writes its mails to a directory (OSTROM_MAIL_DIR), the relay
 #     hands them to Mailpit, read at http://mail.localhost;
 #   - a fake GitHub for « Continue with GitHub » (fake-github.mjs), at http://github.localtest.me;
+#   - a fake TeamCode team in MySQL (demo/teamcode), for `ostrom import teamcode`;
 #   - cloud sessions on this machine's Docker (OSTROM_RUNNERS_DRIVER=docker): the server reaches the engine through a
 #     socket proxy on a network of its own, and each session's two containers (the agent host and the runner, S2-49)
 #     join `ostrom-sessions`, an internal network where they reach the server and nothing else: no database, no engine,
@@ -84,6 +85,30 @@ services:
       interval: 3s
       timeout: 3s
       retries: 40
+
+  # A fake TeamCode team in TeamCode's own MySQL tables (demo/teamcode), for `ostrom import teamcode`: on this machine
+  # only, at mysql://teamcode_ro@127.0.0.1:3307/teamcode (password in MYSQL_PWD: demo-teamcode-ro), its secrets sealed
+  # with the fake key demo/teamcode/key.txt. Small: no performance schema, a 16 MiB buffer pool.
+  teamcode-db:
+    image: docker.io/library/mysql:8.4
+    restart: unless-stopped
+    command: ["--performance-schema=OFF", "--innodb-buffer-pool-size=16M", "--skip-name-resolve"]
+    environment:
+      MYSQL_ROOT_PASSWORD: demo-teamcode-root
+      MYSQL_DATABASE: teamcode
+      TEAMCODE_RO_PASSWORD: demo-teamcode-ro
+    volumes:
+      - ./demo/teamcode/01-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./demo/teamcode/02-seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - ./demo/teamcode/03-readonly.sh:/docker-entrypoint-initdb.d/03-readonly.sh:ro
+    ports:
+      - "127.0.0.1:3307:3306"
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=demo-teamcode-ro mysql -h127.0.0.1 -uteamcode_ro teamcode -e 'SELECT 1 FROM accounts LIMIT 1'"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
 
   # The Docker Engine API, limited to what the runtime driver calls (containers, volumes, image pulls), on a network
   # only the server joins.
