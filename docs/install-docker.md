@@ -92,8 +92,9 @@ demo/demo.sh down      # removes everything it created, cloud sessions included
   TeamCode members are matched to Ostrom members by their GitHub login: sign in with the fake GitHub as `alice` and
   as `rev`. The assignments of a member without a match, here `dev-2`, are left out of the import, and so is the
   account TeamCode never finished. Once TeamCode is stopped, the owner runs the final pass, the cutover, with the same
-  command plus `--cutover` (`--confirm cutover` without a terminal). It renews the shared accounts' tokens, and in the
-  demo the fake GitHub answers in place of the providers' token endpoints.
+  command plus `--cutover` (`--confirm cutover` without a terminal). It revives the shared accounts Ostrom holds as waiting for a reconnection, once TeamCode's tokens
+  renew; in the demo the fake GitHub answers in place of the providers' token endpoints, and the journey first shares
+  « Claude Max 1 » with a refresh token TeamCode has since rotated, so the cutover has an account to revive.
 - **Billing, optional**: set `OSTROM_DEMO_STRIPE_KEY_FILE` to a file holding a Stripe **test** key (mode 600, outside
   git) before `demo/demo.sh up`. The Stripe CLI forwards the test events to the server. Checkout opens Stripe's hosted
   test page, where you pay with `4242 4242 4242 4242`.

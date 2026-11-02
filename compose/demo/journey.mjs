@@ -16,6 +16,7 @@ const env = (k, d) => (process.env[k] ?? '').trim() || d;
 const API = env('OSTROM_DEMO_API_URL', 'http://api.localhost');
 const APP = env('OSTROM_DEMO_APP_URL', 'http://app.localhost');
 const MAIL = env('OSTROM_DEMO_MAIL_URL', 'http://mail.localhost');
+const FAKE = env('OSTROM_DEMO_FAKE_GITHUB_URL', 'http://github.localtest.me');
 const ORIGIN = env('OSTROM_DEMO_CONSOLE_ORIGIN', 'http://app.localhost');
 const REPORT = env('REPORT', 'demo-report.md');
 const CLOUD_TIMEOUT_S = Number(env('OSTROM_DEMO_CLOUD_TIMEOUT', '240'));
@@ -263,29 +264,65 @@ async function journey() {
       const tables = readTables(dockerQuery(env('TEAMCODE_DB_CONTAINER', 'ostrom-teamcode-db-1')), TEAM);
       const { body } = teamCodeImport(tables, demoKey(), TEAM, memberMap);
       const count = (r, action) => (r.json.items ?? []).filter((i) => i.action === action).length;
+
+      // (r) Before the import: Alice had shared « Claude Max 1 » in Ostrom during the trial. TeamCode, still running,
+      // has rotated its refresh token since, so Ostrom's copy is dead: the first model call through the gateway
+      // renews it at the provider (the fake), is refused `invalid_grant`, and the account waits for a reconnection.
+      const stale = tables.accounts.find((a) => a.display_name === 'Claude Max 1');
+      const staleId = stale?.provider_account_id ?? 'acct-a-max-1';
+      const shared = await owner.call('POST', '/api/v1/accounts', {
+        provider: 'claude',
+        label: 'Claude Max 1 (essai Ostrom)',
+        providerAccountId: staleId,
+        accessToken: `sk-ant-oat-demo-trial-${run}`,
+        refreshToken: `revoked-by-teamcode-${run}`,
+        expiresAt: new Date(Date.now() - 3600_000).toISOString(),
+      });
+      const caller = shared.status < 300 ? await owner.call('POST', '/api/v1/tokens', { name: `demo inference ${run}`, scopes: ['inference:use'], expiresInDays: 1 }) : shared;
+      const infer = caller !== shared && caller.json.secret
+        ? await bearer(caller.json.secret, 'POST', '/api/v1/inference/v1/messages', { model: 'claude-opus-5-5', max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] })
+        : { status: 0, text: '' };
+      if (caller !== shared && caller.json.id) await owner.call('DELETE', `/api/v1/tokens/${encodeURIComponent(caller.json.id)}`);
+      const accountOf = async () => ((await owner.call('GET', '/api/v1/accounts')).json?.items ?? []).find((a) => a.providerAccountId === staleId);
+      const before = await accountOf();
+      const retired = before?.status === 'reconnect_required';
+      record('R1', 'Compte partagé dont TeamCode a fait tourner le jeton : en attente de reconnexion', retired ? GREEN : RED,
+        `partage ${shared.status}, jeton inference:use ${caller.status}, appel au modèle par la passerelle ${infer.status} (renouvellement refusé : invalid_grant), compte ${before?.label ?? '?'} → ${before?.status ?? 'absent'}${retired ? '' : ` ; ${brief(shared)} ; ${brief(infer)}`}`);
+      const renewals = async () => ((await fetch(`${FAKE}/_demo/refreshed`).then((r) => r.json()).catch(() => ({}))).refreshed ?? []).filter((p) => p === 'claude').length;
+
       const plan = await owner.call('POST', '/api/v1/import/teamcode?dryRun=true', body);
       const done = plan.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode', body) : plan;
       const again = done.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode?dryRun=true', body) : done;
       // Once the server gives the members' ids (server#63), both people of the journey must be mapped.
       const mapped = !members.some((m) => m.id) || Object.keys(memberMap).length === 2;
-      const imported = done.status === 200 && done.json.created > 0 && again.json.created === 0 && mapped;
+      // The account Ostrom holds as `reconnect_required` is left so while TeamCode runs: testing TeamCode's tokens would
+      // rotate them and disconnect TeamCode.
+      const waiting = (done.json.items ?? []).find((i) => i.kind === 'account' && i.action === 'revive_at_cutover');
+      const imported = done.status === 200 && done.json.created > 0 && again.json.created === 0 && mapped && (!retired || (done.json.reviveAtCutover === 1 && !!waiting));
       record('I2', 'Import TeamCode (plan, import, second passage sans changement)', imported ? GREEN : RED,
         imported
           ? `${Object.keys(memberMap).length} membres associés${Object.keys(memberMap).length ? '' : members.some((m) => m.id) ? ` (aucun membre Ostrom ne correspond : ${members.map((m) => m.login).join(', ')})` : ' (le serveur ne donne pas encore l’id des membres, server#63 : leurs affectations sont laissées)'} ; plan ${plan.status} (${count(plan, 'planned')} lignes prévues), import : ${done.json.created} créées, ${done.json.skipped} sautées, ${done.json.reviveAtCutover} compte(s) en attente de la bascule ; second plan : ${again.json.created} à créer`
           : `plan → ${brief(plan)} ; import → ${brief(done)} ; second plan → ${brief(again)}`);
+      const renewedBefore = await renewals();
       const cutPlan = imported ? await owner.call('POST', '/api/v1/import/teamcode?dryRun=true&cutover=true', body) : { status: 0, text: 'I2 a échoué', json: {} };
       const cut = cutPlan.status === 200 ? await owner.call('POST', '/api/v1/import/teamcode?cutover=true', body) : cutPlan;
       const accounts = (cut.json.items ?? []).filter((i) => i.kind === 'account');
       const kept = accounts.filter((i) => i.action !== 'skipped');
       // The cutover is recorded in the audit log in the owner's name, before anything is written (ostrom-server#86).
-      const audit = cut.status === 200 ? await owner.call('GET', '/api/v1/audit?limit=50') : { status: 0, text: '' };
-      const audited = audit.status === 200 && audit.text.includes('import.teamcode.cutover');
-      const cutOk = cut.status === 200 && cut.json.reviveAtCutover === 0 && kept.length === accounts.length && accounts.length > 0 && (audit.status !== 200 || audited);
+      // The audit log of the org (`GET /audit`, contract `listAudit`): once served, it must hold the cutover, in the
+      // owner's name. Until then (404) the step says it was not read.
+      const audit = cut.status === 200 ? await owner.call('GET', '/api/v1/audit?event=import.teamcode.cutover&limit=50') : { status: 0, text: '', json: {} };
+      const auditLine = (audit.json?.items ?? []).find((e) => e.event === 'import.teamcode.cutover');
+      const audited = audit.status === 200 && !!auditLine;
+      // The revival: TeamCode's tokens renewed at the provider (the fake), stored, and the account serving again.
+      const after = await accountOf();
+      const renewed = (await renewals()) - renewedBefore;
+      const revivedItem = accounts.find((i) => i.action === 'updated');
+      const revived = !retired || (!!revivedItem && after?.status === 'ready' && renewed >= 1);
+      const cutOk = cut.status === 200 && cut.json.reviveAtCutover === 0 && kept.length === accounts.length && accounts.length > 0 && revived && (audit.status === 404 || audited);
       const cutState = cut.status === 503 ? NOT_YET : cutOk ? GREEN : RED;
-      // A revival needs an account Ostrom already holds as `reconnect_required`; the demo's are fresh, so the cutover
-      // finds them up to date. The revival through the provider's token endpoint is covered by the server's tests.
-      record('I3', 'Bascule de l’import par l’owner (cutover)', cutState,
-        `plan ${cutPlan.status}, bascule ${cut.status} : comptes ${accounts.map((a) => `${a.name} ${a.action}`).join(', ') || 'aucun'}, ${cut.json.reviveAtCutover ?? '?'} en attente ; journal d’audit de l’org ${audit.status === 200 ? (audited ? 'avec la bascule au nom de l’owner' : 'SANS la bascule') : `pas encore servi (GET /audit → ${audit.status})`}${cutOk ? '' : ` ; ${brief(cut)}`}`);
+      record('I3', 'Bascule par l’owner : le compte en attente est réanimé', cutState,
+        `plan ${cutPlan.status}, bascule ${cut.status} : comptes ${accounts.map((a) => `${a.name} ${a.action}`).join(', ') || 'aucun'}, ${cut.json.reviveAtCutover ?? '?'} en attente ; ${retired ? `compte ${after?.label ?? '?'} ${before?.status} → ${after?.status ?? 'absent'}, ${renewed} renouvellement(s) chez le fournisseur` : 'aucun compte à réanimer (R1)'} ; journal d’audit de l’org ${audit.status === 200 ? (audited ? `avec la bascule (acteur ${auditLine.actor})` : 'SANS la bascule') : `pas encore servi (GET /audit → ${audit.status})`}${cutOk ? '' : ` ; ${brief(cut)}`}`);
     } catch (e) {
       record('I2', 'Import TeamCode', RED, e.message);
     }

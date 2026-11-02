@@ -10,6 +10,7 @@
 // It also stands in for the token endpoints of the shared accounts' providers (the server's
 // OSTROM_SHARING_CLAUDE_TOKEN_URL and OSTROM_SHARING_CODEX_TOKEN_URL), for the import's cutover:
 //   POST /claude/oauth/token, /codex/oauth/token   a refresh token for a new pair; `invalid_grant` for a revoked one
+//   GET  /_demo/refreshed                          the providers renewed so far, in order (read by the journey)
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
@@ -93,6 +94,8 @@ export function createFakeGitHub({ clientId, clientSecret }) {
       return send(res, 200, [{ email: user.email, primary: true, verified: true }]);
     }
     if (method === 'GET' && path === '/health') return send(res, 200, { status: 'ok' });
+    // The demo's journey reads which providers' tokens were renewed (the cutover's revival), never a token.
+    if (method === 'GET' && path === '/_demo/refreshed') return send(res, 200, { refreshed });
     return send(res, 404, { message: 'Not Found' });
   };
 
