@@ -41,6 +41,9 @@ spec:
           if app "ALTER TABLE helm_test_probe DISABLE ROW LEVEL SECURITY" 2>/dev/null; then echo "the serving role changed RLS"; exit 1; fi
           owner "DROP TABLE helm_test_probe"
           echo "owner: creates tables the serving role reads and cannot alter"
+          writable=$(app "SELECT string_agg(relname, ' ') FROM pg_class WHERE relkind = 'r' AND relname LIKE '\_migrations\_%' AND has_table_privilege(current_user, oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')")
+          if [ -n "$writable" ]; then echo "the serving role can write the migrations' history: $writable"; exit 1; fi
+          echo "serving role: reads the migrations' history, never writes it"
           {{- if .Values.polis.enabled }}
           PGPASSWORD="$POLIS_PASSWORD" psql -h {{ $host }} -U polis -d polis -v ON_ERROR_STOP=1 -Atc "SELECT 1" >/dev/null
           if PGPASSWORD="$POLIS_PASSWORD" psql -h {{ $host }} -U polis -d {{ $pg.database | quote }} -Atc "SELECT 1" 2>/dev/null; then echo "polis reached the ostrom database"; exit 1; fi

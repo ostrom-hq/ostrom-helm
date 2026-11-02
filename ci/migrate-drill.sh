@@ -36,6 +36,11 @@ migrated() {
     || fail "a SECURITY DEFINER function of orgs is not owned by ostrom_router"
   [ "$(psql_su "SELECT count(*) FROM pg_proc WHERE proname = 'orgs_create_organization' AND pg_get_userbyid(proowner) = 'ostrom_router'")" = 1 ] \
     || fail "orgs_create_organization missing or not owned by ostrom_router"
+  # AUDIT-RLS R8: histories exist, and the serving role writes none of them.
+  [ "$(psql_su "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname LIKE '\_migrations\_%'")" -gt 0 ] \
+    || fail "no migrations' history"
+  [ "$(psql_su "SELECT count(*) FROM pg_class WHERE relkind = 'r' AND relname LIKE '\_migrations\_%' AND has_table_privilege('ostrom_app', oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')")" = 0 ] \
+    || fail "ostrom_app can write a migrations' history"
   helm test $REL -n "$NS" --timeout 5m || fail "helm test"
 }
 

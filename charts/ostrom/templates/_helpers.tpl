@@ -178,6 +178,9 @@ it only administers the roles it creates, never a superuser nor a BYPASSRLS role
 granted to the serving role, which gets neither CREATEROLE nor membership of the owner (the server refuses to start).
 `ostrom_router` owns the cross-organization functions (SECURITY DEFINER, ostrom-server docs/tenancy.md, S2-51): no
 table, administered by the owner who hands it the functions, never granted to the serving role.
+The migrations' history tables (`_migrations_<module>`) are written by the owner alone (AUDIT-RLS R8): the default
+privileges give the serving role every table, so the write is revoked on those already there; `ostrom-server migrate`
+revokes it on the tables it creates (ostrom-server#144).
 Also the end of 10-roles.sh, and the pre-upgrade Job for a database created by an older chart.
 */}}
 {{- define "ostrom.postgresql.tenantSql" -}}
@@ -191,6 +194,8 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_router') \gexec
 GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
+SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON %I FROM %I', relname, :'app')
+FROM pg_class WHERE relkind = 'r' AND relnamespace = 'public'::regnamespace AND relname LIKE '\_migrations\_%' \gexec
 {{- end -}}
 
 {{/*
