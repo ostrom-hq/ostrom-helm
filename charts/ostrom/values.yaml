@@ -75,8 +75,9 @@ server:
     enabled: false            # needs metrics-server in the cluster
     minReplicas: 2
     maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
+    targetCPUUtilizationPercentage: 70       # of the 250m request: about 175m, below the measured load peak
+    # Of the 192Mi request: about 173 MiB, above the 128-165 MiB of the measured load peak, below the 256Mi limit.
+    targetMemoryUtilizationPercentage: 90
     # Scale up at once, scale down slowly: one pod a minute after 5 minutes of low load (requests stay spread).
     behavior:
       scaleDown:

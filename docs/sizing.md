@@ -12,12 +12,17 @@ ostrom-server main of 02/11/2026: runs [41507938323](https://github.com/ostrom-h
 | Load through the ingress | p95 | p99 | Peak per server pod | PostgreSQL | ingress-nginx |
 |---|---|---|---|---|---|
 | `/health` + `/api/v1/instance`, 100 req/s | 4.4 ms | 6.9 ms | 134-240m, 128-165 MiB | 128-245m, 77-82 MiB | 25-33m, 41 MiB |
-| token reads (`/auth/me`, orgs), 100 req/s | 7.9-11.4 ms | 11.4-16.6 ms | (same window) | | |
+| `/auth/me` with a token, 40 req/s | 7.9 ms | 11.4 ms | (same passes) | | |
+| organizations with a token, 60 req/s | 11.4 ms | 16.6 ms | | | |
 | organization rename (a write), 5 req/s | 25.9 ms | 35.5 ms | | | |
-| gate question + yes, 60 req/s | 19.0-25.9 ms | 34.4-43.4 ms | | | |
+| gate question, then its yes (60 req/s in all) | 19.0 ms, 25.9 ms | 34.4 ms, 43.4 ms | | | |
 
-p95 and p99 are those of run 41530106515. Peaks come from `kubectl top` (15 s windows): short bursts go higher. The
+p95 and p99 are those of run 41530106515; the peaks, the range over the three runs. Peaks come from `kubectl top` (15 s windows): short bursts go higher. The
 requests below cover them; the server's memory limit stays 256 MiB.
+
+Startup and drains are measured by the chart's CI on kind with the real server (`ci/perf-drill.sh`, figures in the
+job summary): a server pod must be ready within 30 s of its init containers (the `migrate` step), and a node drain
+of a two-replica release keeps a ready server all along (the PodDisruptionBudget refuses the last eviction).
 
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|
