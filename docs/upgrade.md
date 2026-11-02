@@ -37,6 +37,11 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
 - The server's ConfigMap keeps only what the server reads: `OSTROM_API_URL`, `OSTROM_APP_URL`, `OSTROM_SITE_URL`,
   `OSTROM_EXTRACTION_*`, `OSTROM_SAML_POLIS_*` and `OSTROM_CLOUD_MAX_CONCURRENT` are gone, with `byok.*` and
   `cloudSessions.runner.maxConcurrent` (remove them from your values; they are ignored). <!-- docs-truth: ignore (variables removed) -->
+- Third-party images pinned by digest ([images.md](images.md#third-party-images)): the image of PostgreSQL changes
+  from `postgres:17.6` to `postgres:17.6@sha256:…`, so its StatefulSet restarts once at the upgrade (same version; with one
+  replica, the server waits for it). A values file that sets `postgresql.image.tag` or `polis.image.tag` now also
+  sets the matching `digest`, or `digest: ""`: a tag alone is refused. With `helm upgrade --reuse-values`, the old
+  values have no digest and the images stay on their tag: pass `--reset-then-reuse-values` to take the pins.
 - `cloudSessions.allowedOrgs` (S2-10): with sessions on, list the organizations they are open to; empty refuses all.
 - The console's host serves `/api/v1` from the server (one origin for the browser), and `/api/v1/artifacts` takes
   32m on both hosts. A pre-upgrade Job adds the `ostrom_router` role.
