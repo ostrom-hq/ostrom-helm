@@ -7,7 +7,7 @@
 // yet (a route main does not serve, or a step it needs failed), with what it saw. Writes a Markdown report (REPORT,
 // default demo-report.md) and exits 1 on a red step.
 // Node 22 or later (fetch, WebSocket), no dependency. Usage: node demo/journey.mjs
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { dockerQuery, readTables, teamCodeImport } from './teamcode/export.mjs';
@@ -511,6 +511,11 @@ async function machineRunner(owner, image) {
   const key = made.json.token ?? '';
   if (made.status !== 201 || !id || !key) return record('M1', 'Runner enregistré sur une machine', RED, `POST /runners → ${made.status}${made.json.error ? ` ${made.json.error}` : ''}`);
   const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8', env: { ...process.env, OSTROM_RUNNER_KEY: key } }).trim();
+  // The runner logs to stderr, which `docker logs` replays on its own stderr: both streams are read.
+  const logsOf = () => {
+    const r = spawnSync('docker', ['logs', container], { encoding: 'utf8' });
+    return `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  };
   const listed = async () => {
     const r = await owner.call('GET', '/api/v1/runners');
     return (r.json.items ?? []).find((x) => x.id === id);
@@ -537,9 +542,10 @@ async function machineRunner(owner, image) {
     record('M1', 'Runner enregistré, clé affichée une fois', before?.status === 'offline' ? GREEN : RED, `POST /runners → 201 (${id}, clé de ${key.length} caractères) ; avant tout heartbeat : ${before?.status ?? 'absent de GET /runners'} ; \`ostrom-runner machine\` démarré, un heartbeat toutes les ${MACHINE_INTERVAL_S} s`);
 
     const online = await until('online', 30);
-    const logs = docker('logs', container);
+    const logs = logsOf();
     const leaked = logs.includes(key);
-    record('M2', 'Le runner passe online par ses heartbeats', online >= 0 && !leaked ? GREEN : RED, `online dans GET /runners après ${online} s (lastSeenAt ${(await listed())?.lastSeenAt ?? '?'}) ; clé ${leaked ? 'VUE' : 'absente'} des journaux du runner`);
+    const beating = logs.includes('starting MachineConfig');
+    record('M2', 'Le runner passe online par ses heartbeats', online >= 0 && beating && !leaked ? GREEN : RED, `online dans GET /runners après ${online} s (lastSeenAt ${(await listed())?.lastSeenAt ?? '?'}) ; journaux du runner ${beating ? 'lus' : 'VIDES'}, clé ${leaked ? 'VUE' : 'absente'}`);
     if (online < 0) return;
 
     const last = (await listed())?.lastSeenAt;
@@ -557,7 +563,7 @@ async function machineRunner(owner, image) {
     const removed = await owner.call('DELETE', `/api/v1/runners/${id}`);
     // The runner stops after three refused keys in a row (one 401 may come from a proxy): three intervals at most.
     const exitCode = await exited(3 * MACHINE_INTERVAL_S + 15);
-    const refusedLog = docker('logs', container).includes('key refused');
+    const refusedLog = logsOf().includes('key refused: this runner was removed');
     const direct = await fetch(`${API}/api/v1/runners/${id}/heartbeat`, { method: 'POST', headers: { authorization: `Bearer ${key}` } });
     const gone = !(await listed());
     record('M4', 'Supprimé, son heartbeat suivant reçoit 401', back >= 0 && removed.status === 204 && exitCode === 3 && refusedLog && direct.status === 401 && gone ? GREEN : RED, `redémarré, online après ${back} s ; DELETE → ${removed.status} ; le runner reçoit 401 et s’arrête après trois refus (code ${exitCode}, « key refused » ${refusedLog ? 'dans' : 'absent de'} ses journaux) ; heartbeat avec la même clé → ${direct.status} ; ${gone ? 'absent' : 'encore'} de GET /runners`);
