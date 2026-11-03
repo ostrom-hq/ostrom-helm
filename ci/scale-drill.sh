@@ -31,6 +31,7 @@ NS=ostrom-scale
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/stdout}
 work=$(mktemp -d)
 sampler=""
+catcher=""
 
 fail() { echo "FAIL: $*" >&2; kubectl get pods,hpa,pdb,jobs -n "$NS" -o wide >&2 || true
   echo "-- server containers: restarts and last termination" >&2
@@ -41,9 +42,14 @@ fail() { echo "FAIL: $*" >&2; kubectl get pods,hpa,pdb,jobs -n "$NS" -o wide >&2
   for p in $(kubectl -n "$NS" get pods -l app.kubernetes.io/component=server -o name 2>/dev/null); do
     echo "-- $p (previous)" >&2; kubectl -n "$NS" logs "$p" -c server --previous --tail=20 >&2 2>/dev/null || true
   done
+  echo "-- every restart seen during the drill" >&2; crashes >&2
   kubectl -n "$NS" logs -l job-name --tail=10 >&2 || true; exit 1; }
 stop_sampler() { [ -z "$sampler" ] && return 0; touch "$work/stop"; wait "$sampler" 2>/dev/null || true; sampler=""; }
-cleanup() { stop_sampler; rm -rf "$work"; }
+stop_catcher() { [ -z "$catcher" ] && return 0; touch "$work/stop-catcher"; wait "$catcher" 2>/dev/null || true; catcher=""; }
+# Every server container that restarts, whatever the pass: its last termination (reason, exit code, signal, times) and
+# its previous logs, read while the pod still exists (a rollout deletes it with its history).
+crashes() { [ -s "$work/crashes.txt" ] && cat "$work/crashes.txt" || echo "(no server container restarted)"; }
+cleanup() { stop_sampler; stop_catcher; rm -rf "$work"; }
 trap cleanup EXIT
 
 real=(-f charts/ostrom/ci/standin-values.yaml --set ingress.enabled=false --set polis.enabled=false
@@ -107,17 +113,39 @@ k6_result() { # name timeout-in-seconds -> the summary JSON in $work/<name>.json
   kubectl -n $NS logs job/"$1" > "$work/$1.log" 2>&1 || true
   grep '^DRILL-SUMMARY ' "$work/$1.log" | tail -1 | cut -d' ' -f2- > "$work/$1.json"
   [ -s "$work/$1.json" ] || { tail -40 "$work/$1.log"; fail "k6 ($1) gave no summary"; }
+  # Failed requests by kind, with the first and last second each was seen (to set them against the rollout's times).
+  grep 'msg="Request Failed"' "$work/$1.log" | sed -E 's/^time="([^"]*)".*error="(.*)"$/\1 \2/; s/[0-9]+(\.[0-9]+){3}(:[0-9]+)?/IP/g' \
+    | awk -v name="$1" '{ t = $1; $1 = ""; k = $0; n[k]++; if (!(k in f)) f[k] = t; l[k] = t }
+           END { for (k in n) printf "k6 %s: %d failed, %s to %s:%s\n", name, n[k], f[k], l[k], k }' \
+    || true
   cat "$work/$1.json"
 }
 # requests failed dropped p95 p99 of a k6 summary, 0 for a missing figure (no request recorded).
 k6_figures() { jq -r '"\(.requests // 0) \(.failed // 0) \(.dropped // 0) \(.p95 // 0) \(.p99 // 0)"' "$work/$1.json"; }
 server_pods() { kubectl -n $NS get pods -l app.kubernetes.io/component=server -o json; }
 
+( touch "$work/crashes.txt"
+  while [ ! -e "$work/stop-catcher" ]; do
+    kubectl -n $NS get pods -l app.kubernetes.io/component=server -o json 2>/dev/null | jq -r '.items[] | .metadata.name as $p
+      | .status.containerStatuses[]? | select(.restartCount > 0) | "\($p) \(.name) \(.restartCount)"' 2>/dev/null \
+    | while read -r pod c n; do
+        grep -q "^== $pod $c restart $n " "$work/crashes.txt" && continue
+        { echo "== $pod $c restart $n $(date -u +%H:%M:%S)"
+          kubectl -n $NS get pod "$pod" -o json | jq -c --arg c "$c" '.status.containerStatuses[] | select(.name == $c) | .lastState.terminated
+            | {reason, exitCode, signal, startedAt, finishedAt}' 2>/dev/null || true
+          kubectl -n $NS logs "$pod" -c "$c" --previous --tail=60 2>&1 || true
+        } >> "$work/crashes.txt"
+      done
+    sleep 3
+  done ) &
+catcher=$!
+
 echo "== 1. A peak from two replicas: the HPA must follow"
 kubectl -n $NS wait hpa/$REL-server --for=jsonpath='{.status.currentMetrics[0].resource.current.averageUtilization}' \
   --timeout 3m >/dev/null 2>&1 || echo "::warning::the HPA had no CPU metric yet before the peak"
 # One sample every 5 s: seconds since the start, desired and current replicas, ready server pods.
 peak_start=$(date +%s)
+echo "rollout starts at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # A sample is written only when both reads succeed, with 0 for a missing field: four columns, always.
 ( while [ ! -e "$work/stop" ]; do
     h=$(kubectl -n $NS get hpa $REL-server -o json 2>/dev/null \
@@ -163,6 +191,7 @@ helm upgrade $REL charts/ostrom -n $NS "${real[@]}" --set-string server.podAnnot
   --wait --timeout 5m || fail "the upgrade under load"
 kubectl -n $NS rollout status deploy/$REL-server --timeout 5m || fail "the rollout under load"
 rolled=$(( $(date +%s) - start ))
+echo "rollout ends at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 k6_result k6-rollout $(( ROLLOUT_LOAD + 120 ))
 server_pods > "$work/after.json"
 after=$(jq -r '[.items[] | select(.metadata.deletionTimestamp == null) | .metadata.name] | sort | join(" ")' "$work/after.json")
@@ -181,6 +210,7 @@ read -r requests failed dropped p95 p99 < <(k6_figures k6-rollout)
   || fail "the rollout took ${rolled}s: it did not end ${ROLLOUT_TAIL}s before the load (${ROLLOUT_LOAD}s, started after ${ROLLOUT_LEAD}s)"
 echo "rollout under load: $requests requests, none failed, every pod replaced in ${rolled}s"
 
+stop_catcher
 helm uninstall $REL -n $NS --wait
 kubectl delete namespace $NS --wait=false
 echo "scale drill: ok"

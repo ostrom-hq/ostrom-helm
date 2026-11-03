@@ -49,6 +49,22 @@ What the drill proves:
 - nothing more. The CI's requests are below the defaults, so its HPA reacts sooner than yours, and its threshold is
   not yours.
 
+Run 41549988209 (probe timeouts explicit, CI requests 50m / 64Mi):
+
+| Pass | Requests | Failed | p95 | p99 | Replicas |
+|---|---|---|---|---|---|
+| peak to 120 req/s | 19 950 | 0 | 3.3 ms | 6.4 ms | the HPA asked for 4 after 47 s, 4 ready after 53 s, no restart |
+| rollout under 50 req/s | 12 001 | 198 | 4.1 ms | 9.4 ms | 4 pods replaced; the failures are a crash, see below |
+
+**The rollout pass failed.** A server container crashed between the peak and the upgrade:
+- the event was `BackOff`: the container exited by itself, with no liveness failure;
+- k6 got `connection refused` on the Service before the upgrade began, until readiness took the pod out;
+- the rollout then deleted the pod, and its exit code with it.
+
+The drill now records the last termination and the previous logs of every restart while the pod still exists. Until a
+run shows the exit code, the cause stays open. It matches neither the probes nor the chart, and may fall under one of
+the two leads below.
+
 What it does not prove:
 - **300 requests/s is not held on this runner.** On the first run (41545347185), still with Kubernetes' 1 s probe
   timeouts:
