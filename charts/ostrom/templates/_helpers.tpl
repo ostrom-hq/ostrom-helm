@@ -376,6 +376,8 @@ it only administers the roles it creates, never a superuser nor a BYPASSRLS role
 granted to the serving role, which gets neither CREATEROLE nor membership of the owner (the server refuses to start).
 `ostrom_router` owns the cross-organization functions (SECURITY DEFINER, ostrom-server docs/tenancy.md, S2-51): no
 table, administered by the owner who hands it the functions, never granted to the serving role.
+`ostrom_member_search` owns the member search's function the same way (ostrom-server orgs migration 7, docs/tenancy.md):
+roles are global to the cluster, so the owner must administer one created before to hand the function over.
 The migrations' history tables (Flyway's `flyway_<module>`) are written by the owner alone (AUDIT-RLS R8): the default
 privileges give the serving role every table. `ostrom-server migrate` revokes the write on its histories at every pass
 (ostrom-server#144), install and external database included; this block does it again before every upgrade, for any
@@ -391,6 +393,9 @@ GRANT ostrom_tenant TO :"app";
 SELECT 'CREATE ROLE ostrom_router NOLOGIN NOSUPERUSER NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_router') \gexec
 GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
+SELECT 'CREATE ROLE ostrom_member_search NOLOGIN NOSUPERUSER NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_member_search') \gexec
+GRANT ostrom_member_search TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
 -- AUDIT-RLS R8: the migrations' history is written by its owner alone. Any other role (the serving role, ostrom_tenant

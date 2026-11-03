@@ -31,11 +31,15 @@ tests:
         documentIndex: 2
       - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT ostrom_tenant TO :"app";' }
         documentIndex: 2
-      - notMatchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT :"owner" TO|CREATEROLE.*:"app"|GRANT ostrom_router TO :"app"' }
+      - notMatchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT :"owner" TO|CREATEROLE.*:"app"|GRANT ostrom_router TO :"app"|GRANT ostrom_member_search TO :"app"' }
         documentIndex: 2
       - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'CREATE ROLE ostrom_router NOLOGIN NOSUPERUSER NOBYPASSRLS' }
         documentIndex: 2
       - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;' }
+        documentIndex: 2
+      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'CREATE ROLE ostrom_member_search NOLOGIN NOSUPERUSER NOBYPASSRLS' }
+        documentIndex: 2
+      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: 'GRANT ostrom_member_search TO :"owner" WITH ADMIN OPTION;' }
         documentIndex: 2
       # Kubernetes reads a doubled dollar sign in args as one: a `DO` block needs a named dollar quote.
       - notMatchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: '\$\$' }

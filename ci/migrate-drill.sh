@@ -114,6 +114,8 @@ data:
     GRANT ostrom_tenant TO ostrom_app;
     CREATE ROLE ostrom_router NOLOGIN NOSUPERUSER NOBYPASSRLS;
     GRANT ostrom_router TO ostrom_owner WITH ADMIN OPTION;
+    CREATE ROLE ostrom_member_search NOLOGIN NOSUPERUSER NOBYPASSRLS;
+    GRANT ostrom_member_search TO ostrom_owner WITH ADMIN OPTION;
     -- The server's session settings, which the TLS proxy drops (docs/install-kubernetes.md).
     ALTER ROLE ostrom_app SET statement_timeout = '10s';
     ALTER ROLE ostrom_app SET lock_timeout = '5s';
