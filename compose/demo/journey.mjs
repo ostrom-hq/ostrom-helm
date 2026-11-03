@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { dockerQuery, readTables, teamCodeImport } from './teamcode/export.mjs';
+import { chromiumFrom, cookiesOf, payAndSeeThePlan } from './pay.mjs';
 import { demoKey, TEAM } from './teamcode/seed.mjs';
 
 const env = (k, d) => (process.env[k] ?? '').trim() || d;
@@ -20,6 +21,8 @@ const MAIL = env('OSTROM_DEMO_MAIL_URL', 'http://mail.localhost');
 const FAKE = env('OSTROM_DEMO_FAKE_GITHUB_URL', 'http://github.localtest.me');
 const ORIGIN = env('OSTROM_DEMO_CONSOLE_ORIGIN', 'http://app.localhost');
 const REPORT = env('REPORT', 'demo-report.md');
+// An install of Playwright (the demo workflow's): the journey then pays on Stripe's test Checkout in a browser (H3).
+const PLAYWRIGHT_DIR = env('OSTROM_DEMO_PLAYWRIGHT_DIR', '');
 const CLOUD_TIMEOUT_S = Number(env('OSTROM_DEMO_CLOUD_TIMEOUT', '240'));
 const run = randomBytes(3).toString('hex');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -463,10 +466,34 @@ async function journey() {
   if (orgId) {
     const overview = await owner.call('GET', `/api/v1/orgs/${orgId}/billing`);
     record('H1', 'Page d’abonnement (plan gratuit)', overview.status === 200 ? GREEN : RED, `GET billing → ${brief(overview)}`);
-    const checkout = await owner.call('POST', `/api/v1/orgs/${orgId}/billing/checkout`, { plan: 'team', interval: 'month' });
+    // Paid in a browser (H3): yearly, a price per person charged now (the monthly one is metered, billed later).
+    const chromium = chromiumFrom(PLAYWRIGHT_DIR);
+    const checkout = await owner.call('POST', `/api/v1/orgs/${orgId}/billing/checkout`, { plan: 'team', interval: chromium ? 'year' : 'month' });
     const url = checkout.json.url ?? '';
     const state = url.startsWith('https://checkout.stripe.com/') ? GREEN : /not configured|not enabled on this instance/i.test(checkout.text) ? NOT_YET : RED;
     record('H2', 'Checkout Stripe (mode test)', state, url ? `session Checkout ouverte (${url.slice(0, 48)}…) : payer avec 4242 4242 4242 4242 dans le navigateur` : `checkout → ${brief(checkout)}`);
+    if (state === GREEN && !chromium) {
+      record('H3', 'Paiement par la carte de test 4242, webhook, plan actif dans la console', NOT_YET, 'pas de navigateur dans cette exécution (OSTROM_DEMO_PLAYWRIGHT_DIR) : payer à la main avec 4242 4242 4242 4242 sur le lien de H2');
+    } else if (state === GREEN) {
+      try {
+        const seen = await payAndSeeThePlan({ chromium, checkoutUrl: url, cookies: cookiesOf(owner.jar, APP), app: APP, email: ownerEmail, plan: 'Team' });
+        // The plan changes only when the server has Stripe's signed event (forwarded by the Stripe CLI): the console never trusts the way back.
+        let plan = {};
+        for (let i = 0; i < 45 && !(plan.plan === 'team' && plan.status === 'active'); i++) {
+          plan = (await owner.call('GET', `/api/v1/orgs/${orgId}/billing`)).json;
+          if (!(plan.plan === 'team' && plan.status === 'active')) await sleep(2000);
+        }
+        let paid = [];
+        for (let i = 0; i < 30 && !paid.includes('paid'); i++) {
+          paid = ((await owner.call('GET', `/api/v1/orgs/${orgId}/billing/invoices`)).json.invoices ?? []).map((v) => v.status);
+          if (!paid.includes('paid')) await sleep(2000);
+        }
+        const ok = plan.plan === 'team' && plan.status === 'active' && paid.includes('paid');
+        record('H3', 'Paiement par la carte de test 4242, webhook, plan actif dans la console', ok ? GREEN : RED, `carte 4242 payée sur Checkout (mode test) ; serveur : plan ${plan.plan} ${plan.status} ${plan.interval ?? ''}, factures ${paid.join(',') || 'aucune'} (webhook de Stripe reçu) ; console /billing : « ${seen} »`);
+      } catch (error) {
+        record('H3', 'Paiement par la carte de test 4242, webhook, plan actif dans la console', RED, `${error.message}`.slice(0, 300));
+      }
+    }
   }
 
   // Stop the cloud session: its containers and volumes go.
