@@ -79,11 +79,15 @@ server:
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits: { memory: 1Gi }
+  # Timeouts are explicit: Kubernetes' default of 1 s let liveness kill every replica of a saturated server (scale
+  # drill, run 41545347185: four pods in CrashLoopBackOff under a peak), which turned a slow server into a dead one.
+  # Liveness only catches a hung server (/health silent 5 s, three times); an overloaded one leaves the Service by
+  # readiness first, and the HPA adds replicas.
   probes:
-    startup: { path: /health, periodSeconds: 2, failureThreshold: 60 }
-    liveness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
+    startup: { path: /health, periodSeconds: 2, timeoutSeconds: 2, failureThreshold: 60 }
+    liveness: { path: /health, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 3 }
     # /ready answers 503 while the server drains (shutdownDelaySeconds): the pod leaves the Service before it stops.
-    readiness: { path: /ready, periodSeconds: 5, failureThreshold: 2 }
+    readiness: { path: /ready, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 2 }
   autoscaling:
     enabled: false            # needs metrics-server in the cluster
     minReplicas: 2

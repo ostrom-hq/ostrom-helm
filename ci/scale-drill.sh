@@ -17,7 +17,9 @@ cd "$(dirname "$0")/.."
 
 : "${SERVER_IMAGE:?SERVER_IMAGE (repository:tag of the loaded server image) is required}"
 ROLLOUT_RATE=${ROLLOUT_RATE:-50}
-PEAK_RATE=${PEAK_RATE:-300}
+# 120 requests/s is 3 to 5 times the CI's CPU target per pod (35m of a 50m request) and still within what the
+# 2-vCPU runner carries with k6 and PostgreSQL on it; 300 saturated the node itself (run 41545347185).
+PEAK_RATE=${PEAK_RATE:-120}
 PEAK_RAMP=30      # seconds from 10 to PEAK_RATE requests/s (ci/load/drill.js)
 PEAK_HOLD=150     # seconds held at PEAK_RATE
 ROLLOUT_LOAD=240  # seconds of steady load around the rollout
@@ -31,7 +33,15 @@ work=$(mktemp -d)
 sampler=""
 
 fail() { echo "FAIL: $*" >&2; kubectl get pods,hpa,pdb,jobs -n "$NS" -o wide >&2 || true
-  kubectl -n "$NS" logs -l job-name --tail=30 >&2 || true; exit 1; }
+  echo "-- server containers: restarts and last termination" >&2
+  kubectl -n "$NS" get pods -l app.kubernetes.io/component=server -o json 2>/dev/null | jq -r '.items[] | .metadata.name as $p
+    | .status.containerStatuses[]? | "\($p) \(.name) restarts=\(.restartCount) last=\(.lastState.terminated.reason // "-")/\(.lastState.terminated.exitCode // "-")"' >&2 || true
+  echo "-- events (probes, kills, OOM)" >&2
+  kubectl -n "$NS" get events --sort-by=.lastTimestamp 2>/dev/null | grep -E 'Unhealthy|Killing|OOM|BackOff|Evict' | tail -30 >&2 || true
+  for p in $(kubectl -n "$NS" get pods -l app.kubernetes.io/component=server -o name 2>/dev/null); do
+    echo "-- $p (previous)" >&2; kubectl -n "$NS" logs "$p" -c server --previous --tail=20 >&2 2>/dev/null || true
+  done
+  kubectl -n "$NS" logs -l job-name --tail=10 >&2 || true; exit 1; }
 stop_sampler() { [ -z "$sampler" ] && return 0; touch "$work/stop"; wait "$sampler" 2>/dev/null || true; sampler=""; }
 cleanup() { stop_sampler; rm -rf "$work"; }
 trap cleanup EXIT

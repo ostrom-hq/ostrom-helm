@@ -97,6 +97,9 @@ Needs a server image with the settings in the console (ostrom-server#438 and the
   (#50) or later, which reads those sizes.
 - Ory Polis is off by default (SAML is coming soon; the server has no SAML code yet): the upgrade removes its
   Deployment, Service and `sso.` Ingress. Its database and Secret stay; set `polis.enabled: true` to keep it running.
+- The server's probes have explicit timeouts (`server.probes.*.timeoutSeconds`: startup 2 s, liveness 5 s,
+  readiness 3 s) instead of Kubernetes' 1 s: liveness no longer restarts a server that is only slow under load. A
+  values file that overrides `server.probes.<probe>` without `timeoutSeconds` keeps 1 s.
 
 ## 0.1.x → 0.2.x
 

@@ -206,14 +206,17 @@ spec:
           startupProbe:
             httpGet: { path: {{ $s.probes.startup.path }}, port: http }
             periodSeconds: {{ $s.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ $s.probes.startup.timeoutSeconds | default 1 }}
             failureThreshold: {{ $s.probes.startup.failureThreshold }}
           livenessProbe:
             httpGet: { path: {{ $s.probes.liveness.path }}, port: http }
             periodSeconds: {{ $s.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $s.probes.liveness.timeoutSeconds | default 1 }}
             failureThreshold: {{ $s.probes.liveness.failureThreshold }}
           readinessProbe:
             httpGet: { path: {{ $s.probes.readiness.path }}, port: http }
             periodSeconds: {{ $s.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $s.probes.readiness.timeoutSeconds | default 1 }}
             failureThreshold: {{ $s.probes.readiness.failureThreshold }}
           {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
           resources: {{- toYaml $s.resources | nindent 12 }}

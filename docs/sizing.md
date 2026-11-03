@@ -37,7 +37,7 @@ The server itself is ready 2 s after its init containers. The drain of the same 
 with one ready endpoint and 1 with two, never zero; the eviction of the last pod refused by the budget.
 
 Scaling is measured the same way (`ci/scale-drill.sh`, HPA 2-4, k6 in the namespace on the server's Service): a
-peak from 10 to 300 requests/s must make the HPA add replicas that become ready and serve, and a version rollout
+peak from 10 to 120 requests/s must make the HPA add replicas that become ready and serve, and a version rollout
 under 50 requests/s must lose no request (the server's shutdown delay drains each old pod) with no container
 restart. The CI's requests are below the defaults, so its HPA reacts sooner than yours: the drill proves the
 mechanism, not your threshold.
