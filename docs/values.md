@@ -267,8 +267,16 @@ for the zone (SSL/TLS → Origin Server): until then, every request gets a 400.
 ## Request body size of the API
 
 The API Ingress allows 16 MiB (`ingress.apiAnnotations`); the server refuses more than 1 MiB on most routes (S2-46).
-Publishing an artifact sends its files base64 in JSON (up to about 27.7 MiB on the server): `/api/v1/artifacts` has its
-own Ingress, `<release>-api-artifacts`, with `ingress.artifactsBodySize` (32m). Set it to "" to drop that Ingress.
+The routes that read more each have their own Ingress, `<release>-api-<name>`, on the API host and the console's host,
+with the API annotations and the size of `ingress.bodySizes.<name>`:
+
+| Name | Path | Size | Why |
+|---|---|---|---|
+| `artifacts` | `/api/v1/artifacts` | 32m | a version's files, base64 in JSON (up to about 27.7 MiB on the server) |
+| `inference` | `/api/v1/inference` | 32m | a model call carries its whole context (32 MiB on the server) |
+| `import` | `/api/v1/import` | 8m | a TeamCode export (8 MiB on the server) |
+
+Set a size to "" to drop its Ingress (the path then takes the API Ingress's 16m).
 
 ## One origin for the browser
 

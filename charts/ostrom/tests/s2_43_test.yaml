@@ -96,13 +96,13 @@ tests:
   - it: Cloudflare origin pulls are off by default
     template: templates/ingress.yaml
     asserts:
-      - hasDocuments: { count: 4 }
+      - hasDocuments: { count: 6 }
       - notExists: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-secret"]' }
   - it: on, every Ingress of the release requires Cloudflare's client certificate, from a Secret of the namespace
     template: templates/ingress.yaml
     set: { ingress.cloudflareOriginPulls.enabled: true, polis.enabled: true }
     asserts:
-      - hasDocuments: { count: 6 }
+      - hasDocuments: { count: 8 }
       - isKind: { of: Secret }
         documentIndex: 0
       - isNotEmpty: { path: 'data["ca.crt"]' }
@@ -110,6 +110,6 @@ tests:
       - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-secret"]', value: ostrom/o-ostrom-cloudflare-origin-pull-ca }
         documentIndex: 1
       - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-verify-client"]', value: "on" }
-        documentIndex: 5
+        documentIndex: 7
       - equal: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/auth-tls-verify-client"]', value: "on" }
         documentIndex: 2

@@ -50,8 +50,11 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
   play the end of the block in [values.md](values.md#database-roles) once (a server with ostrom-server#144 also does
   it at every `migrate`).
 - `cloudSessions.allowedOrgs` (S2-10): with sessions on, list the organizations they are open to; empty refuses all.
-- The console's host serves `/api/v1` from the server (one origin for the browser), and `/api/v1/artifacts` takes
-  32m on both hosts. A pre-upgrade Job adds the `ostrom_router` role.
+- The console's host serves `/api/v1` from the server (one origin for the browser). A pre-upgrade Job adds the
+  `ostrom_router` role.
+- Request bodies (S2-46): `/api/v1/artifacts` and `/api/v1/inference` take 32m, `/api/v1/import` 8m, each on its own
+  Ingress on both hosts (`ingress.bodySizes`); every other API route keeps 16m. Needs a server image from main 62052a9
+  (#50) or later, which reads those sizes.
 - Ory Polis is off by default (SAML is coming soon; the server has no SAML code yet): the upgrade removes its
   Deployment, Service and `sso.` Ingress. Its database and Secret stay; set `polis.enabled: true` to keep it running.
 

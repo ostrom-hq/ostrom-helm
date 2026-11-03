@@ -36,7 +36,7 @@ services:
 
   # Migrations, once per `up`, with the owner's credentials: the server never receives them.
   migrate:
-    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server@sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03}
+    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server@sha256:8530b6b141651abd28f4301afe1aa34ef41e1a01e2d36c6b9864a5c07128ea62}
     # The image's ENTRYPOINT is the binary: `command` gives only its arguments (Kubernetes' `command` replaces the
     # ENTRYPOINT instead, which is why the chart names the binary).
     command: ["migrate"]
@@ -53,7 +53,7 @@ services:
 
   server:
     <<: *restart
-    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server@sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03}
+    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server@sha256:8530b6b141651abd28f4301afe1aa34ef41e1a01e2d36c6b9864a5c07128ea62}
     depends_on:
       migrate: { condition: service_completed_successfully }
     environment:
@@ -78,7 +78,7 @@ services:
 
   web:
     <<: *restart
-    image: ${OSTROM_WEB_IMAGE:-ghcr.io/ostrom-hq/ostrom-web@sha256:509b7beb1f4c17de132440f2cc6438c245a9f2c6286566f618a956331f815154}
+    image: ${OSTROM_WEB_IMAGE:-ghcr.io/ostrom-hq/ostrom-web@sha256:057c7016d748626feef60ca103b94547fca4a59eb19d0626f888a0acfb6bae0b}
     environment:
       OSTROM_API_UPSTREAM: http://server:8080
       OSTROM_API_URL: ${OSTROM_SCHEME:-http}://${OSTROM_API_HOST:-api.localhost}

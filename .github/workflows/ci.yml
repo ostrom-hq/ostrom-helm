@@ -275,15 +275,18 @@ jobs:
         working-directory: compose
         run: COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml COMPOSE_PROFILES=sso docker compose down -v || true
 
-  # The chart with the REAL Ostrom images (`edge` from each repository's main), once this repository can read
-  # them: needs the org secret GHCR_READ_TOKEN (read:packages). Skipped, and says so, without it.
+  # The chart with the REAL Ostrom images, once this repository can read them: needs the org secret GHCR_READ_TOKEN
+  # (read:packages). Skipped, and says so, without it. Each image is pinned to the `sha-<7>` of a main commit, never
+  # `edge`, which names no commit and which a slower run of an older commit may still hold; bumped with the chart.
   install-real-images:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
-      TAG: edge
+      SERVER_TAG: sha-cce6a48
+      WEB_TAG: sha-543ef6d
+      SITE_TAG: sha-82276b0
     steps:
       - name: Token present?
         id: token
@@ -308,7 +311,8 @@ jobs:
           kubectl -n ostrom create secret docker-registry ghcr --docker-server=ghcr.io \
             --docker-username=ostrom-ci --docker-password="$GHCR_READ_TOKEN"
           helm install ostrom charts/ostrom -n ostrom --wait --timeout 10m \
-            --set global.imageTag="$TAG" --set 'global.imagePullSecrets={ghcr}' \
+            --set server.image.tag="$SERVER_TAG" --set web.image.tag="$WEB_TAG" --set site.image.tag="$SITE_TAG" \
+            --set 'global.imagePullSecrets={ghcr}' \
             --set server.replicas=1 --set web.replicas=1 --set site.replicas=1 \
             --set postgresql.persistence.size=1Gi
           helm test ostrom -n ostrom --logs
