@@ -18,7 +18,11 @@ ostrom-server main of 02/11/2026: runs [41507938323](https://github.com/ostrom-h
 | gate question, then its yes (60 req/s in all) | 19.0 ms, 25.9 ms | 34.4 ms, 43.4 ms | | | |
 
 p95 and p99 are those of run 41530106515; the peaks, the range over the three runs. Peaks come from `kubectl top` (15 s windows): short bursts go higher. The
-requests below cover them; the server's memory limit stays 256 MiB.
+requests below cover them. The server's memory limit is 512 MiB: at 256 MiB, run
+[41628103773](https://github.com/ostrom-hq/ostrom-e2e/actions/runs/41628103773) lost both replicas to the kernel's OOM
+killer (exit 137), once in the race of 100 simultaneous yes and once with 200 open model streams. That run measured
+111-116 MiB at rest and about 2.4 MiB per open stream: the gateway's default cap of 100 open calls per replica
+(`OSTROM_GATEWAY_MAX_OPEN_CALLS`) fits in about 355 MiB, and lowering the limit means lowering that cap with it.
 
 Startup and drains are measured by the chart's CI on kind with the real server (`ci/perf-drill.sh`, figures in the
 job summary): a server pod must be ready within 30 s of its init containers (the `migrate` step), and a node drain
@@ -36,7 +40,7 @@ with one ready endpoint and 1 with two, never zero; the eviction of the last pod
 
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|
-| up to 50 people | 2 × (250m CPU, 192 Mi request / 256 Mi limit) | 2 × default | 250m / 256 Mi, 10 Gi disk | 250m / 512 Mi each, limit 2 CPU / 2 Gi |
+| up to 50 people | 2 × (250m CPU, 192 Mi request / 512 Mi limit) | 2 × default | 250m / 256 Mi, 10 Gi disk | 250m / 512 Mi each, limit 2 CPU / 2 Gi |
 | 50-500 | 3 × (250m, 192 Mi / 512 Mi), HPA 3-10 | 2-4 | 500m / 1 Gi, 50 Gi, `max_connections` ≥ replicas × `server.database.maxConnections` + 20 | same; size the nodes for the sessions the organizations' plans allow |
 | 500+ | HPA 4-20, external managed PostgreSQL with backups and a replica | 3-6 | managed | dedicated nodes for sessions, a PriorityClass below your workloads (`cloudSessions.runner.priorityClassName`) |
 

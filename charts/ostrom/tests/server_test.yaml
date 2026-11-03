@@ -25,6 +25,13 @@ tests:
       - notExists: { path: data.OSTROM_SAML_POLIS_URL }
       - notExists: { path: data.OSTROM_SAML_POLIS_EXTERNAL_URL }
       - notExists: { path: data.OSTROM_CLOUD_MAX_CONCURRENT }
+  - it: the server asks for 250m and 192Mi and may use up to 512Mi (OOMKilled at 256Mi, e2e run 41628103773)
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[?(@.name == "server")].resources
+          value: { requests: { cpu: 250m, memory: 192Mi }, limits: { memory: 512Mi } }
   - it: no Polis or extraction key in the server's environment
     template: templates/server.yaml
     asserts:

@@ -62,10 +62,14 @@ server:
   # Measured in kind through the ingress (ostrom-e2e chart-load.yml, runs 41507938323, 41519346164 and 41530106515: reads,
   # writes, gates with their yes, the race of 100 yes; 0 restarts): about 50 req/s per replica peaks at 134-240m CPU
   # and 128-165 MiB (kubectl top, 15 s windows); at rest a few millicores and under 10 MiB. Requests cover that peak.
-  # The 256 MiB limit stays: memory under the race is the server's to fix (AUDIT-GATES-2), not the limit's to hide.
+  # The limit is 512 MiB: at 256 MiB both replicas were OOMKilled (exit 137, no probe event) in run 41628103773, once by
+  # the race of 100 simultaneous yes (pods at 151-168 MiB before it) and once by 200 open model streams (about 100 per
+  # replica). Measured there: 111-116 MiB at rest and about 2.4 MiB per open stream, so the gateway's default cap of 100
+  # open calls per replica (OSTROM_GATEWAY_MAX_OPEN_CALLS) needs about 355 MiB, and 512 leaves some 150 MiB for a burst.
+  # Why the race alone takes that much memory is still the server's to find (AUDIT-GATES-2).
   resources:
     requests: { cpu: 250m, memory: 192Mi }
-    limits: { memory: 256Mi }
+    limits: { memory: 512Mi }
   probes:
     startup: { path: /health, periodSeconds: 2, failureThreshold: 60 }
     liveness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
@@ -76,7 +80,7 @@ server:
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70       # of the 250m request: about 175m, below the measured load peak
-    # Of the 192Mi request: about 173 MiB, above the 128-165 MiB of the measured load peak, below the 256Mi limit.
+    # Of the 192Mi request: about 173 MiB, above the 128-165 MiB of the measured load peak, well below the 512Mi limit.
     targetMemoryUtilizationPercentage: 90
     # Scale up at once, scale down slowly: one pod a minute after 5 minutes of low load (requests stay spread).
     behavior:
