@@ -36,11 +36,30 @@ fresh install:
 The server itself is ready 2 s after its init containers. The drain of the same run: 85 samples of the Service, 84
 with one ready endpoint and 1 with two, never zero; the eviction of the last pod refused by the budget.
 
-Scaling is measured the same way (`ci/scale-drill.sh`, HPA 2-4, k6 in the namespace on the server's Service): a
-peak from 10 to 120 requests/s must make the HPA add replicas that become ready and serve, and a version rollout
-under 50 requests/s must lose no request (the server's shutdown delay drains each old pod) with no container
-restart. The CI's requests are below the defaults, so its HPA reacts sooner than yours: the drill proves the
-mechanism, not your threshold.
+Scaling is measured the same way (`ci/scale-drill.sh`, HPA 2-4, k6 in the namespace on the server's Service, one
+2-vCPU kind node shared with PostgreSQL and k6). There are two passes:
+- a peak ramps from 10 to 120 requests/s: the HPA must add replicas that become ready and serve, with no failed
+  request and no restart;
+- a version rollout runs under 50 requests/s: it must lose no request (the server's shutdown delay drains each old
+  pod), with no container restart.
+
+What the drill proves:
+- the mechanism: the HPA scales up, the new pods become ready and take traffic, and the probes and the rolling
+  update hold under load;
+- nothing more. The CI's requests are below the defaults, so its HPA reacts sooner than yours, and its threshold is
+  not yours.
+
+What it does not prove:
+- **300 requests/s is not held on this runner.** On the first run (41545347185), still with Kubernetes' 1 s probe
+  timeouts:
+  - 7 100 of 12 013 requests failed;
+  - the four replicas went into CrashLoopBackOff;
+  - the node itself was saturated.
+- No conclusion on real capacity follows from either figure. One node with 2 vCPU says nothing about a cluster
+  where replicas get their own CPU.
+- Two open leads may limit a replica under bursts, whatever the node. Neither is settled by this drill:
+  - RELAY: 200 open streams bring pods down, probably `pselect` and `FD_SETSIZE` 1024 in native Ktor;
+  - GATES: the Kotlin heap holds 54 to 118 MB after a burst.
 
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|
