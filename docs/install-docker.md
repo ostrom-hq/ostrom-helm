@@ -69,11 +69,13 @@ demo below runs them on the machine's own Docker.
 install:
 
 ```sh
-cd compose
-demo/demo.sh up        # the install's stack, plus the demo's services
-demo/demo.sh journey   # the customer's journey against it; report in demo-report.md
-demo/demo.sh down      # removes everything it created, cloud sessions included
+./demo up        # from the repository's root: checks the machine, takes main's images, the install's stack plus the demo's services
+./demo journey   # the customer's journey against it; report in compose/demo-report.md
+./demo down      # removes everything it created, cloud sessions included
 ```
+
+What it needs (Docker's memory, ports, the login to `ghcr.io`, a Mac with Apple silicon) and how to sign in:
+[compose/demo/README.md](../compose/demo/README.md).
 
 - **Mail**: the server writes its sign-in and invitation mails to a directory (`OSTROM_MAIL_DIR`). A relay hands them
   to [Mailpit](https://mailpit.axllent.org), whose inbox is at `http://mail.localhost`.
@@ -97,7 +99,7 @@ demo/demo.sh down      # removes everything it created, cloud sessions included
   renew; in the demo the fake GitHub answers in place of the providers' token endpoints, and the journey first shares
   « Claude Max 1 » with a refresh token TeamCode has since rotated, so the cutover has an account to revive.
 - **Billing, optional**: set `OSTROM_DEMO_STRIPE_KEY_FILE` to a file holding a Stripe **test** key (mode 600, outside
-  git) before `demo/demo.sh up`. The Stripe CLI forwards the test events to the server. Checkout opens Stripe's hosted
+  git) before `./demo up`. The Stripe CLI forwards the test events to the server. Checkout opens Stripe's hosted
   test page, where you pay with `4242 4242 4242 4242`.
 
 The socket proxy lets the server create containers on the machine: run the demo on your own computer only, never on

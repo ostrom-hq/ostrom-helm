@@ -26,6 +26,23 @@
   <img alt="Version: pre-1.0" src="https://img.shields.io/badge/version-pre--1.0-44393C">
 </p>
 
+## Try it on your computer, in one command
+
+Ostrom whole on a Mac (Apple silicon or Intel, Docker Desktop) or a Linux machine (Docker), with fake GitHub, mail
+and TeamCode services, so nothing real is involved:
+
+```sh
+git clone https://github.com/ostrom-hq/ostrom-helm.git && cd ostrom-helm
+./demo up         # checks the machine, takes main's images, starts everything, prints the addresses and sign-in
+./demo journey    # optional: plays the customer's journey against it (Node 22+), report in compose/demo-report.md
+./demo down       # removes everything it created
+```
+
+Before the first `./demo up`: Docker running with 4 GB of memory or more, ports 80, 443 and 3307 free, and, while the
+images are private packages, Docker logged in to `ghcr.io` as a member of `ostrom-hq` (with the GitHub CLI already
+allowed to read packages, `./demo up` logs in by itself; otherwise it prints the two commands). Then open
+<http://app.localhost>. Details, and what each check means: [compose/demo/README.md](compose/demo/README.md).
+
 ## What this is
 
 Everything to run Ostrom on your own infrastructure: the Helm chart `ostrom` for Kubernetes and a Docker Compose stack
