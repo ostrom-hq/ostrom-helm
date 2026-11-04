@@ -81,8 +81,10 @@ pull() {
 
 # The image's digest in its repository (what Compose then runs), and the commit it was built from when it says.
 digest_of() { docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" | grep -m1 "^${1%%[:@]*}@"; }
+# Only for Ostrom's published images: one built here may carry its base image's revision label.
 revision_of() {
-  r=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$1" 2> /dev/null || true)
+  r=
+  case "$1" in ghcr.io/*) r=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$1" 2> /dev/null || true) ;; esac
   case "$r" in
     '' | '<no value>') case "$1" in *@sha256:*) echo "sha256:$(echo "${1##*@sha256:}" | cut -c1-12)" ;; *) echo "$1" ;; esac ;;
     *) echo "commit $(echo "$r" | cut -c1-7)" ;;
