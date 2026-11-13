@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="https://github.com/ostrom-hq/ostrom-helm/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ostrom-hq/ostrom-helm/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-8E1B3A"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-8E1B3A"></a>
   <img alt="Version: pre-1.0" src="https://img.shields.io/badge/version-pre--1.0-44393C">
 </p>
 
@@ -97,12 +97,12 @@ install. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 | --- | --- | --- |
 | [ostrom-core](https://github.com/ostrom-hq/ostrom-core) | Shared Kotlin Multiplatform library: API contract, workflow model, signed receipts | Apache-2.0 |
 | [ostrom-cli](https://github.com/ostrom-hq/ostrom-cli) | The `ostrom` command line: runs coding agents under the team's rules | Apache-2.0 |
-| [ostrom-server](https://github.com/ostrom-hq/ostrom-server) | The server: gates, receipts, policies, the API | AGPL-3.0 + ee |
-| [ostrom-web](https://github.com/ostrom-hq/ostrom-web) | The web console | AGPL-3.0 + ee |
-| [ostrom-app](https://github.com/ostrom-hq/ostrom-app) | The iOS and Android app | AGPL-3.0 + ee |
+| [ostrom-server](https://github.com/ostrom-hq/ostrom-server) | The server: gates, receipts, policies, the API | Apache-2.0 + ee |
+| [ostrom-web](https://github.com/ostrom-hq/ostrom-web) | The web console | Apache-2.0 + ee |
+| [ostrom-app](https://github.com/ostrom-hq/ostrom-app) | The iOS and Android app | Apache-2.0 + ee |
 | [ostrom-e2e](https://github.com/ostrom-hq/ostrom-e2e) | Full-stack end-to-end and load tests | Apache-2.0 |
 | [ostrom-site](https://github.com/ostrom-hq/ostrom-site) | ostrom.run: website, documentation, blog | Apache-2.0 |
-| **ostrom-helm** (this one) | Helm chart and Docker Compose for self-hosting | AGPL-3.0 |
+| **ostrom-helm** (this one) | Helm chart and Docker Compose for self-hosting | Apache-2.0 |
 
 ## Contributing
 
@@ -112,4 +112,4 @@ go to [Discussions](https://github.com/ostrom-hq/ostrom-helm/discussions); help 
 
 ## License
 
-GNU Affero General Public License v3.0, see [LICENSE](LICENSE).
+Apache License 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE).

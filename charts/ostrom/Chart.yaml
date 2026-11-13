@@ -13,4 +13,4 @@ maintainers:
   - name: Ostrom
     url: https://ostrom.run
 annotations:
-  artifacthub.io/license: AGPL-3.0-only
+  artifacthub.io/license: Apache-2.0

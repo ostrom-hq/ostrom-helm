@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # The local demo stack (docker-compose.demo.yml): Ostrom whole on this machine, no real outside service.
 # Usage: demo/demo.sh up | journey | down | logs
 #   up       fresh secrets in .env (install.sh), then the stack; Stripe's test mode too when OSTROM_DEMO_STRIPE_KEY_FILE

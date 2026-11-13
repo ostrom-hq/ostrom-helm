@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 // Local demo only: hands the server's sign-in and invitation mails to Mailpit, so they can be read in its inbox
 // (http://mail.localhost). The server writes each mail as a file in OSTROM_MAIL_DIR (`To: …`, `Subject: …`, a blank
 // line, the text: DirectoryMailSender); this relay sends each new file once through Mailpit's API (POST

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # The pods the chart renders hold the Pod Security Standard `restricted` and the chart's own rules
 # (ci/policies/restricted.yaml: read-only root, requests and a memory limit, no moving tag, no Kubernetes token),
 # on every value set given. Blocking: one failure fails the run (AUDIT-SECU-HELM-2 M6).

@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # Local demo only: the read-only user `ostrom import teamcode` connects as (SELECT on the TeamCode tables, nothing else),
 # its password from the environment (TEAMCODE_RO_PASSWORD, in the demo's Compose file).
 set -eu

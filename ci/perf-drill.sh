@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # The chart's performance drill on kind, with the real server (image built from ostrom-server main, loaded as
 # $SERVER_IMAGE), two server replicas and the built-in PostgreSQL:
 #   1. startup: for PostgreSQL and each server pod, the seconds from the pod's creation to scheduled, initialized

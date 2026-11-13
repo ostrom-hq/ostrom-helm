@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 // Local demo only: the body `ostrom import teamcode` posts (contract `TeamCodeImportRequest`), built from the fake
 // TeamCode base the way the CLI builds it (ostrom-cli `TeamCodePlan`): secrets opened with TeamCode's key, sent once
 // in the body, never printed. TeamCode's MCP servers are remote, so only the HTTP shape is built here; a stdio variant

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # Plays docs/secret-rotation.md on kind with the page's own commands: rotates the four PostgreSQL passwords
 # (role first, then the Secret, then the restart) and the instance signing key. It then checks that the chart's
 # tests pass with the new passwords, the old serving-role password is refused, and the next `helm upgrade` keeps
