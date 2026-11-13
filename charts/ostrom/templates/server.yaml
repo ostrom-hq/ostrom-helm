@@ -4,9 +4,6 @@
 {{- /* The token is mounted only when the server drives cloud sessions through the Kubernetes API: said on the
 ServiceAccount and on the pod, from this one value. */ -}}
 {{- $token := .Values.cloudSessions.enabled -}}
-{{- if and .Values.cloudSessions.enabled (or (gt (int $s.replicas) 1) $s.autoscaling.enabled) }}
-{{- fail "cloudSessions.enabled needs exactly one server replica (server.replicas: 1, no autoscaling): the terminal relay lives in memory" }}
-{{- end }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -156,6 +153,14 @@ spec:
                 secretKeyRef: {{- include "ostrom.database.passwordRef" . | nindent 18 }}
             - name: OSTROM_POD_NAME
               valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            {{- if .Values.cloudSessions.enabled }}
+            # Where the other replicas reach this one: a member attached there is relayed to the terminal of a
+            # runner connected here (ostrom-server TC-REP-1).
+            - name: OSTROM_POD_IP
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            - name: OSTROM_RUNNERS_REPLICA_URL
+              value: "http://$(OSTROM_POD_IP):{{ $s.port }}"
+            {{- end }}
             # One key for every replica, kept across upgrades (SECURITY-AUDIT S2-11): never a per-pod key file.
             - name: OSTROM_SECRETS_KEY
               valueFrom:

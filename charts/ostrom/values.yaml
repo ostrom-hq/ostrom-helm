@@ -319,7 +319,8 @@ polis:
 # --- Cloud sessions: agent runs in pods of this namespace ----------------------------------------------------------
 cloudSessions:
   # Off by default: a session runs code chosen by its user. Turn it on only on a cluster where that is acceptable
-  # (dedicated nodes, or a sandboxed runtime). The server then needs exactly one replica (terminal relay in memory).
+  # (dedicated nodes, or a sandboxed runtime). Any number of server replicas: a member attached to one is relayed to
+  # the replica holding the session's runner, at its pod address (needs ostrom-server with TC-REP-1).
   enabled: false
   runner:
     image:
