@@ -174,7 +174,7 @@ external database" in [install-kubernetes.md](install-kubernetes.md).
 - **HPA**, `autoscaling.enabled` (needs metrics-server). The Deployment then has no `replicas`, so an upgrade never resets
   the HPA's count. The server's `autoscaling.behavior` scales up at once and down by one pod a minute, after 5 minutes
   of low load; any [HPA `behavior`](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#configurable-scaling-behavior)
-  goes there, for web and site too. Cloud sessions need exactly one server replica and no HPA (the chart refuses otherwise).
+  goes there, for web and site too. Cloud sessions work with any number of server replicas (see below).
 ## Dashboards and alerts
 
 The server sends its metrics, traces and logs over OTLP (`observability.otel`). Point it at your OpenTelemetry
@@ -203,7 +203,9 @@ neither the dashboard nor the alerts use them.
 Off by default (`cloudSessions.enabled: false`): a session runs code its user chose, in a pod of your cluster.
 Turn them on only where that is acceptable (dedicated nodes, a sandboxed runtime). With them on:
 
-- the server needs exactly one replica (the chart refuses more): the terminal relay lives in memory;
+- the server may run several replicas, with the HPA too. Each replica is told its pod address
+  (`OSTROM_RUNNERS_REPLICA_URL`, from `status.podIP`). A member attached to one replica is relayed to the replica that
+  holds the session's runner, and the NetworkPolicy opens the server port between server pods for that;
 - the server's ServiceAccount gets a **Role** in the release namespace (pods, their logs, per-session Secrets and
   PVCs, the sessions' NetworkPolicies); nothing cluster-wide;
 - session pods (labels `app.kubernetes.io/managed-by: ostrom`, `ostrom.run/session`) reach DNS, the server and the

@@ -49,6 +49,8 @@ spec:
         {{- if eq $c "server" }}
         {{- if $.Values.cloudSessions.enabled }}
         - {{- include "ostrom.np.sessions" $ | nindent 10 }}
+        # The other server replicas, relaying their members to the terminal of a runner connected here.
+        - {{- include "ostrom.np.peer" (dict "root" $ "component" "server") | nindent 10 }}
         {{- end }}
         - {{- include "ostrom.np.peer" (dict "root" $ "component" "web") | nindent 10 }}
         {{- end }}
@@ -78,6 +80,12 @@ spec:
     - to:
         - {{- include "ostrom.np.peer" (dict "root" . "component" "polis") | nindent 10 }}
       ports: [{ protocol: TCP, port: {{ .Values.polis.port }} }]
+    {{- end }}
+    {{- if .Values.cloudSessions.enabled }}
+    # The other server replicas: a terminal whose runner is connected to another one.
+    - to:
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "server") | nindent 10 }}
+      ports: [{ protocol: TCP, port: {{ .Values.server.port }} }]
     {{- end }}
     {{- with $np.kubeApi.cidrs }}
     - to:

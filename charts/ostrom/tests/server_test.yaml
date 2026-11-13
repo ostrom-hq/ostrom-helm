@@ -64,11 +64,25 @@ tests:
       - equal: { path: data.OSTROM_RUNNERS_KUBERNETES_PRIORITY_CLASS, value: low }
       - equal: { path: data.OSTROM_RUNNERS_WORKSPACE_SIZE, value: 10Gi }
       - equal: { path: data.OSTROM_RUNNERS_KUBERNETES_SERVER_SELECTOR, value: "app.kubernetes.io/name=ostrom,app.kubernetes.io/instance=o,app.kubernetes.io/component=server" }
-  - it: cloud sessions refuse more than one server replica
+  - it: cloud sessions run on several server replicas, each told its pod address
     template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
     set: { cloudSessions.enabled: true, server.replicas: 2 }
     asserts:
-      - failedTemplate: { errorMessage: "cloudSessions.enabled needs exactly one server replica (server.replicas: 1, no autoscaling): the terminal relay lives in memory" }
+      - equal: { path: spec.replicas, value: 2 }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: OSTROM_POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: OSTROM_RUNNERS_REPLICA_URL, value: "http://$(OSTROM_POD_IP):8080" }
+  - it: without cloud sessions the server is told no replica address
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: { name: OSTROM_POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
   - it: OTel settings land in the ConfigMap when set
     template: templates/server-config.yaml
     set:
