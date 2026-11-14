@@ -75,6 +75,16 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # The JVM takes seconds to listen and the jib image has no HEALTHCHECK: without this one, `up --wait` calls the
+    # server healthy as soon as it runs, before it answers. Liveness only (/health), through bash's /dev/tcp: the image
+    # has neither curl nor wget.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"ok\"' <&3"]
+      start_period: 120s
+      start_interval: 1s
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   web:
     <<: *restart
