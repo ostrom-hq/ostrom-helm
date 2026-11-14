@@ -5,12 +5,14 @@
 #   - the session runs as three containers, the agent host and the check host (UID 1001) and the runner (UID 1000),
 #     TeamCode's image contract since ostrom-server#494, on ostrom-sessions only (the check host runs the hooks'
 #     checks, `isolated_runner`, ostrom-server#130);
-#   - the agent's container does not mount the check socket's volume, so it cannot ask a check of its own;
+#   - the agent's container does not mount the check socket's volume, so it cannot ask a check of its own (the
+#     `-bin` volume of the delivered `ostrom` binary, read-only in all three by design, is not a socket: left out);
 #   - from the agent's container, the server answers; the database and the Docker engine proxy do not resolve; this
 #     machine's published ports and the internet do not answer.
 set -eu
 hex=$(printf %s "$SESSION_ID" | tr -d '-')
-ids=$(docker ps -q --filter "label=ostrom.run/session=$hex")
+# The delivery container (`…-bin`) copies the `ostrom` binary into its volume and exits: not one of the three.
+ids=$(docker ps --filter "label=ostrom.run/session=$hex" --format '{{.ID}} {{.Names}}' | grep -v -- '-bin$' | cut -d' ' -f1)
 count=$(printf '%s\n' "$ids" | grep -c . || true)
 [ "$count" = 3 ] || { echo "expected 3 containers for the session (agent, check host, runner), found $count"; exit 1; }
 for id in $ids; do
@@ -27,11 +29,16 @@ checks=$(docker ps -q --filter "label=ostrom.run/session=$hex" --filter "name=-c
 runner=$(printf '%s\n' "$ids" | grep -vx -e "$agent" -e "$checks")
 # The user the engine started the runner as (its image need not have `id`).
 [ "$(docker inspect -f '{{.Config.User}}' "$runner" | cut -d: -f1)" = 1000 ] || { echo "the runner does not run as 1000"; exit 1; }
-volumes() { docker inspect -f '{{range .Mounts}}{{if .Name}}{{.Name}}{{"\n"}}{{end}}{{end}}' "$1" | sort -u; }
+volumes() { docker inspect -f '{{range .Mounts}}{{if .Name}}{{.Name}}{{"\n"}}{{end}}{{end}}' "$1" | grep -v -- '-bin$' | sort -u; }
 shared=$(volumes "$checks" | while read -r v; do volumes "$runner" | grep -qx "$v" && echo "$v"; done)
 [ -n "$shared" ] || { echo "the check host and the runner share no volume: no check socket found"; exit 1; }
 for v in $shared; do
   if volumes "$agent" | grep -qx "$v"; then echo "the agent mounts the check socket ($v)"; exit 1; fi
+done
+# The delivered binary's volume, when there is one (ostrom-server#557), is read-only in each of the three.
+for id in $ids; do
+  rw=$(docker inspect -f '{{range .Mounts}}{{if .RW}}{{.Name}}{{"\n"}}{{end}}{{end}}' "$id" | grep -- '-bin$' || true)
+  [ -z "$rw" ] || { echo "container $id mounts the delivered binary read-write ($rw)"; exit 1; }
 done
 docker exec "$agent" sh -c 'curl -fsS -m 5 http://server:8080/health' | grep -q '"status":"ok"' || { echo "the agent cannot reach the server"; exit 1; }
 for host in postgres docker-api; do
