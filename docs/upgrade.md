@@ -37,6 +37,20 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
 `/ready`; set `server.trustedProxies` to your ingress pods' and nodes' CIDRs. An external database: play the SQL of
 [values.md](values.md#database-roles) as its administrator first.
 
+### 0.3.2 → next: settings in the console
+
+Needs a server image with the settings in the console (ostrom-server#438 and the slices after it, up to #499).
+- **What moves:** what an administrator decides is set in the console (Admin) and stored in PostgreSQL. The server
+  imports each former variable once at its first start, into an empty section, with a deprecation warning, then
+  ignores it ([values.md](values.md)). After that start, check Admin and remove the former variables from
+  `server.config`, `server.secretEnv` and your `server.existingSecret`.
+- **`cloudSessions.allowedOrgs` is gone:** a values file that still sets it is refused. The list is the console's
+  `cloud-access` section. To carry yours over, set `OSTROM_RUNNERS_ALLOWED_ORGS` in `server.config` for this one
+  upgrade (ids separated by commas, or `*`): the server imports it, and you remove it afterwards. Without it, cloud
+  sessions stay closed to every organization until an administrator lists them. <!-- docs-truth: ignore (value removed) -->
+- **Not in the console yet:** the other `cloudSessions.*` values (driver, server URL, runner image, Kubernetes
+  settings) stay until sessions choose a profile and a cluster.
+
 ### 0.3.1 → 0.3.2
 
 - The MCP stdio host is deployed by default (`mcp.enabled: true`): a Deployment, Service, ServiceAccount and
@@ -63,7 +77,7 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
   Job takes the write off every other role and keeps their read, and `helm test` checks it. An external database:
   play the end of the block in [values.md](values.md#database-roles) once (a server with ostrom-server#144 also does
   it at every `migrate`).
-- `cloudSessions.allowedOrgs` (S2-10): with sessions on, list the organizations they are open to; empty refuses all.
+- `cloudSessions.allowedOrgs` (S2-10): with sessions on, list the organizations they are open to; empty refuses all (moved to the console since, see above). <!-- docs-truth: ignore (value removed) -->
 - The `pre-upgrade` roles Job also creates `ostrom_member_search` (owner of the member search's function, ostrom-server
   orgs migration 7) and gives the owner ADMIN on it, as for `ostrom_router`: needed before a server with that migration.
 - The console's host serves `/api/v1` from the server (one origin for the browser). A pre-upgrade Job adds the

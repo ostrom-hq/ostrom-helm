@@ -101,17 +101,10 @@ data:
   {{- end }}
   # The server pods' labels, for the sessions' NetworkPolicy (the only internal address a session may reach).
   OSTROM_RUNNERS_KUBERNETES_SERVER_SELECTOR: {{ printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s,app.kubernetes.io/component=server" (include "ostrom.name" .) .Release.Name | quote }}
-  # Audit S2-10: the organizations sessions are open to. Empty = none (every organization gets 403), "*" = all.
-  {{- $orgs := .Values.cloudSessions.allowedOrgs | default list }}
-  {{- range $o := $orgs }}
-  {{- if not (or (eq (toString $o) "*") (regexMatch "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" (toString $o))) }}
-  {{- fail (printf "cloudSessions.allowedOrgs lists organization ids (UUID) or \"*\", not %v" $o) }}
+  # Audit S2-10: the organizations sessions are open to are set in the console (Admin, `cloud-access`), not here.
+  {{- if hasKey .Values.cloudSessions "allowedOrgs" }}
+  {{- fail "cloudSessions.allowedOrgs moved to the console (Admin, cloud-access section): remove it from your values (docs/upgrade.md)" }}
   {{- end }}
-  {{- end }}
-  {{- if and (has "*" $orgs) (gt (len $orgs) 1) }}
-  {{- fail "cloudSessions.allowedOrgs: \"*\" stands alone" }}
-  {{- end }}
-  OSTROM_RUNNERS_ALLOWED_ORGS: {{ join "," $orgs | quote }}
   {{- if .Values.cloudSessions.rbac.tokenReview }}
   # The runner proves its pod with a projected ServiceAccount token, reviewed by TokenReview (rbac.tokenReview).
   OSTROM_RUNNERS_KUBERNETES_POD_IDENTITY: "true"

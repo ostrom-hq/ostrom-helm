@@ -26,8 +26,8 @@ then recreates the containers whose settings changed.
 | Secrets key | `<release>-secrets-key`, key `secrets-key` | **not supported**: compromise only | none: stored org secrets must be entered again |
 | PostgreSQL passwords | `<release>-postgresql` | `ALTER ROLE`, then the Secret | short: one restart |
 | External database passwords | `<release>-external-db` or `externalDatabase.existingSecret` | at your provider, then the Secret | as your provider allows |
-| Stripe webhook secret | `OSTROM_STRIPE_WEBHOOK_SECRET` | supported | two values, comma-separated |
-| Provider and OAuth keys | `server.secretEnv` or `server.existingSecret` | new key, restart, revoke the old one | while both are valid at the provider |
+| Stripe webhook secret | the console (Admin, `stripe`) | supported | two values, comma-separated |
+| Provider and OAuth keys, mail, license | the console (Admin) | new key, save, revoke the old one | while both are valid at the provider |
 | Telemetry headers, Langfuse keys | `observability.*` (or their `existingSecret`) | same as provider keys | same |
 
 ## Instance signing key
@@ -116,19 +116,22 @@ Providers that keep two valid passwords per user (or two users) let you rotate w
 The server accepts two webhook secrets, comma-separated, during a rotation:
 
 1. In Stripe, roll the endpoint's signing secret, keeping the old one valid for a while.
-2. Set `OSTROM_STRIPE_WEBHOOK_SECRET=whsec_new,whsec_old` in your Secret and restart the server.
-3. When the old one expires at Stripe, set `whsec_new` alone and restart again.
+2. In the console (Admin, `stripe`), save `whsec_new,whsec_old` as the webhook secret. Every replica reads it within
+   30 seconds, without a restart.
+3. When the old one expires at Stripe, save `whsec_new` alone.
 
-`OSTROM_STRIPE_SECRET_KEY`: create a new restricted key in Stripe, set it, restart, then delete the old key.
+The secret key: create a new restricted key in Stripe, save it in the same section, then delete the old key.
 
 ## Provider keys, OAuth clients, mail, telemetry
 
-Ostrom reads one value for each of these: `OSTROM_GITHUB_CLIENT_SECRET`, `OSTROM_GOOGLE_CLIENT_SECRET`,
-`OSTROM_RESEND_API_KEY`, `OSTROM_GATEWAY_*_API_KEY`, `OTEL_EXPORTER_OTLP_HEADERS`, `OSTROM_LANGFUSE_*`. Their
-overlap is the provider's. Create the new credential there while the old one is still valid, set it in the
-Secret (`server.existingSecret`, or the `existingSecret` of `observability.*`), restart the server, check it
-works, then revoke the old one. With `server.secretEnv` instead, run `helm upgrade`: the pod checksum covers it,
-and the server restarts by itself.
+Each of these has one value, so the overlap is the provider's: create the new credential there while the old one
+is still valid, set it, check it works, then revoke the old one. Where you set it depends on the credential:
+- **In the console (Admin):** the OAuth clients (Google, GitHub), the GitHub App's key and webhook secret, Resend's
+  key, the gateway's provider keys and the license. Save the new value in its section; every replica reads it within
+  30 seconds, without a restart.
+- **In the chart:** telemetry (`OTEL_EXPORTER_OTLP_HEADERS`, `OSTROM_LANGFUSE_*`). Set it in the `existingSecret` of
+  `observability.*` and restart the server. With the values instead, run `helm upgrade`: the pod checksum covers it,
+  and the server restarts by itself.
 
 The PostHog project key is public (the console sends it too): rotating it is a PostHog project setting, not a
 secret operation.
