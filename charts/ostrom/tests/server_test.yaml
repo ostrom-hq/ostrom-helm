@@ -76,6 +76,16 @@ tests:
     set: { cloudSessions: { enabled: true, allowedOrgs: ["*"] }, server.replicas: 1 }
     asserts:
       - failedTemplate: { errorMessage: "cloudSessions.allowedOrgs moved to the console (Admin, cloud-access section): remove it from your values (docs/upgrade.md)" }
+  - it: refuses the former list with cloud sessions off too
+    template: templates/server.yaml
+    set: { cloudSessions: { allowedOrgs: [0192f6a1-7c3e-7d4a-9b2f-1a2b3c4d5e6f] } }
+    asserts:
+      - failedTemplate: { errorMessage: "cloudSessions.allowedOrgs moved to the console (Admin, cloud-access section): remove it from your values (docs/upgrade.md)" }
+  - it: lets the former default, an empty list, through
+    template: templates/server-config.yaml
+    set: { cloudSessions: { enabled: true, allowedOrgs: [] }, server.replicas: 1 }
+    asserts:
+      - notExists: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS }
   - it: cloud sessions use the Kubernetes driver in the release namespace
     template: templates/server-config.yaml
     set: { cloudSessions.enabled: true, server.replicas: 1, global.imagePullSecrets: [ghcr], cloudSessions.runner.priorityClassName: low }

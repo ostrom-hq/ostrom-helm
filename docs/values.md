@@ -85,7 +85,8 @@ Only what the server needs to start is in the chart. Everything an administrator
 
 The server documents each section, and the variable it replaces, in `ostrom-server/docs/MODULES.md` ("Settings in the
 console"). A former variable left in `server.config` or `server.secretEnv` is imported once, into an empty section,
-with a deprecation warning, then ignored: remove it after the first start. Any other key of the server still goes
+with a deprecation warning, then ignored: remove it after the first start. A server image from before these settings
+(ostrom-server#438) still reads the former variables: keep them until you run a newer one ([upgrade.md](upgrade.md)). Any other key of the server still goes
 through `server.config` (plain) or `server.existingSecret` / `server.secretEnv` (secret), whose keys are environment
 variable names.
 

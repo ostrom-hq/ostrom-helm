@@ -26,7 +26,7 @@ then recreates the containers whose settings changed.
 | Secrets key | `<release>-secrets-key`, key `secrets-key` | **not supported**: compromise only | none: stored org secrets must be entered again |
 | PostgreSQL passwords | `<release>-postgresql` | `ALTER ROLE`, then the Secret | short: one restart |
 | External database passwords | `<release>-external-db` or `externalDatabase.existingSecret` | at your provider, then the Secret | as your provider allows |
-| Stripe webhook secret | the console (Admin, `stripe`) | supported | two values, comma-separated |
+| Stripe webhook secret | the console (Admin, `stripe`), with a server that has the console's settings ([upgrade.md](upgrade.md)) | supported | two values, comma-separated |
 | Provider and OAuth keys, mail, license | the console (Admin) | new key, save, revoke the old one | while both are valid at the provider |
 | Telemetry headers, Langfuse keys | `observability.*` (or their `existingSecret`) | same as provider keys | same |
 

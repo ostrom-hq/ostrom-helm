@@ -101,14 +101,15 @@ data:
   {{- end }}
   # The server pods' labels, for the sessions' NetworkPolicy (the only internal address a session may reach).
   OSTROM_RUNNERS_KUBERNETES_SERVER_SELECTOR: {{ printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s,app.kubernetes.io/component=server" (include "ostrom.name" .) .Release.Name | quote }}
-  # Audit S2-10: the organizations sessions are open to are set in the console (Admin, `cloud-access`), not here.
-  {{- if hasKey .Values.cloudSessions "allowedOrgs" }}
-  {{- fail "cloudSessions.allowedOrgs moved to the console (Admin, cloud-access section): remove it from your values (docs/upgrade.md)" }}
-  {{- end }}
   {{- if .Values.cloudSessions.rbac.tokenReview }}
   # The runner proves its pod with a projected ServiceAccount token, reviewed by TokenReview (rbac.tokenReview).
   OSTROM_RUNNERS_KUBERNETES_POD_IDENTITY: "true"
   {{- end }}
+  {{- end }}
+  {{- /* Audit S2-10: the organizations sessions are open to are set in the console (Admin, cloud-access), not here.
+  A former list is refused whether sessions are on or off; an empty one, the former default, is let through. */}}
+  {{- if .Values.cloudSessions.allowedOrgs }}
+  {{- fail "cloudSessions.allowedOrgs moved to the console (Admin, cloud-access section): remove it from your values (docs/upgrade.md)" }}
   {{- end }}
   {{- range $k, $v := $s.config }}
   {{ $k }}: {{ $v | toString | quote }}

@@ -44,10 +44,13 @@ Needs a server image with the settings in the console (ostrom-server#438 and the
   imports each former variable once at its first start, into an empty section, with a deprecation warning, then
   ignores it ([values.md](values.md)). After that start, check Admin and remove the former variables from
   `server.config`, `server.secretEnv` and your `server.existingSecret`.
-- **`cloudSessions.allowedOrgs` is gone:** a values file that still sets it is refused. The list is the console's
+- **`cloudSessions.allowedOrgs` is gone:** a values file that still lists organizations in it is refused (an empty
+  list, the former default, is let through). The list is the console's
   `cloud-access` section. To carry yours over, set `OSTROM_RUNNERS_ALLOWED_ORGS` in `server.config` for this one
   upgrade (ids separated by commas, or `*`): the server imports it, and you remove it afterwards. Without it, cloud
-  sessions stay closed to every organization until an administrator lists them. <!-- docs-truth: ignore (value removed) -->
+  sessions stay closed to every organization until an administrator lists them. The import happens only while the
+  section is empty, and a value the console would refuse (`*` mixed with ids, a word that is not an id) is not
+  imported. Check Admin, `cloud-access`, after the start either way. <!-- docs-truth: ignore (value removed) -->
 - **Not in the console yet:** the other `cloudSessions.*` values (driver, server URL, runner image, Kubernetes
   settings) stay until sessions choose a profile and a cluster.
 
