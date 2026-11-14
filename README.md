@@ -82,7 +82,7 @@ Ostrom is before its first public release.
 | Part | Status |
 | --- | --- |
 | Helm chart and Compose stack, tested on every pull request | Available |
-| Signed images and OCI chart on `ghcr.io/ostrom-hq` | Private to the organization until the launch |
+| Signed images on `docker.io/ostromhq` and OCI chart on `registry-1.docker.io/ostromhq` | Private to the organization until the launch |
 | Public chart repository and release notes | At the launch |
 
 ## Tests

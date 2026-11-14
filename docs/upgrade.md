@@ -6,8 +6,8 @@ a release that adds database migrations says so.
 ## Kubernetes
 
 ```sh
-helm diff upgrade ostrom oci://ghcr.io/ostrom-hq/charts/ostrom --version <new> -n ostrom -f values-mine.yaml   # optional, helm-diff plugin
-helm upgrade ostrom oci://ghcr.io/ostrom-hq/charts/ostrom --version <new> -n ostrom -f values-mine.yaml --atomic --timeout 10m
+helm diff upgrade ostrom oci://registry-1.docker.io/ostromhq/ostrom --version <new> -n ostrom -f values-mine.yaml   # optional, helm-diff plugin
+helm upgrade ostrom oci://registry-1.docker.io/ostromhq/ostrom --version <new> -n ostrom -f values-mine.yaml --atomic --timeout 10m
 helm test ostrom -n ostrom
 ```
 
@@ -79,6 +79,6 @@ An install without data only needs step 2. With an external database, create the
 ```sh
 cd compose
 # by digest: OSTROM_SERVER_IMAGE and OSTROM_WEB_IMAGE (docker-compose.yml pins a signed build of main by default)
-sed -i.bak 's|^OSTROM_SERVER_IMAGE=.*|OSTROM_SERVER_IMAGE=ghcr.io/ostrom-hq/ostrom-server@sha256:<new>|' .env
+sed -i.bak 's|^OSTROM_SERVER_IMAGE=.*|OSTROM_SERVER_IMAGE=docker.io/ostromhq/ostrom-server@sha256:<new>|' .env
 docker compose pull && docker compose up -d --wait
 ```

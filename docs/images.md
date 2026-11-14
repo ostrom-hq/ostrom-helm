@@ -2,10 +2,10 @@
 
 | Image | What | Base |
 |---|---|---|
-| `ghcr.io/ostrom-hq/ostrom-server` | the native server binary | `gcr.io/distroless/cc-debian12:nonroot` |
-| `ghcr.io/ostrom-hq/ostrom-web` | the console (static files + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
-| `ghcr.io/ostrom-hq/ostrom-site` | the site (Next.js static export + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
-| `ghcr.io/ostrom-hq/ostrom-runner` | cloud sessions: the `ostrom` CLI, Claude Code, Codex, git | `debian:12-slim` |
+| `docker.io/ostromhq/ostrom-server` | the native server binary | `gcr.io/distroless/cc-debian12:nonroot` |
+| `docker.io/ostromhq/ostrom-web` | the console (static files + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
+| `docker.io/ostromhq/ostrom-site` | the site (Next.js static export + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
+| `docker.io/ostromhq/ostrom-runner` | cloud sessions: the `ostrom` CLI, Claude Code, Codex, git | `debian:12-slim` |
 
 All are built for `linux/amd64` and `linux/arm64`, tagged `<version>`, `<major>.<minor>` and `latest` on a release
 (`edge` from `main`), carry an SPDX SBOM and SLSA provenance as attestations, and are **signed with cosign** by
@@ -21,11 +21,11 @@ G+IBNKubzv51TIua776a3875eoe5isQYKYmVwe5yTUU0v2k8Pu7WXQWoBg==
 Verify before deploying:
 
 ```sh
-cosign verify --key cosign.pub --insecure-ignore-tlog ghcr.io/ostrom-hq/ostrom-server:0.1.0
-docker buildx imagetools inspect ghcr.io/ostrom-hq/ostrom-server:0.1.0 --format '{{ json .SBOM }}' | head
+cosign verify --key cosign.pub --insecure-ignore-tlog docker.io/ostromhq/ostrom-server:0.1.0
+docker buildx imagetools inspect docker.io/ostromhq/ostrom-server:0.1.0 --format '{{ json .SBOM }}' | head
 ```
 
-The chart is published as an OCI artifact, `oci://ghcr.io/ostrom-hq/charts/ostrom`, signed the same way.
+The chart is published as an OCI artifact, `oci://registry-1.docker.io/ostromhq/ostrom`, signed the same way.
 
 ## Third-party images
 

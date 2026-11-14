@@ -55,7 +55,7 @@ The full list of server keys is in [values.md](values.md#server-environment).
 
 No release tag exists yet: `docker-compose.yml` pins the server and the console by digest, to a signed multi-arch build
 of `main`. To run another build, set `OSTROM_SERVER_IMAGE` and `OSTROM_WEB_IMAGE` in `.env` (by digest, e.g.
-`ghcr.io/ostrom-hq/ostrom-server@sha256:…`), then `docker compose pull && docker compose up -d`. To build the server
+`docker.io/ostromhq/ostrom-server@sha256:…`), then `docker compose pull && docker compose up -d`. To build the server
 yourself instead, in a clone of `ostrom-server`: `ci/build-linux.sh` (it leaves the native binary in
 `dist/ostrom-server`), then `docker build -t ostrom-server:local .`, and `OSTROM_SERVER_IMAGE=ostrom-server:local`. See [upgrade.md](upgrade.md).
 
@@ -84,7 +84,7 @@ demo/demo.sh down      # removes everything it created, cloud sessions included
   through a socket proxy, on a network only the server joins. Each session's three containers, the agent host, the
   check host (it runs the hooks' checks, out of the agent's reach) and the runner, join the `ostrom-sessions` network, which is internal. There they reach the server and nothing else: not
   the database, not the engine, not this machine's published ports, not the internet. The session image is `OSTROM_RUNNER_IMAGE` (default
-  `ghcr.io/ostrom-hq/ostrom-runner:latest`).
+  `docker.io/ostromhq/ostrom-runner:latest`).
 - **TeamCode import**: a fake TeamCode team sits in MySQL, in TeamCode's own tables and data shapes
   (`demo/teamcode`). It has three members (`alice`, `rev`, `dev-2`), four remote MCP servers, two tool allowlists and
   three Claude accounts, and its secrets are sealed with the fake key `demo/teamcode/key.txt`. Import it with the CLI, which needs the `mysql` client:

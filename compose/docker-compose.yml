@@ -36,7 +36,7 @@ services:
 
   # Migrations, once per `up`, with the owner's credentials: the server never receives them.
   migrate:
-    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server@sha256:8530b6b141651abd28f4301afe1aa34ef41e1a01e2d36c6b9864a5c07128ea62}
+    image: ${OSTROM_SERVER_IMAGE:-docker.io/ostromhq/ostrom-server@sha256:73d55242d706ed67d5a8cc87776f640b3498749d734d487a76c9762fa74445b5}
     # The image's ENTRYPOINT is the binary: `command` gives only its arguments (Kubernetes' `command` replaces the
     # ENTRYPOINT instead, which is why the chart names the binary).
     command: ["migrate"]
@@ -53,7 +53,7 @@ services:
 
   server:
     <<: *restart
-    image: ${OSTROM_SERVER_IMAGE:-ghcr.io/ostrom-hq/ostrom-server@sha256:8530b6b141651abd28f4301afe1aa34ef41e1a01e2d36c6b9864a5c07128ea62}
+    image: ${OSTROM_SERVER_IMAGE:-docker.io/ostromhq/ostrom-server@sha256:73d55242d706ed67d5a8cc87776f640b3498749d734d487a76c9762fa74445b5}
     depends_on:
       migrate: { condition: service_completed_successfully }
     environment:
