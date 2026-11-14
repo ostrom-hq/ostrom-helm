@@ -51,8 +51,15 @@ Needs a server image with the settings in the console (ostrom-server#438 and the
   sessions stay closed to every organization until an administrator lists them. The import happens only while the
   section is empty, and a value the console would refuse (`*` mixed with ids, a word that is not an id) is not
   imported. Check Admin, `cloud-access`, after the start either way. <!-- docs-truth: ignore (value removed) -->
-- **Not in the console yet:** the other `cloudSessions.*` values (driver, server URL, runner image, Kubernetes
-  settings) stay until sessions choose a profile and a cluster.
+- **Cloud sessions run on the console's clusters and profiles** (ostrom-server#535). At its first start, the server
+  imports this release's cluster as `imported`, using the pod's own service account, so the chart's RBAC on the
+  release namespace stays. It also imports a profile for the sessions that existed before the upgrade.
+  - **Kept for the import, deprecated:** `OSTROM_RUNNERS_KUBERNETES_NAMESPACE`, `_STORAGE_CLASS`,
+    `_IMAGE_PULL_SECRET` and `OSTROM_RUNNERS_WORKSPACE_SIZE` (from `cloudSessions.runner.workspaceSize`,
+    `.storageClass` and `global.imagePullSecrets`). The server warns about them at each start, and the next chart
+    release drops them. Change them in the console afterwards.
+  - **Still read:** `OSTROM_RUNNERS_DRIVER` (`kubernetes` selects the console's clusters), `OSTROM_RUNNERS_SERVER_URL`,
+    `OSTROM_RUNNERS_IMAGE`, `OSTROM_RUNNERS_KUBERNETES_SERVER_SELECTOR` and `_PRIORITY_CLASS`.
 
 ### 0.3.1 → 0.3.2
 

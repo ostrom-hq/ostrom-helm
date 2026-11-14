@@ -90,6 +90,9 @@ data:
   OSTROM_RUNNERS_DRIVER: kubernetes
   OSTROM_RUNNERS_SERVER_URL: {{ printf "http://%s-server.%s.svc:%v" $full .Release.Namespace $s.port | quote }}
   OSTROM_RUNNERS_IMAGE: {{ include "ostrom.image" (dict "root" . "image" $r.image "name" "ostrom-runner") | quote }}
+  # Deprecated (ostrom-server#535): read once, at the first start of a server that has the console's clusters, to
+  # import this release's cluster and profile (namespace, storage class, workspace size, pull secret), then only
+  # warned about. Kept for that import during this release; the next one drops them.
   OSTROM_RUNNERS_WORKSPACE_SIZE: {{ $r.workspaceSize | quote }}
   OSTROM_RUNNERS_KUBERNETES_NAMESPACE: {{ .Release.Namespace | quote }}
   OSTROM_RUNNERS_KUBERNETES_STORAGE_CLASS: {{ $r.storageClass | quote }}
