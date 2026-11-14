@@ -41,7 +41,7 @@ tests:
       - notMatchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: '\$\$' }
         documentIndex: 2
       # AUDIT-RLS R8: every role but the owner loses the write on the migrations' histories already there, keeps SELECT.
-      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: "c\\.relnamespace = 'public'::regnamespace AND c\\.relname LIKE '\\\\_migrations\\\\_%'\\n      AND g\\.grantee <> c\\.relowner" }
+      - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: "c\\.relnamespace = 'public'::regnamespace AND \\(c\\.relname LIKE '\\\\_migrations\\\\_%' OR c\\.relname LIKE 'flyway\\\\_%'\\)\\n      AND g\\.grantee <> c\\.relowner" }
         documentIndex: 2
       - matchRegex: { path: 'spec.template.spec.containers[0].args[0]', pattern: "EXECUTE format\\('REVOKE ALL ON public\\.%s FROM %s CASCADE', r\\.tbl, r\\.name\\);\\n    IF r\\.reads THEN\\n      EXECUTE format\\('GRANT SELECT ON public\\.%s TO %s'" }
         documentIndex: 2
