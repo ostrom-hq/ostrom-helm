@@ -78,7 +78,7 @@ services:
 
   web:
     <<: *restart
-    image: ${OSTROM_WEB_IMAGE:-ghcr.io/ostrom-hq/ostrom-web@sha256:057c7016d748626feef60ca103b94547fca4a59eb19d0626f888a0acfb6bae0b}
+    image: ${OSTROM_WEB_IMAGE:-docker.io/ostromhq/ostrom-web@sha256:e45cc388abfeea1387b39cb6ef84efb0708d51bd84aac3b5efbf840172d711cd}
     environment:
       OSTROM_API_UPSTREAM: http://server:8080
       OSTROM_API_URL: ${OSTROM_SCHEME:-http}://${OSTROM_API_HOST:-api.localhost}
