@@ -12,7 +12,7 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 | `postgresql` / `externalDatabase` | built-in StatefulSet with optional daily `pg_dump`, or your own database; `externalDatabase.tls` puts a TLS proxy (PgBouncer) in the server pod |
 | `polis` | Ory Polis, the SAML ↔ OIDC bridge. **Coming soon**: off by default (`polis.enabled: false`), the server has no SAML code yet |
 | `cloudSessions` | runner image, resources, deadline; `allowedOrgs` (S2-10); RBAC of the controller |
-| `mcp` | the MCP stdio host (`ostrom-mcp-host`): `enabled` (default `true`), `image` (repository, tag, pullPolicy), `token` (`existingSecret`, `key`). Nothing else is a value: limits, launchers, mirrors and resources are fixed in the template |
+| `mcp` | the MCP stdio host (`ostrom-mcp-host`): `enabled` (default `true`), `image` (repository, tag, digest, pullPolicy; the tag is a pinned ostrom-server main commit, not the server's tag), `token` (`existingSecret`, `key`). Nothing else is a value: limits, launchers, mirrors and resources are fixed in the template |
 | `ingress` | class, hosts, TLS secret or cert-manager issuer, API annotations (streaming, body size) |
 | `networkPolicy` | ingress controller location, DNS, denied egress CIDRs, the server's internet and extra egress rules, Kubernetes API access |
 

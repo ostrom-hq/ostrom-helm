@@ -80,18 +80,24 @@ tests:
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_MCP_HOST_DATA_DIR, value: /var/mcp } }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_MCP_HOST_DRAIN_SECONDS, value: "75" } }
       - exists: { path: 'spec.template.metadata.annotations["checksum/mcp-token"]' }
-  - it: the host image follows the server's version, and its own repository and tag when set
+  - it: the host image is pinned to a built main commit, not the server's tag
     template: templates/mcp.yaml
     documentSelector: { path: kind, value: Deployment }
     asserts:
-      - equal: { path: 'spec.template.spec.containers[0].image', value: "ghcr.io/ostrom-hq/ostrom-mcp-host:0.1.0" }
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "docker.io/ostromhq/ostrom-mcp-host:df227e1c5b9c5206aaeea31ac8b39b1355027c2a" }
       - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: IfNotPresent }
-  - it: global.imageTag moves the host with the server
+  - it: global.imageTag does not move the host
     template: templates/mcp.yaml
     documentSelector: { path: kind, value: Deployment }
     set: { global.imageTag: "0.2.0" }
     asserts:
-      - equal: { path: 'spec.template.spec.containers[0].image', value: "ghcr.io/ostrom-hq/ostrom-mcp-host:0.2.0" }
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "docker.io/ostromhq/ostrom-mcp-host:df227e1c5b9c5206aaeea31ac8b39b1355027c2a" }
+  - it: mcp.image.digest wins over the tag
+    template: templates/mcp.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { mcp.image.digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "docker.io/ostromhq/ostrom-mcp-host@sha256:0000000000000000000000000000000000000000000000000000000000000000" }
   - it: mcp.image overrides the repository, the tag and the pull policy
     template: templates/mcp.yaml
     documentSelector: { path: kind, value: Deployment }

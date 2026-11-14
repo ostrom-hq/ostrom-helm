@@ -77,7 +77,7 @@ spec:
               drop: [ALL]
             seccompProfile:
               type: RuntimeDefault
-          # The server's tag by default (global.imageTag, then appVersion), so the server and its host run the same version.
+          # mcp.image.tag: the full commit of the last host image built on ostrom-server main; mcp.image.digest wins over it.
           image: {{ include "ostrom.image" (dict "root" . "image" $mcp.image "name" "ostrom-mcp-host") }}
           imagePullPolicy: {{ $mcp.image.pullPolicy | default .Values.global.imagePullPolicy }}
           ports:

@@ -317,6 +317,11 @@
                 "number"
               ]
             },
+            "digest": {
+              "type": "string",
+              "pattern": "^(sha256:[a-f0-9]{64})?$",
+              "description": "sha256:<64 hex>, or empty to follow the tag"
+            },
             "pullPolicy": {
               "enum": [
                 "",

@@ -293,11 +293,9 @@ jobs:
         run: |
           kubectl create namespace ostrom
           kubectl label namespace ostrom pod-security.kubernetes.io/enforce=restricted
-          # The MCP host: off here until a host tag is pinned with the server's.
           helm install ostrom charts/ostrom -n ostrom --wait --timeout 10m \
             --set server.image.tag="$SERVER_TAG" --set web.image.tag="$WEB_TAG" --set site.image.tag="$SITE_TAG" \
             --set server.replicas=1 --set web.replicas=1 --set site.replicas=1 \
-            --set mcp.enabled=false \
             --set postgresql.persistence.size=1Gi
           helm test ostrom -n ostrom --logs
       - name: Cluster state on failure
