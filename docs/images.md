@@ -5,6 +5,7 @@
 | `docker.io/ostromhq/ostrom-server` | the server, a JVM application built by jib (ostrom-server `docs/decisions/0001`) | `eclipse-temurin:21-jre-noble` |
 | `docker.io/ostromhq/ostrom-web` | the console (static files + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
 | `docker.io/ostromhq/ostrom-site` | the site (Next.js static export + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
+| `docker.io/ostromhq/ostrom-mcp-host` | the MCP stdio host: the JVM host, Node.js (npx), uv (uvx), tini; UID 10002, read-only root | `eclipse-temurin:21-jre-noble` |
 | `docker.io/ostromhq/ostrom-runner` | cloud sessions, delivery: the `ostrom` CLI binary (slim image) | `debian:12-slim` |
 | `docker.io/ostromhq/ostrom-session` | cloud sessions, default session image: the agents (Claude Code, Codex), git | `debian:12-slim` |
 

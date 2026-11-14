@@ -1,0 +1,184 @@
+suite: mcp host — the stdio MCP host and the server's wiring to it
+templates:
+  - templates/mcp.yaml
+  - templates/server.yaml
+  - templates/server-config.yaml
+  - templates/networkpolicy.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: renders the ServiceAccount, Service, Deployment, token Secret and NetworkPolicy by default
+    template: templates/mcp.yaml
+    asserts:
+      - hasDocuments: { count: 5 }
+      - isKind: { of: ServiceAccount }
+        documentIndex: 0
+      - equal: { path: automountServiceAccountToken, value: false }
+        documentIndex: 0
+      - isKind: { of: Service }
+        documentIndex: 1
+      - equal: { path: metadata.name, value: o-ostrom-mcp }
+        documentIndex: 1
+      - equal: { path: 'spec.ports[0].port', value: 8090 }
+        documentIndex: 1
+      - isKind: { of: Deployment }
+        documentIndex: 2
+      - isKind: { of: Secret }
+        documentIndex: 3
+      - isKind: { of: NetworkPolicy }
+        documentIndex: 4
+  - it: renders nothing when disabled, and the server has no host variable nor checksum
+    set: { mcp.enabled: false }
+    asserts:
+      - hasDocuments: { count: 0 }
+        template: templates/mcp.yaml
+      - notContains:
+          path: 'spec.template.spec.containers[0].env'
+          any: true
+          content: { name: OSTROM_MCP_HOST_URL, value: "http://o-ostrom-mcp:8090" }
+        template: templates/server.yaml
+        documentSelector: { path: kind, value: Deployment }
+      - notExists: { path: 'spec.template.metadata.annotations["checksum/mcp-token"]' }
+        template: templates/server.yaml
+        documentSelector: { path: kind, value: Deployment }
+      - notMatchRegex: { path: 'spec.template.spec.containers[0].env[*].name', pattern: 'OSTROM_MCP_HOST' }
+        template: templates/server.yaml
+        documentSelector: { path: kind, value: Deployment }
+  - it: the Deployment keeps the security posture
+    template: templates/mcp.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: spec.replicas, value: 1 }
+      - equal: { path: spec.template.spec.automountServiceAccountToken, value: false }
+      - equal: { path: spec.template.spec.enableServiceLinks, value: false }
+      - equal: { path: spec.template.spec.terminationGracePeriodSeconds, value: 90 }
+      - equal: { path: spec.template.spec.securityContext.runAsUser, value: 10002 }
+      - equal: { path: spec.template.spec.securityContext.runAsGroup, value: 10002 }
+      - equal: { path: spec.template.spec.securityContext.fsGroup, value: 10002 }
+      - equal: { path: spec.template.spec.securityContext.runAsNonRoot, value: true }
+      - equal: { path: spec.template.spec.securityContext.seccompProfile.type, value: RuntimeDefault }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem', value: true }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation', value: false }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext.runAsUser', value: 10002 }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext.capabilities.drop', value: [ALL] }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext.seccompProfile.type', value: RuntimeDefault }
+      - equal: { path: 'spec.template.spec.volumes[0]', value: { name: data, emptyDir: { sizeLimit: 3Gi } } }
+      - equal: { path: 'spec.template.spec.volumes[1]', value: { name: tmp, emptyDir: { sizeLimit: 512Mi } } }
+      - equal: { path: 'spec.template.spec.containers[0].startupProbe.httpGet.path', value: /health }
+      - equal: { path: 'spec.template.spec.containers[0].livenessProbe.httpGet.path', value: /health }
+      - equal: { path: 'spec.template.spec.containers[0].readinessProbe.httpGet.path', value: /ready }
+      - equal: { path: 'spec.template.spec.containers[0].resources.limits.memory', value: 2Gi }
+      - equal: { path: 'spec.template.spec.containers[0].resources.requests.cpu', value: 250m }
+  - it: configures the host through OSTROM_MCP_HOST_*, the token from the generated Secret
+    template: templates/mcp.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: OSTROM_MCP_HOST_TOKEN, valueFrom: { secretKeyRef: { name: o-ostrom-mcp, key: token } } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_MCP_HOST_ADDRESS, value: "0.0.0.0" } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_MCP_HOST_PORT, value: "8090" } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_MCP_HOST_DATA_DIR, value: /var/mcp } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_MCP_HOST_DRAIN_SECONDS, value: "75" } }
+      - exists: { path: 'spec.template.metadata.annotations["checksum/mcp-token"]' }
+  - it: the host image follows the server's version, and its own repository and tag when set
+    template: templates/mcp.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "ghcr.io/ostrom-hq/ostrom-mcp-host:0.1.0" }
+      - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: IfNotPresent }
+  - it: global.imageTag moves the host with the server
+    template: templates/mcp.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { global.imageTag: "0.2.0" }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "ghcr.io/ostrom-hq/ostrom-mcp-host:0.2.0" }
+  - it: mcp.image overrides the repository, the tag and the pull policy
+    template: templates/mcp.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { mcp.image: { repository: registry.example/mcp-host, tag: sha-abc1234, pullPolicy: Always } }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "registry.example/mcp-host:sha-abc1234" }
+      - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: Always }
+  - it: the generated Secret is kept on uninstall and holds a 48-character token
+    template: templates/mcp.yaml
+    documentSelector: { path: kind, value: Secret }
+    asserts:
+      - equal: { path: 'metadata.annotations["helm.sh/resource-policy"]', value: keep }
+      - exists: { path: data.token }
+  - it: an existingSecret skips the Secret and is read by the host
+    template: templates/mcp.yaml
+    set: { mcp.token: { existingSecret: corp-mcp, key: host-token } }
+    asserts:
+      - hasDocuments: { count: 4 }
+      - notEqual: { path: kind, value: Secret }
+      - contains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: OSTROM_MCP_HOST_TOKEN, valueFrom: { secretKeyRef: { name: corp-mcp, key: host-token } } }
+        documentSelector: { path: kind, value: Deployment }
+  - it: the host NetworkPolicy takes ingress from this release's server pods on 8090 only, and egress to DNS and the public Internet
+    template: templates/mcp.yaml
+    documentSelector: { path: kind, value: NetworkPolicy }
+    asserts:
+      - equal: { path: spec.policyTypes, value: [Ingress, Egress] }
+      - equal: { path: 'spec.podSelector.matchLabels["app.kubernetes.io/component"]', value: mcp }
+      - equal: { path: 'spec.ingress[0].from[0].podSelector.matchLabels["app.kubernetes.io/component"]', value: server }
+      - equal: { path: 'spec.ingress[0].from[0].podSelector.matchLabels["app.kubernetes.io/instance"]', value: o }
+      - equal: { path: 'spec.ingress[0].ports', value: [{ protocol: TCP, port: 8090 }] }
+      - equal: { path: 'spec.egress[0].ports[0].port', value: 53 }
+      - equal: { path: 'spec.egress[1].to[0].ipBlock.cidr', value: 0.0.0.0/0 }
+      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: 169.254.0.0/16 }
+      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: 10.0.0.0/8 }
+      - equal: { path: 'spec.egress[2].to[0].ipBlock.cidr', value: "::/0" }
+      - contains: { path: 'spec.egress[2].to[0].ipBlock.except', content: fe80::/10 }
+  - it: no host NetworkPolicy when the chart's networkPolicy is off, the rest stays
+    template: templates/mcp.yaml
+    set: { networkPolicy.enabled: false }
+    asserts:
+      - hasDocuments: { count: 4 }
+      - notEqual: { path: kind, value: NetworkPolicy }
+  - it: the server gets the host URL and the token from the Secret, never from the ConfigMap
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_MCP_HOST_URL, value: "http://o-ostrom-mcp:8090" } }
+      - contains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: OSTROM_MCP_HOST_TOKEN, valueFrom: { secretKeyRef: { name: o-ostrom-mcp, key: token } } }
+      - exists: { path: 'spec.template.metadata.annotations["checksum/mcp-token"]' }
+  - it: the server reads the host token from the existingSecret too
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { mcp.token: { existingSecret: corp-mcp, key: host-token } }
+    asserts:
+      - contains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: OSTROM_MCP_HOST_TOKEN, valueFrom: { secretKeyRef: { name: corp-mcp, key: host-token } } }
+  - it: the server ConfigMap never carries the host token
+    template: templates/server-config.yaml
+    asserts:
+      - notExists: { path: data.OSTROM_MCP_HOST_TOKEN }
+      - notExists: { path: data.OSTROM_MCP_HOST_URL }
+  - it: the server pods may reach the host on 8090
+    template: templates/networkpolicy.yaml
+    documentSelector: { path: metadata.name, value: o-ostrom-server-egress }
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to: [{ podSelector: { matchLabels: { app.kubernetes.io/instance: o, app.kubernetes.io/component: mcp } } }]
+            ports: [{ protocol: TCP, port: 8090 }]
+  - it: the server pods get no egress rule to a host that is not deployed
+    template: templates/networkpolicy.yaml
+    documentSelector: { path: metadata.name, value: o-ostrom-server-egress }
+    set: { mcp.enabled: false }
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            to: [{ podSelector: { matchLabels: { app.kubernetes.io/instance: o, app.kubernetes.io/component: mcp } } }]
+            ports: [{ protocol: TCP, port: 8090 }]
+  - it: an unknown mcp value (a TeamCode knob) is refused
+    template: templates/mcp.yaml
+    set: { mcp.maxProcesses: 4 }
+    asserts:
+      - failedTemplate: { errorPattern: "maxProcesses" }

@@ -37,6 +37,14 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
 `/ready`; set `server.trustedProxies` to your ingress pods' and nodes' CIDRs. An external database: play the SQL of
 [values.md](values.md#database-roles) as its administrator first.
 
+### 0.3.1 → 0.3.2
+
+- The MCP stdio host is deployed by default (`mcp.enabled: true`): a Deployment, Service, ServiceAccount and
+  NetworkPolicy `<release>-ostrom-mcp`, and a Secret of the same name holding its token (generated once, kept across
+  upgrades and on uninstall). The server gets `OSTROM_MCP_HOST_URL` and `OSTROM_MCP_HOST_TOKEN`, so it needs a server
+  image that reads them (the host's image is `ostrom-mcp-host`, at the server's tag). `mcp.enabled: false` renders
+  nothing. With `--reuse-values`, pass `--reset-then-reuse-values` to take the block.
+
 ### 0.3.0 → 0.3.1
 
 - Kubernetes 1.29 or later (`kubeVersion`): cloud-session pods use native sidecars.

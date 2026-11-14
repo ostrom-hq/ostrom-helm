@@ -440,3 +440,80 @@ podAntiAffinity:
           matchLabels: {{- include "ostrom.selectorLabels" (dict "root" .root "component" .component) | nindent 12 }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+The MCP stdio host (ostrom-server docs/mcp-host.md): one Deployment owning every hosted stdio MCP process, reached by
+the server pods through its Service with a shared token. Its pods carry component `mcp`, never `server`: the server's
+Service, PodDisruptionBudget and NetworkPolicies select pods by that label and must not match the host.
+A release upgraded with --reuse-values from a chart without the `mcp` block has no .Values.mcp: nothing is rendered.
+With --set mcp.enabled=true on top, the block holds that key alone: the render fails with what to run instead, rather
+than deploy a host from empty settings.
+*/}}
+{{- define "ostrom.mcp.enabled" -}}
+{{- $mcp := .Values.mcp | default dict -}}
+{{- if dig "enabled" false $mcp -}}
+{{- if not (hasKey $mcp "image") -}}
+{{- fail "mcp.enabled is set but the rest of the mcp block is missing: the release was upgraded with --reuse-values from a chart without it. Run helm upgrade with --reset-then-reuse-values (or your values file) instead" -}}
+{{- end -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{- define "ostrom.mcp.fullname" -}}
+{{- printf "%s-mcp" (include "ostrom.fullname" . | trunc 59 | trimSuffix "-") -}}
+{{- end -}}
+
+{{/* The operator's Secret holding the host token, or empty when the chart generates it. */}}
+{{- define "ostrom.mcp.existingSecret" -}}
+{{- (.Values.mcp.token | default dict).existingSecret | default "" -}}
+{{- end -}}
+
+{{/* Where the host token is read, by the host and by the server: the operator's existingSecret, or the generated one. */}}
+{{- define "ostrom.mcp.tokenSecretName" -}}
+{{- include "ostrom.mcp.existingSecret" . | default (include "ostrom.mcp.fullname" .) -}}
+{{- end -}}
+
+{{- define "ostrom.mcp.tokenSecretKey" -}}
+{{- if include "ostrom.mcp.existingSecret" . -}}{{- (.Values.mcp.token | default dict).key | default "token" -}}{{- else -}}token{{- end -}}
+{{- end -}}
+
+{{/*
+The token to store, base64-encoded as Secret data, from the release's existing Secret (an object or an empty dict):
+its value when it has one, so an upgrade keeps it; otherwise 48 new random alphanumeric characters.
+*/}}
+{{- define "ostrom.mcp.tokenData" -}}
+{{- get ((.existing | default dict).data | default dict) "token" | default (randAlphaNum 48 | b64enc) -}}
+{{- end -}}
+
+{{/*
+The generated token, read back with lookup. Computed once per render and kept in .Values.mcp (shared by every template
+of the chart), so the Secret and both checksum annotations see the same value. lookup returns nothing under
+`helm template` and `--dry-run=client`: they show a new value every time.
+*/}}
+{{- define "ostrom.mcp.generatedToken" -}}
+{{- if not (hasKey .Values.mcp "__generatedToken") -}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace (include "ostrom.mcp.fullname" .) -}}
+{{- $_ := set .Values.mcp "__generatedToken" (include "ostrom.mcp.tokenData" (dict "existing" $existing)) -}}
+{{- end -}}
+{{- index .Values.mcp "__generatedToken" -}}
+{{- end -}}
+
+{{/*
+Changes when the token changes, so the server and host pods roll together after a rotation (annotation
+checksum/mcp-token). For an existingSecret, the hash of its current value when lookup can read it; rendered outside
+the cluster it cannot change, and a rotation needs `kubectl rollout restart` of both Deployments.
+*/}}
+{{- define "ostrom.mcp.tokenChecksum" -}}
+{{- $secret := include "ostrom.mcp.existingSecret" . -}}
+{{- if $secret -}}
+{{- $key := include "ostrom.mcp.tokenSecretKey" . -}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace $secret -}}
+{{- get (($existing | default dict).data | default dict) $key | default (printf "%s/%s" $secret $key) | sha256sum -}}
+{{- else -}}
+{{- include "ostrom.mcp.generatedToken" . | sha256sum -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ostrom.mcp.url" -}}
+{{- printf "http://%s:%d" (include "ostrom.mcp.fullname" .) 8090 -}}
+{{- end -}}

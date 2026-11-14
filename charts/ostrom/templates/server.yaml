@@ -42,6 +42,10 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/server-config.yaml") . | sha256sum | trunc 16 }}
         checksum/secrets: {{ toYaml (dict "env" $s.secretEnv "obs" .Values.observability) | sha256sum | trunc 16 }}
+        {{- if include "ostrom.mcp.enabled" . }}
+        # The host token rolls the server with its host after a rotation (templates/mcp.yaml).
+        checksum/mcp-token: {{ include "ostrom.mcp.tokenChecksum" . }}
+        {{- end }}
         {{- with $s.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
     spec:
       serviceAccountName: {{ $full }}-server
@@ -171,6 +175,16 @@ spec:
             - name: OSTROM_SECRETS_KEY
               valueFrom:
                 secretKeyRef: { name: {{ include "ostrom.secretsKey.secretName" . }}, key: secrets-key }
+            {{- if include "ostrom.mcp.enabled" . }}
+            # The MCP stdio host of this release (templates/mcp.yaml) and its token: both or neither, never in the ConfigMap.
+            - name: OSTROM_MCP_HOST_URL
+              value: {{ include "ostrom.mcp.url" . | quote }}
+            - name: OSTROM_MCP_HOST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ostrom.mcp.tokenSecretName" . }}
+                  key: {{ include "ostrom.mcp.tokenSecretKey" . }}
+            {{- end }}
             {{- with .Values.observability.otel }}
             {{- if and .enabled .existingSecret }}
             - name: OTEL_EXPORTER_OTLP_HEADERS

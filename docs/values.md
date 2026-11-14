@@ -12,6 +12,7 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 | `postgresql` / `externalDatabase` | built-in StatefulSet with optional daily `pg_dump`, or your own database; `externalDatabase.tls` puts a TLS proxy (PgBouncer) in the server pod |
 | `polis` | Ory Polis, the SAML ↔ OIDC bridge. **Coming soon**: off by default (`polis.enabled: false`), the server has no SAML code yet |
 | `cloudSessions` | runner image, resources, deadline; `allowedOrgs` (S2-10); RBAC of the controller |
+| `mcp` | the MCP stdio host (`ostrom-mcp-host`): `enabled` (default `true`), `image` (repository, tag, pullPolicy), `token` (`existingSecret`, `key`). Nothing else is a value: limits, launchers, mirrors and resources are fixed in the template |
 | `ingress` | class, hosts, TLS secret or cert-manager issuer, API annotations (streaming, body size) |
 | `networkPolicy` | ingress controller location, DNS, denied egress CIDRs, the server's internet and extra egress rules, Kubernetes API access |
 
@@ -54,6 +55,7 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_POSTHOG_HOST`, `OSTROM_POSTHOG_API_KEY` | `observability.posthog.*` |
 | `OSTROM_RUNNERS_DRIVER` (`kubernetes`), `OSTROM_RUNNERS_SERVER_URL`, `OSTROM_RUNNERS_IMAGE`, `OSTROM_RUNNERS_WORKSPACE_SIZE`, `OSTROM_RUNNERS_KUBERNETES_{NAMESPACE,STORAGE_CLASS,IMAGE_PULL_SECRET,PRIORITY_CLASS,SERVER_SELECTOR}` | `cloudSessions.*`, only when `cloudSessions.enabled` |
 | `OSTROM_RUNNERS_ALLOWED_ORGS` | `cloudSessions.allowedOrgs`, only when `cloudSessions.enabled`: organization ids, or `["*"]`; **empty (the default) refuses every organization** (403), audit S2-10. How many sessions run at once comes from each organization's plan |
+| `OSTROM_MCP_HOST_URL`, `OSTROM_MCP_HOST_TOKEN` | the release's MCP stdio host (`http://<release>-ostrom-mcp:8090`) and its token (key `token` of the generated Secret `<release>-ostrom-mcp`, or of `mcp.token.existingSecret`), only when `mcp.enabled`. Both or neither; the token is never in the ConfigMap |
 | `OSTROM_POD_NAME` | the pod name (downward API) |
 | `OSTROM_TRUSTED_PROXIES` | `server.trustedProxies`: CIDRs (comma separated) of the ingress controller's pods and of the nodes, whose forwarded client address the server believes; unset by default |
 | `OSTROM_SHUTDOWN_DELAY_SECONDS` | `server.shutdownDelaySeconds` (0 to 10, default 5): after SIGTERM, `/ready` answers 503 this long before the server stops, so the Service drops the pod first; readiness probes `/ready` (it checks the database), liveness and startup `/health` (the process only: a database outage never restarts the pods) |

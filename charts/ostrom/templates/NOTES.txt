@@ -9,6 +9,12 @@ Ostrom {{ .Chart.AppVersion }} is installed in namespace {{ .Release.Namespace }
 {{- end }}
 {{- end }}
 
+{{- if include "ostrom.mcp.enabled" . }}
+
+MCP stdio host: deployment/{{ include "ostrom.mcp.fullname" . }}, reached only by the server pods. Its token is in the Secret {{ include "ostrom.mcp.tokenSecretName" . }}{{ if not (include "ostrom.mcp.existingSecret" .) }} (generated once, kept across upgrades and on uninstall){{ end }}.
+  kubectl rollout status -n {{ .Release.Namespace }} deployment/{{ include "ostrom.mcp.fullname" . }}
+{{- end }}
+
 Check it:   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
 {{- if include "ostrom.networkProbe.enabled" . }}
             (it also fails if your CNI does not enforce the chart's NetworkPolicies)

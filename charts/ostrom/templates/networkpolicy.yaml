@@ -90,6 +90,11 @@ spec:
     {{- if include "ostrom.flag" (dict "value" (dig "server" "allowInternet" nil $np) "default" true) }}
     {{- include "ostrom.np.internet" (dict "denied" $denied) | nindent 4 }}
     {{- end }}
+    {{- if include "ostrom.mcp.enabled" . }}
+    - to:
+        - {{- include "ostrom.np.peer" (dict "root" . "component" "mcp") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 8090 }]
+    {{- end }}
 {{- if and .Values.cloudSessions.enabled $np.kubeApi.cilium }}
 ---
 # Cilium: the API server is an entity, not an address; this namespaced policy lets the server reach it.
