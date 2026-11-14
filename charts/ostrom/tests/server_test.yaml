@@ -14,6 +14,42 @@ tests:
       - equal: { path: data.OSTROM_CONSOLE_URL, value: "https://app.ostrom.run" }
       - notExists: { path: data.OSTROM_RUNNERS_DRIVER }
       - notExists: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS }
+  - it: the database connections are bounded per replica, as the server reads them (2 to 64)
+    template: templates/server.yaml
+    set: { server.database.maxConnections: 1 }
+    asserts:
+      - failedTemplate: { errorMessage: "server.database.maxConnections must be between 2 and 64, got 1" }
+  - it: refuses more than 64 connections per replica
+    template: templates/server.yaml
+    set: { server.database.maxConnections: 65 }
+    asserts:
+      - failedTemplate: { errorMessage: "server.database.maxConnections must be between 2 and 64, got 65" }
+  - it: the defaults fit the connection budget, the HPA's most replicas counted (11 × 11 + 7 = 128 of 160)
+    template: templates/server-config.yaml
+    set: { server.autoscaling.enabled: true }
+    asserts:
+      - equal: { path: data.OSTROM_DATABASE_MAX_CONNECTIONS, value: "10" }
+  - it: refuses replicas × connections over 80 % of the bundled PostgreSQL's max_connections
+    template: templates/server.yaml
+    set: { server.autoscaling.enabled: true, server.autoscaling.maxReplicas: 10, server.database.maxConnections: 13 }
+    asserts:
+      - failedTemplate:
+          errorMessage: "the server would open up to 161 database connections (11 pods × (13 + 1) + 7 others), over 80 % of postgresql.parameters.max_connections (200): lower server.database.maxConnections or the replicas, or raise max_connections"
+  - it: counts Polis's pool in the budget
+    template: templates/server.yaml
+    set: { server.autoscaling.enabled: true, server.database.maxConnections: 12, polis.enabled: true, polis.replicas: 2 }
+    asserts:
+      - failedTemplate:
+          errorMessage: "the server would open up to 170 database connections (11 pods × (12 + 1) + 27 others), over 80 % of postgresql.parameters.max_connections (200): lower server.database.maxConnections or the replicas, or raise max_connections"
+  - it: an external database's max_connections is the operator's to size
+    template: templates/server-config.yaml
+    set:
+      server.autoscaling.enabled: true
+      server.autoscaling.maxReplicas: 20
+      postgresql.enabled: false
+      externalDatabase: { url: "postgresql://db.example:5432/ostrom", username: ostrom_app, migrationUsername: ostrom, existingSecret: db }
+    asserts:
+      - equal: { path: data.OSTROM_DATABASE_MAX_CONNECTIONS, value: "10" }
   - it: sets only variables the server of main reads (no API/app/site URL, extraction, Polis or session cap keys)
     template: templates/server-config.yaml
     set: { cloudSessions.enabled: true, server.replicas: 1 }

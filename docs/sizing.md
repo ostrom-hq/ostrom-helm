@@ -39,13 +39,16 @@ with one ready endpoint and 1 with two, never zero; the eviction of the last pod
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|
 | up to 50 people | 2 × (250m CPU, 512 Mi request / 1 Gi limit) | 2 × default | 250m / 256 Mi, 10 Gi disk | 250m / 512 Mi each, limit 2 CPU / 2 Gi |
-| 50-500 | 3 × (250m, 512 Mi / 1 Gi), HPA 3-10 on CPU | 2-4 | 500m / 1 Gi, 50 Gi, `max_connections` ≥ replicas × `server.database.maxConnections` + 20 | same; size the nodes for the sessions the organizations' plans allow |
+| 50-500 | 3 × (250m, 512 Mi / 1 Gi), HPA 3-10 on CPU | 2-4 | 500m / 1 Gi, 50 Gi, `max_connections` ≥ ((HPA max + 1) × (`server.database.maxConnections` + 1) + 20) / 0.8 | same; size the nodes for the sessions the organizations' plans allow |
 | 500+ | HPA 4-20, external managed PostgreSQL with backups and a replica | 3-6 | managed | dedicated nodes for sessions, a PriorityClass below your workloads (`cloudSessions.runner.priorityClassName`) |
 
 Rules of thumb:
 
-- **Connections**: every server replica opens up to `server.database.maxConnections` (10). Keep
-  `replicas × 10 + Polis (≈10) + 20` under PostgreSQL's `max_connections` (200 by default here).
+- **Connections**: every server replica opens up to `server.database.maxConnections` (10, 2 to 64), its one
+  JDBC pool, plus one listening connection. The budget (ostrom-server docs/MODULES.md, "Database connections"):
+  `(most replicas + 1 surge) × (maxConnections + 1) + 2 migrate + Polis (10 a replica) + 1 backup + 1 exporter +
+  3 reserved` at most 80 % of PostgreSQL's `max_connections` (200 by default here): 128 of 160 with the defaults and an
+  HPA of 10. The chart refuses to render the bundled PostgreSQL over it; size an external database's the same way.
 - **Cloud sessions** dominate the footprint: one agent session ≈ 0.25-2 CPU and 0.5-2 GiB while it works. Plan
   nodes for (sessions the plans allow at once) × limits, and keep sessions on their own nodes in a shared cluster.
 - **HPA** needs metrics-server. Without it keep `autoscaling.enabled: false` and fixed replicas.
