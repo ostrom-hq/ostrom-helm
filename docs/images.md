@@ -5,7 +5,8 @@
 | `docker.io/ostromhq/ostrom-server` | the native server binary | `gcr.io/distroless/cc-debian12:nonroot` |
 | `docker.io/ostromhq/ostrom-web` | the console (static files + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
 | `docker.io/ostromhq/ostrom-site` | the site (Next.js static export + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
-| `docker.io/ostromhq/ostrom-runner` | cloud sessions: the `ostrom` CLI, Claude Code, Codex, git | `debian:12-slim` |
+| `docker.io/ostromhq/ostrom-runner` | cloud sessions, delivery: the `ostrom` CLI binary (slim image) | `debian:12-slim` |
+| `docker.io/ostromhq/ostrom-session` | cloud sessions, default session image: the agents (Claude Code, Codex), git | `debian:12-slim` |
 
 All are built for `linux/amd64` and `linux/arm64`, tagged `<version>`, `<major>.<minor>` and `latest` on a release
 (`edge` from `main`), carry an SPDX SBOM and SLSA provenance as attestations, and are **signed with cosign** by
