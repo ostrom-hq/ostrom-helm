@@ -212,6 +212,11 @@ Turn them on only where that is acceptable (dedicated nodes, a sandboxed runtime
   adds a ClusterRole reading PersistentVolumes and StorageClasses (`get`, `list`, never a write): with it the server
   proves a deleted session's volume is gone, counts the orphaned volumes of its garbage collection and refuses a
   profile whose storage class keeps volumes; without it those checks cannot read the cluster;
+- `cloudSessions.rbac.tokenReview: true` binds the server's ServiceAccount to the built-in `system:auth-delegator`
+  (create TokenReviews) and sets `OSTROM_RUNNERS_KUBERNETES_POD_IDENTITY`: each session pod's runner then gets a
+  projected ServiceAccount token (audience `ostrom`, 600 s, mounted in the runner container only) and presents it on
+  every call; the server reviews it and requires the session's namespace and the current execution's pod, as
+  TeamCode does. The execution's runner token keeps working; off, it is the only runner credential;
 - session pods (labels `app.kubernetes.io/managed-by: ostrom`, `ostrom.run/session`) reach DNS, the server and the
   public internet only; with Cilium, `networkPolicy.ciliumEgressDeny.enabled` adds a namespace-wide deny that no
   allow rule can reopen (see below);

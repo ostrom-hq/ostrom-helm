@@ -58,6 +58,35 @@ tests:
     set: { cloudSessions.enabled: true, server.replicas: 1, cloudSessions.rbac.create: false, cloudSessions.rbac.volumeReader: true }
     asserts:
       - hasDocuments: { count: 0 }
+  - it: the opt-in token review binds only the built-in system:auth-delegator, and tells the server
+    template: templates/cloud-sessions.yaml
+    release: { name: o, namespace: ostrom }
+    set: { cloudSessions.enabled: true, server.replicas: 1, cloudSessions.rbac.tokenReview: true }
+    asserts:
+      - hasDocuments: { count: 3 }
+      - isKind: { of: ClusterRoleBinding }
+        documentIndex: 2
+      - equal: { path: roleRef, value: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: "system:auth-delegator" } }
+        documentIndex: 2
+      - equal: { path: metadata.name, value: o-ostrom-ostrom-token-review }
+        documentIndex: 2
+      - equal: { path: 'subjects[0]', value: { kind: ServiceAccount, name: o-ostrom-server, namespace: ostrom } }
+        documentIndex: 2
+  - it: the server reviews pod tokens only with the token review on
+    template: templates/server-config.yaml
+    set: { cloudSessions.enabled: true, server.replicas: 1, cloudSessions.rbac.tokenReview: true }
+    asserts:
+      - equal: { path: data.OSTROM_RUNNERS_KUBERNETES_POD_IDENTITY, value: "true" }
+  - it: no pod identity by default
+    template: templates/server-config.yaml
+    set: { cloudSessions.enabled: true, server.replicas: 1 }
+    asserts:
+      - notExists: { path: data.OSTROM_RUNNERS_KUBERNETES_POD_IDENTITY }
+  - it: no token review binding when RBAC creation is off, even asked for
+    template: templates/cloud-sessions.yaml
+    set: { cloudSessions.enabled: true, server.replicas: 1, cloudSessions.rbac.create: false, cloudSessions.rbac.tokenReview: true }
+    asserts:
+      - hasDocuments: { count: 0 }
   - it: no Role when RBAC creation is off
     template: templates/cloud-sessions.yaml
     set: { cloudSessions.enabled: true, server.replicas: 1, cloudSessions.rbac.create: false }

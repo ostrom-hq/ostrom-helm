@@ -343,6 +343,9 @@
             },
             "volumeReader": {
               "type": "boolean"
+            },
+            "tokenReview": {
+              "type": "boolean"
             }
           }
         }
