@@ -351,6 +351,10 @@ cloudSessions:
   # Role given to the server's ServiceAccount, limited to the release namespace.
   rbac:
     create: true
+    # Opt-in ClusterRole: get/list on PersistentVolumes and StorageClasses, the chart's only cluster-wide objects.
+    # It lets the server prove a deleted session's volume is gone, count orphaned volumes and refuse a profile whose
+    # storage class keeps volumes (runners.cloud.retention.v1). Off, those checks cannot read the cluster.
+    volumeReader: false
 
 # --- Ingress (uses the cluster's ingress controller; creates nothing cluster-wide) ---------------------------------
 ingress:

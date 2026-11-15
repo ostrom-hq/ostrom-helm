@@ -27,6 +27,37 @@ tests:
         documentIndex: 1
       - equal: { path: roleRef.kind, value: Role }
         documentIndex: 1
+  - it: the session controller lists the workspace claims, for the garbage collection
+    template: templates/cloud-sessions.yaml
+    set: { cloudSessions.enabled: true, server.replicas: 1 }
+    asserts:
+      - contains: { path: rules, content: { apiGroups: [""], resources: [persistentvolumeclaims], verbs: [get, list, create, delete] } }
+        documentIndex: 0
+  - it: the opt-in volume reader only reads PersistentVolumes and StorageClasses, cluster-wide
+    template: templates/cloud-sessions.yaml
+    release: { name: o, namespace: ostrom }
+    set: { cloudSessions.enabled: true, server.replicas: 1, cloudSessions.rbac.volumeReader: true }
+    asserts:
+      - hasDocuments: { count: 4 }
+      - isKind: { of: ClusterRole }
+        documentIndex: 2
+      - equal:
+          path: rules
+          value:
+            - { apiGroups: [""], resources: [persistentvolumes], verbs: [get, list] }
+            - { apiGroups: [storage.k8s.io], resources: [storageclasses], verbs: [get, list] }
+        documentIndex: 2
+      - equal: { path: metadata.name, value: o-ostrom-ostrom-volume-reader }
+        documentIndex: 2
+      - isKind: { of: ClusterRoleBinding }
+        documentIndex: 3
+      - equal: { path: 'subjects[0].namespace', value: ostrom }
+        documentIndex: 3
+  - it: no volume reader when RBAC creation is off, even asked for
+    template: templates/cloud-sessions.yaml
+    set: { cloudSessions.enabled: true, server.replicas: 1, cloudSessions.rbac.create: false, cloudSessions.rbac.volumeReader: true }
+    asserts:
+      - hasDocuments: { count: 0 }
   - it: no Role when RBAC creation is off
     template: templates/cloud-sessions.yaml
     set: { cloudSessions.enabled: true, server.replicas: 1, cloudSessions.rbac.create: false }

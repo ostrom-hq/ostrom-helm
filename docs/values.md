@@ -208,7 +208,10 @@ Turn them on only where that is acceptable (dedicated nodes, a sandboxed runtime
 
 - the server needs exactly one replica (the chart refuses more): the terminal relay lives in memory;
 - the server's ServiceAccount gets a **Role** in the release namespace (pods, their logs, per-session Secrets and
-  PVCs, the sessions' NetworkPolicies); nothing cluster-wide;
+  PVCs, the sessions' NetworkPolicies); nothing cluster-wide unless `cloudSessions.rbac.volumeReader: true`, which
+  adds a ClusterRole reading PersistentVolumes and StorageClasses (`get`, `list`, never a write): with it the server
+  proves a deleted session's volume is gone, counts the orphaned volumes of its garbage collection and refuses a
+  profile whose storage class keeps volumes; without it those checks cannot read the cluster;
 - session pods (labels `app.kubernetes.io/managed-by: ostrom`, `ostrom.run/session`) reach DNS, the server and the
   public internet only; with Cilium, `networkPolicy.ciliumEgressDeny.enabled` adds a namespace-wide deny that no
   allow rule can reopen (see below);
