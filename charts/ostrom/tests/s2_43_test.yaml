@@ -81,6 +81,13 @@ tests:
       - equal: { path: 'spec.template.spec.containers[0].readinessProbe.httpGet.path', value: /ready }
       - equal: { path: 'spec.template.spec.containers[0].livenessProbe.httpGet.path', value: /health }
       - equal: { path: 'spec.template.spec.containers[0].startupProbe.httpGet.path', value: /health }
+  - it: the probes wait for a busy server (liveness never kills one that answers within 5 s)
+    template: templates/server.yaml
+    documentIndex: 1
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].livenessProbe.timeoutSeconds', value: 5 }
+      - equal: { path: 'spec.template.spec.containers[0].readinessProbe.timeoutSeconds', value: 3 }
+      - equal: { path: 'spec.template.spec.containers[0].startupProbe.timeoutSeconds', value: 2 }
   - it: trusted proxies and the shutdown delay reach the server
     template: templates/server-config.yaml
     set: { server.trustedProxies: "10.64.0.0/16, 172.21.0.0/16" }

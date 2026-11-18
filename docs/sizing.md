@@ -3,8 +3,8 @@
 The server runs on the JVM (ostrom-server `docs/decisions/0001`, as TeamCode): about 3 s to start, about 225 MiB at
 rest and 340 MiB under a steady 200 req/s with a 256 MiB heap, a p99 of 6.8 ms there (ostrom-server#394, run
 43444036220, on one runner). The chart's defaults follow: 512 Mi requested, 1 Gi limit, the heap at 70 % of the limit
-(`server.javaToolOptions`). The kind measurements below are those of the earlier native binary; they are taken
-again on the JVM image and this page updated.
+(`server.javaToolOptions`). The ingress and startup tables below are those of the earlier native binary, to be taken
+again on the JVM image; the scaling drill already runs on it.
 
 Measured on the chart (ostrom-e2e `chart-load.yml`, kind, ingress-nginx, 2 server replicas, built-in PostgreSQL,
 ostrom-server main of 02/11/2026: runs [41507938323](https://github.com/ostrom-hq/ostrom-e2e/actions/runs/41507938323),
@@ -35,6 +35,41 @@ fresh install:
 
 The server itself is ready 2 s after its init containers. The drain of the same run: 85 samples of the Service, 84
 with one ready endpoint and 1 with two, never zero; the eviction of the last pod refused by the budget.
+
+Scaling is measured the same way (`ci/scale-drill.sh`, HPA 2-4, k6 in the namespace on the server's Service, one
+2-vCPU kind node shared with PostgreSQL and k6). There are two passes:
+- a peak ramps from 10 to 120 requests/s: the HPA must add replicas that become ready and serve, with no failed
+  request and no restart;
+- a version rollout runs under 50 requests/s: it must lose no request (the server's shutdown delay drains each old
+  pod), with no container restart.
+
+What the drill proves:
+- the mechanism: the HPA scales up, the new pods become ready and take traffic, and the probes and the rolling
+  update hold under load;
+- nothing more. The CI's requests are below the defaults, so its HPA reacts sooner than yours, and its threshold is
+  not yours.
+
+Run [44350369154](https://github.com/ostrom-hq/ostrom-helm/actions/runs/44350369154), the JVM server (ostrom-server
+main, built with jib), probe timeouts explicit, CI requests 50m / 64Mi:
+
+| Pass | Requests | Failed | Replicas |
+|---|---|---|---|
+| peak to 120 req/s | 19 949 | 0 | the HPA went to 4, all 4 ready, no restart |
+| rollout under 50 req/s | 12 000 | 0 | every pod replaced in 41 s, no restart |
+
+Latencies (p95, p99) and the HPA's timings are in that run's job summary. On the earlier native binary (run
+41549988209) the rollout pass lost 198 requests to a server container that exited by itself between the peak and the
+upgrade; the JVM image does not reproduce it. The drill still records the last termination and the previous logs of
+any restart, and a crash before the rollout starts is reported as such.
+
+What it does not prove:
+- **300 requests/s is not held on this runner.** On the first run (41545347185, native binary), still with
+  Kubernetes' 1 s probe timeouts:
+  - 7 100 of 12 013 requests failed;
+  - the four replicas went into CrashLoopBackOff;
+  - the node itself was saturated.
+- No conclusion on real capacity follows from either figure. One node with 2 vCPU says nothing about a cluster
+  where replicas get their own CPU.
 
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|
