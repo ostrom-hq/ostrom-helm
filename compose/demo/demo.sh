@@ -57,7 +57,7 @@ pull() {
 # Docker lists a docker.io image's digests under its short name (ostromhq/x@sha256:...): matched with or without the
 # prefix, given back under the name asked for.
 digest_of() {
-  name=${1%%[:@]*}; short=${name#docker.io/}
+  name=${1%%[:@]*}; short=${name#docker.io/}; short=${short#library/}
   docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" |
     sed -n "s|^\(docker\.io/\)\{0,1\}$short@|$name@|p" | head -n 1 | grep . || die "no digest for $1 (an image built here, not pulled?)"
 }
