@@ -35,6 +35,9 @@ function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, h
   };
   const page = {
     log,
+    url: () => 'https://checkout.stripe.com/x',
+    frames: () => [{ url: () => 'https://checkout.stripe.com/x' }, { url: () => 'about:blank' }],
+    $$eval: async () => ['#cardNumber', '[hosted-payment-submit-button]'],
     goto: async (u) => { log.push(['goto', u]); },
     locator,
     getByRole: (role, o) => (log.push(['role', role, o.name]), locator(role)),
@@ -99,7 +102,7 @@ test('the address may be typed by hand, the Link box is unchecked, and Subscribe
 test('a payer Stripe never sends back is an error, and the browser is closed anyway', async () => {
   const page = fakePage({ backAfter: 99 });
   const chromium = fakeChromium(page);
-  await assert.rejects(payAndSeeThePlan({ chromium, checkoutUrl: 'https://checkout.stripe.com/x', cookies: [], app: 'http://app.localhost', email: 'o@acme.demo', plan: 'Team' }), /did not send the payer back/);
+  await assert.rejects(payAndSeeThePlan({ chromium, checkoutUrl: 'https://checkout.stripe.com/x', cookies: [], app: 'http://app.localhost', email: 'o@acme.demo', plan: 'Team' }), /did not send the payer back.*page https:\/\/checkout\.stripe\.com\/x; frames 1: .*fields: #cardNumber \[hosted-payment-submit-button\]/);
   assert.equal(chromium.state.closed, true);
 });
 

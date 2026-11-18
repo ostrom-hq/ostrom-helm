@@ -499,7 +499,7 @@ async function journey() {
         const ok = plan.plan === 'team' && plan.status === 'active' && paid.includes('paid');
         record('H3', 'Paiement par la carte de test 4242, webhook, plan actif dans la console', ok ? GREEN : RED, `carte 4242 payée sur Checkout (mode test) ; serveur : plan ${plan.plan} ${plan.status} ${plan.interval ?? ''}, factures ${paid.join(',') || 'aucune'} (webhook de Stripe reçu) ; console /billing : « ${seen} »`);
       } catch (error) {
-        record('H3', 'Paiement par la carte de test 4242, webhook, plan actif dans la console', RED, `${error.message}`.slice(0, 300));
+        record('H3', 'Paiement par la carte de test 4242, webhook, plan actif dans la console', RED, `${error.message}`.slice(0, 2000));
       }
     }
   }

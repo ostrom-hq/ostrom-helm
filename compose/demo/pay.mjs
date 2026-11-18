@@ -72,6 +72,20 @@ async function pay(page, email) {
   throw new Error('Stripe did not send the payer back after Subscribe (three waits of 45 s)');
 }
 
+/** What the page shows, for an error: its URL, its frames, and the ids and test ids of its fields and buttons. */
+export async function describe(page) {
+  try {
+    const frames = page.frames().map((f) => f.url()).filter((u) => u && u !== 'about:blank');
+    const fields = await page.$$eval('input, select, button, [data-testid]', (els) => els
+      .filter((e) => e.offsetParent !== null)
+      .map((e) => e.getAttribute('data-testid') ? `[${e.getAttribute('data-testid')}]` : e.id ? `#${e.id}` : e.getAttribute('name') ? `name=${e.getAttribute('name')}` : '')
+      .filter(Boolean).slice(0, 40));
+    return `page ${page.url()}; frames ${frames.length}: ${frames.map((u) => u.slice(0, 60)).join(' | ')}; fields: ${fields.join(' ')}`;
+  } catch (error) {
+    return `(page not readable: ${error.message})`;
+  }
+}
+
 /**
  * Pays `checkoutUrl` as the owner (`cookies`: the console's session, so the way back lands signed in), then opens the
  * console's billing page and waits for the paid plan: the plan card says `plan` and "Active".
@@ -85,7 +99,11 @@ export async function payAndSeeThePlan({ chromium, checkoutUrl, cookies, app, em
     await context.addCookies(cookies);
     const page = await context.newPage();
     await page.goto(checkoutUrl);
-    await pay(page, email);
+    try {
+      await pay(page, email);
+    } catch (error) {
+      throw new Error(`${error.message.split('\n')[0]} — ${await describe(page)}`);
+    }
     await page.goto(`${app}/billing`);
     const region = page.getByRole('region', { name: 'Plan', exact: true });
     await region.getByText(plan, { exact: true }).waitFor({ state: 'visible', timeout: 90000 });
