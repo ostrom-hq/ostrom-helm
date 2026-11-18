@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { CARD, chromiumFrom, cookiesOf, payAndSeeThePlan } from '../pay.mjs';
+import { CARD, chromiumFrom, cookiesOf, describe, payAndSeeThePlan } from '../pay.mjs';
 
 /** A page that records what is done to it; `card` says whether Checkout lists a card accordion first. */
 function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, hidden = [], failedClicks = 0, busy = false } = {}) {
@@ -26,7 +26,8 @@ function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, h
       press: async (k) => { log.push(['press', sel, k]); },
       getAttribute: async () => 'false',
       isEditable: async () => true,
-      isEnabled: async () => !busy,
+      // busy: Checkout confirming (the button disabled); 'gone': the button no longer readable.
+      isEnabled: async () => { if (busy === 'gone') throw new Error('detached'); return !busy; },
       inputValue: async () => '',
       isVisible: async () => shows(sel),
       isChecked: async () => linkChecked,
@@ -41,7 +42,7 @@ function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, h
     log,
     url: () => 'https://checkout.stripe.com/x',
     // Checkout's form in a frame of its own (the payment Element), next to an empty one.
-    frames: () => [{ url: () => 'about:blank', locator: () => ({ first: () => ({ isVisible: async () => false }) }), $$eval: async () => [] }, form],
+    frames: () => [{ url: () => 'about:blank', locator: () => ({ first: () => ({ isVisible: async () => { throw new Error('detached'); } }) }), $$eval: async () => [] }, form],
     goto: async (u) => { log.push(['goto', u]); },
     locator: () => { throw new Error('the form is in its frame, not in the page'); },
     getByRole: (role, o) => (log.push(['role', role, o.name]), locator(role)),
@@ -120,5 +121,36 @@ test('Subscribe is not clicked again while Checkout is still confirming the paym
   const page = fakePage({ backAfter: 99, busy: true });
   const chromium = fakeChromium(page);
   await assert.rejects(payAndSeeThePlan({ chromium, checkoutUrl: 'https://checkout.stripe.com/x', cookies: [], app: 'http://app.localhost', email: 'o@acme.demo', plan: 'Team' }), /did not send the payer back/);
+  assert.equal(page.log.filter((e) => e[0] === 'click' && e[1].includes('submit')).length, 1);
+});
+
+/** An element as describe() reads it in the browser. */
+const el = ({ testid = null, id = '', name = null, shown = true }) => ({
+  offsetParent: shown ? {} : null,
+  id,
+  getAttribute: (a) => ({ 'data-testid': testid, name })[a] ?? null,
+});
+
+test('describe names each frame\'s visible fields by test id, id or name, and skips a frame it cannot read', async () => {
+  const elements = [el({ testid: 'card-accordion-item-button' }), el({ id: 'cardNumber' }), el({ name: 'number' }), el({}), el({ id: 'hidden', shown: false })];
+  const page = {
+    url: () => 'https://checkout.stripe.com/g/pay/cs_x#secret',
+    frames: () => [
+      { url: () => 'https://checkout.stripe.com/g/pay/cs_x', $$eval: async (_sel, fn) => fn(elements) },
+      { url: () => 'https://js.stripe.com/v3/elements-inner', $$eval: async () => { throw new Error('detached'); } },
+      { url: () => 'about:blank', $$eval: async (_sel, fn) => fn([]) },
+    ],
+  };
+  assert.equal(await describe(page), 'page https://checkout.stripe.com/g/pay/cs_x; frames 2: https://checkout.stripe.com/g/pay/cs_x | https://js.stripe.com/v3/elements-inner; fields: https://checkout.stripe.com/g/pay/cs_x: [card-accordion-item-button] #cardNumber name=number');
+});
+
+test('describe says when no frame shows a field, and when the page cannot be read at all', async () => {
+  assert.equal(await describe({ url: () => 'https://x', frames: () => [] }), 'page https://x; frames 0: ; fields: none');
+  assert.equal(await describe({ frames: () => { throw new Error('closed'); } }), '(page not readable: closed)');
+});
+
+test('a Subscribe button that can no longer be read is not clicked again', async () => {
+  const page = fakePage({ backAfter: 99, busy: 'gone' });
+  await assert.rejects(payAndSeeThePlan({ chromium: fakeChromium(page), checkoutUrl: 'https://checkout.stripe.com/x', cookies: [], app: 'http://app.localhost', email: 'o@acme.demo', plan: 'Team' }), /did not send the payer back/);
   assert.equal(page.log.filter((e) => e[0] === 'click' && e[1].includes('submit')).length, 1);
 });
