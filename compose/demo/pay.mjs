@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 // The demo's payment: the owner pays for a plan on Stripe's hosted Checkout with the TEST card 4242, in a real browser
 // (Playwright's Chromium), then the console is read for the paid plan. Stripe is in test mode, never live: the stack
 // refuses any key that is not a test key (docker-compose.demo-stripe.yml). Journey.mjs calls it only when
