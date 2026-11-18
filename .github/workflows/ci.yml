@@ -58,7 +58,7 @@ jobs:
             --source compose README.md docs
       # The real `ostrom-server migrate` against the chart's roles (ci/migrate-drill.sh): ostrom-server main, already
       # checked out above, built into its own image. On main, tags and by hand always; on a pull request only when it
-      # touches the database roles or the migrations' wiring, to keep the native build (10 to 15 minutes) off the rest.
+      # touches the database roles or the migrations' wiring, to keep the server build off the rest.
       - name: Does this change need the real server?
         id: real
         env:
@@ -89,26 +89,21 @@ jobs:
       - if: steps.real.outputs.run == 'true'
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with: { cache-disabled: true }
-      - name: Build the server image of ostrom-server main (its ci/build-linux.sh and Dockerfile)
+      - name: Build the server image of ostrom-server main (jib, its image/build.gradle.kts)
         if: steps.real.outputs.run == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mv server-core "$RUNNER_TEMP/ostrom-core"
           mkdir -p ~/.gradle && echo "ostrom.core.local=true" >> ~/.gradle/gradle.properties
-          for size in 4G 2G; do
-            if sudo fallocate -l "$size" /native-link.swap; then
-              sudo chmod 600 /native-link.swap && sudo mkswap /native-link.swap && sudo swapon /native-link.swap && break
-            fi
-          done
           cd "$RUNNER_TEMP/docs-truth-server"
-          ./ci/build-linux.sh
-          docker build -t ostrom-server:chart-ci .
+          # The JVM image (docs/decisions/0001) for this runner's architecture, into the local daemon, as the server's
+          # own ci.yml builds it: ostrom-server:chart-ci.
+          ./gradlew :image:publishImageToLocalRegistry -PimageTags=chart-ci -PimagePlatforms=amd64
+          docker image inspect ostrom-server:chart-ci --format '{{.Size}}' >/dev/null
           echo "Real server for the migration drill: ostrom-server@$(git rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          # Give the disk and the memory back to kind and Compose: the toolchain and the swap are no longer needed.
+          # Give the disk and the memory back to kind and Compose: the toolchain is no longer needed.
           ./gradlew --stop || true
-          sudo swapoff /native-link.swap || true
-          sudo rm -f /native-link.swap
           rm -rf ~/.konan ~/.gradle/caches "$RUNNER_TEMP/docs-truth-server/build" "$RUNNER_TEMP/docs-truth-server"/*/build "$RUNNER_TEMP/ostrom-core"
           df -h / && free -h
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
