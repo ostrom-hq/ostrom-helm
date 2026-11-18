@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # CI stand-in of the ostrom-server CLI: the same subcommands and exit codes as the real binary (0 ok, 2 refused),
 # without a server. `migrate` needs the owner's URL, as the real one does.
 case "$*" in

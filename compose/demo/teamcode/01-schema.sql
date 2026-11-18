@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: AGPL-3.0-only
+-- SPDX-License-Identifier: Apache-2.0
 -- Local demo only: the TeamCode tables `ostrom import teamcode` reads, with TeamCode's columns, types and keys
 -- (teamcode infrastructure/database/tables: Teams, Members, Variants, VariantAssignments, McpToolPolicies, Accounts).
 CREATE TABLE `teams` (

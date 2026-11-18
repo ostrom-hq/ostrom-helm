@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # No secret in clear outside a Secret (AUDIT-SECU-HELM-2 M4). Renders the chart with a witness value in every input
 # that holds a secret, on several value sets, then fails if a witness, or any value of a rendered Secret (the generated
 # passwords and keys included), appears in another object: a ConfigMap, a pod spec, an annotation, a label. The `view`

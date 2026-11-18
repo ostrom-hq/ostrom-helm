@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # The real `ostrom-server migrate` against the chart's database roles, on kind (image built from ostrom-server main
 # and loaded as $SERVER_IMAGE):
 #   A. install (first migration), then upgrade and restart (second migration: a no-op that must still pass); before

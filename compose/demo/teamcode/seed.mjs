@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 // Local demo only: the rows of a fake TeamCode team (team `default`), for `ostrom import teamcode` against the demo's
 // MySQL (teamcode-db). Secrets are sealed the way TeamCode's CredentialCipher seals them: `v1:` then base64url without
 // padding of a 12-byte nonce, the AES-256-GCM ciphertext and its tag, the context as associated data

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # What every pod the chart renders must hold (AUDIT-SECU-HELM-2 M6), checked by the Kyverno CLI on every render the CI
 # validates (ci/policy-check.sh). That script turns each Deployment, StatefulSet, Job and CronJob into the Pod it
 # would create, so the rules are written for Pods only. Never applied to a cluster: the chart creates nothing

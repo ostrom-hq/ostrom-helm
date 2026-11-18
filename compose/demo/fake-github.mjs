@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 // A stand-in for GitHub's OAuth web flow, for the local demo stack only: the browser is sent to its authorize page,
 // picks a login, and comes back to the server with a one-time code; the server exchanges the code and reads the user.
 // It never reaches the real GitHub and knows no real account. Routes (the server's OSTROM_GITHUB_WEB_URL and

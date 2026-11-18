@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # Local demo: the fake TeamCode base answers as `ostrom import teamcode` reads it (journey.mjs runs it,
 # OSTROM_DEMO_TEAMCODE_CHECK): the read-only user sees the team's rows and cannot write.
 set -eu

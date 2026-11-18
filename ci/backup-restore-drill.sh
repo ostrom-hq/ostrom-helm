@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # Restore drill of docs/backup-restore.md, on kind, with the commands of that page: install, write data, back up with
 # the chart's CronJob, copy the backups and the secrets off the cluster, then restore everything into a fresh
 # namespace and check that the data, the roles and the keys came back. Any step of the page that does not work

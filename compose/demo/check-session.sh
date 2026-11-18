@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # Local demo: what a running cloud session's containers can reach (journey.mjs runs it, OSTROM_DEMO_SESSION_CHECK).
 # Given SESSION_ID, checks on the engine that:
 #   - the session runs as three containers, the agent host and the check host (UID 1001) and the runner (UID 1000),

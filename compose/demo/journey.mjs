@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 // The customer's journey on the local demo stack, from outside, through Caddy, as a browser and the CLI would call it:
 // sign-up by e-mailed link (read in Mailpit), sign-in with the fake GitHub, an organization, an invitation accepted,
 // the CLI's device login, a cloud session on this machine's Docker with its terminal, a check Ostrom runs itself
