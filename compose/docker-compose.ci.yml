@@ -8,6 +8,8 @@ services:
   server:
     image: docker.io/hashicorp/http-echo:1.0
     command: ["-listen=:8080", "-text={\"status\":\"ok\"}"]
+    # The real image's healthcheck runs bash; this stand-in is a lone binary, ready as soon as it runs.
+    healthcheck: { disable: true }
   web:
     image: docker.io/hashicorp/http-echo:1.0
     command: ["-listen=:8080", "-text=console"]
