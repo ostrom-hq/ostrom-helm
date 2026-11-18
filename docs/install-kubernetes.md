@@ -85,7 +85,7 @@ The instance is closed to sign-up: nobody gets an account until its first owner 
 Print their one-time setup link:
 
 ```sh
-kubectl -n ostrom exec deploy/ostrom-server -- ostrom-server bootstrap
+kubectl -n ostrom exec deploy/ostrom-server -c server -- ostrom-server bootstrap   # deploy/<release>-server
 ```
 
 It works once, for an hour (run the command again for a new one), and only while the instance has no account. The
