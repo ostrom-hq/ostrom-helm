@@ -25,7 +25,7 @@ real=(-f charts/ostrom/ci/standin-values.yaml --set ingress.enabled=false --set 
 
 fail() { echo "FAIL: $*" >&2; kubectl get all,jobs -n "$NS" -o wide >&2 || true
   for p in $(kubectl get pods -n "$NS" -o name); do kubectl logs -n "$NS" "$p" --all-containers --tail=40 >&2 || true; done; exit 1; }
-histories="relkind = 'r' AND relnamespace = 'public'::regnamespace AND relname LIKE '\_migrations\_%'"
+histories="relkind = 'r' AND relnamespace = 'public'::regnamespace AND (relname LIKE '\_migrations\_%' OR relname LIKE 'flyway\_%')"
 psql_su() { kubectl -n "$NS" exec -i $POD -- psql -U postgres -d ostrom -v ON_ERROR_STOP=1 -Atc "$1"; }
 restricted_ns() {
   kubectl create namespace "$1"
@@ -38,8 +38,9 @@ migrated() {
       || fail "$p: migrate did not exit 0"
     kubectl -n "$NS" logs "$p" -c migrate --tail=5
   done
-  [ "$(psql_su "SELECT count(*) FROM pg_proc WHERE proname LIKE 'orgs\_%' AND pg_get_userbyid(proowner) <> 'ostrom_router' AND prosecdef")" = 0 ] \
-    || fail "a SECURITY DEFINER function of orgs is not owned by ostrom_router"
+  # The member search's function has its own owner (ostrom-server orgs migration 7, docs/tenancy.md).
+  [ "$(psql_su "SELECT count(*) FROM pg_proc WHERE proname LIKE 'orgs\_%' AND prosecdef AND pg_get_userbyid(proowner) <> CASE proname WHEN 'orgs_search_members' THEN 'ostrom_member_search' ELSE 'ostrom_router' END")" = 0 ] \
+    || fail "a SECURITY DEFINER function of orgs is not owned by ostrom_router (ostrom_member_search for the member search)"
   [ "$(psql_su "SELECT count(*) FROM pg_proc WHERE proname = 'orgs_create_organization' AND pg_get_userbyid(proowner) = 'ostrom_router'")" = 1 ] \
     || fail "orgs_create_organization missing or not owned by ostrom_router"
   # AUDIT-RLS R8: histories exist, ostrom_app reads them, and no role but the owner writes one.
@@ -191,7 +192,7 @@ helm install $REL charts/ostrom -n $NS "${real[@]}" "${external[@]}" \
   --set externalDatabase.tls.enabled=true --set externalDatabase.tls.ca.secretName=pg-tls-ca \
   --wait --timeout 10m || fail "install through the TLS proxy"
 kubectl -n $NS rollout status deploy/$REL-server --timeout 5m || fail "the server is not ready (/ready) through the proxy"
-[ "$(pg_tls "SELECT count(*) FROM pg_class WHERE relname LIKE '\_migrations\_%'")" -gt 0 ] || fail "no migration through the proxy"
+[ "$(pg_tls "SELECT count(*) FROM pg_class WHERE $histories")" -gt 0 ] || fail "no migration through the proxy"
 [ "$(pg_tls "SELECT count(*) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.usename = 'ostrom_app' AND s.ssl")" -gt 0 ] \
   || fail "no TLS connection of the serving role"
 [ "$(pg_tls "SELECT count(*) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.usename = 'ostrom_app' AND NOT s.ssl")" = 0 ] \
