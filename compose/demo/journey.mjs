@@ -109,7 +109,29 @@ async function mailTo(to, marker) {
 }
 const tokenIn = (text, page) => new RegExp(`${page}#token=([A-Za-z0-9._~%-]+)`).exec(text ?? '')?.[1];
 
-async function signInByMail(p, email) {
+/**
+ * The instance is invite-only (the server's default, as TeamCode has no public registration): a new person presents the
+ * token of the setup link (`ostrom-server bootstrap`, the first owner) or of an invitation before signing in, as the
+ * console does from its link's fragment.
+ */
+async function grantSignUp(p, token) {
+  const granted = await p.call('POST', '/api/v1/auth/signup-grant', { token });
+  return granted.status < 300 ? { ok: true, detail: `signup-grant → ${granted.status}` } : { ok: false, detail: `signup-grant → ${brief(granted)}` };
+}
+
+/** The first owner's setup link, as the operator gets it on the host: `ostrom-server bootstrap` in the server container. */
+function bootstrapToken() {
+  const out = execFileSync('docker', ['exec', env('OSTROM_DEMO_SERVER_CONTAINER', 'ostrom-server-1'), '/usr/local/bin/ostrom-server', 'bootstrap'], { encoding: 'utf8' });
+  const token = tokenIn(out, 'setup');
+  if (!token) throw new Error(`no setup link in the output of \`ostrom-server bootstrap\`: ${out.slice(0, 160)}`);
+  return decodeURIComponent(token);
+}
+
+async function signInByMail(p, email, grant) {
+  if (grant) {
+    const granted = await grantSignUp(p, grant);
+    if (!granted.ok) return granted;
+  }
   const asked = await p.call('POST', '/api/v1/auth/email', { email });
   if (asked.status >= 300) return { ok: false, detail: `POST /auth/email → ${brief(asked)}` };
   const mail = await mailTo(email, '/auth/email#token=');
@@ -142,12 +164,35 @@ async function journey() {
   // (a) Sign-up and sign-in by e-mailed link (Mailpit), then with GitHub (fake).
   const owner = new Browser('owner');
   const ownerEmail = `alice-${run}@acme.demo`;
-  const a1 = await signInByMail(owner, ownerEmail);
-  record('A1', `Inscription par lien e-mail (${ownerEmail})`, a1.ok ? GREEN : RED, a1.detail);
+  let a1;
+  try {
+    a1 = await signInByMail(owner, ownerEmail, bootstrapToken());
+  } catch (e) {
+    a1 = { ok: false, detail: e.message };
+  }
+  record('A1', `Inscription du premier propriétaire (lien d’installation, puis lien e-mail) (${ownerEmail})`, a1.ok ? GREEN : RED, a1.detail);
 
+  // (b) An organization, then a second member invited by e-mail who accepts.
+  let orgId = '';
+  if (a1.ok) {
+    const made = await owner.call('POST', '/api/v1/orgs', { name: `Acme ${run}` });
+    orgId = made.json.id ?? '';
+    record('B1', 'Création de l’organisation', made.status < 300 && orgId ? GREEN : RED, `POST /orgs → ${brief(made)}`);
+  } else record('B1', 'Création de l’organisation', NOT_YET, 'A1 a échoué');
+  owner.org = orgId;
+
+  // Bob signs in with GitHub on an invite-only instance: the owner invites the address the fake GitHub gives him.
   const gh = new Browser('github');
   let a2 = { ok: false, detail: '' };
   try {
+    if (!orgId) throw new Error('A1 ou B1 a échoué: pas d’organisation pour inviter');
+    const bobEmail = `bob-${run}@users.github.demo`;
+    const invitedBob = await owner.call('POST', `/api/v1/orgs/${orgId}/members/invites`, { invites: [{ email: bobEmail, role: 'approver' }] });
+    const bobMail = await mailTo(bobEmail, '/invite#token=');
+    const bobToken = tokenIn(bobMail?.Text, '/invite');
+    if (!bobToken) throw new Error(`invites → ${invitedBob.status}, no invitation mail for ${bobEmail}`);
+    const granted = await grantSignUp(gh, decodeURIComponent(bobToken));
+    if (!granted.ok) throw new Error(granted.detail);
     const start = await gh.call('GET', '/api/v1/auth/github/start?redirect=%2F', undefined, { redirect: 'manual' });
     const authorize = new URL(start.headers.get('location') ?? 'about:blank');
     if (start.status !== 302 || !authorize.pathname.endsWith('/login/oauth/authorize')) throw new Error(`start → ${brief(start)}`);
@@ -167,15 +212,6 @@ async function journey() {
   }
   record('A2', 'Connexion avec GitHub (faux GitHub local)', a2.ok ? GREEN : RED, a2.detail);
 
-  // (b) An organization, then a second member invited by e-mail who accepts.
-  let orgId = '';
-  if (a1.ok) {
-    const made = await owner.call('POST', '/api/v1/orgs', { name: `Acme ${run}` });
-    orgId = made.json.id ?? '';
-    record('B1', 'Création de l’organisation', made.status < 300 && orgId ? GREEN : RED, `POST /orgs → ${brief(made)}`);
-  } else record('B1', 'Création de l’organisation', NOT_YET, 'A1 a échoué');
-  owner.org = orgId;
-
   const reviewer = new Browser('reviewer');
   const reviewerEmail = `rev-${run}@acme.demo`;
   let joined = false;
@@ -183,7 +219,7 @@ async function journey() {
     const invited = await owner.call('POST', `/api/v1/orgs/${orgId}/members/invites`, { invites: [{ email: reviewerEmail, role: 'approver' }] });
     const mail = await mailTo(reviewerEmail, '/invite#token=');
     const token = tokenIn(mail?.Text, '/invite');
-    const signed = token ? await signInByMail(reviewer, reviewerEmail) : { ok: false, detail: 'no invitation mail' };
+    const signed = token ? await signInByMail(reviewer, reviewerEmail, decodeURIComponent(token)) : { ok: false, detail: 'no invitation mail' };
     const accepted = signed.ok ? await reviewer.call('POST', '/api/v1/invitations/accept', { token: decodeURIComponent(token) }) : { status: 0, text: signed.detail };
     reviewer.org = orgId;
     const members = await owner.call('GET', `/api/v1/orgs/${orgId}/members`);
