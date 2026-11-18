@@ -99,7 +99,7 @@ Needs a server image with the settings in the console (ostrom-server#438 and the
   Deployment, Service and `sso.` Ingress. Its database and Secret stay; set `polis.enabled: true` to keep it running.
 - The server's probes have explicit timeouts (`server.probes.*.timeoutSeconds`: startup 2 s, liveness 5 s,
   readiness 3 s) instead of Kubernetes' 1 s: liveness no longer restarts a server that is only slow under load. A
-  values file that overrides `server.probes.<probe>` without `timeoutSeconds` keeps 1 s.
+  values file that overrides a field of `server.probes.<probe>` keeps the chart's timeout (Helm merges the maps).
 
 ## 0.1.x → 0.2.x
 

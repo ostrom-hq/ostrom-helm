@@ -32,9 +32,15 @@ export default function () {
 
 export function handleSummary(data) {
   const m = data.metrics;
+  const requests = m.http_reqs ? m.http_reqs.values.count : 0;
+  // Failed requests by both counts (a transport error, or a status other than 200); if a k6 version renames both,
+  // every request counts as failed rather than none.
+  const reqFailed = m.http_req_failed && m.http_req_failed.values.passes;
+  const checkFailed = m.checks && m.checks.values.fails;
+  const known = typeof reqFailed === 'number' || typeof checkFailed === 'number';
   const out = {
-    requests: m.http_reqs ? m.http_reqs.values.count : 0,
-    failed: m.http_req_failed ? m.http_req_failed.values.passes : 0,
+    requests,
+    failed: known ? Math.max(reqFailed || 0, checkFailed || 0) : requests,
     dropped: m.dropped_iterations ? m.dropped_iterations.values.count : 0,
     p95: m.http_req_duration ? m.http_req_duration.values['p(95)'] : null,
     p99: m.http_req_duration ? m.http_req_duration.values['p(99)'] : null,

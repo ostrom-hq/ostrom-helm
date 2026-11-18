@@ -111,7 +111,7 @@ k6_result() { # name timeout-in-seconds -> the summary JSON in $work/<name>.json
   done
   case "$st" in 1/*) ;; */1) echo "::warning::k6 ($1) failed" ;; *) echo "::warning::k6 ($1) still running after $2 s" ;; esac
   kubectl -n $NS logs job/"$1" > "$work/$1.log" 2>&1 || true
-  grep '^DRILL-SUMMARY ' "$work/$1.log" | tail -1 | cut -d' ' -f2- > "$work/$1.json"
+  { grep '^DRILL-SUMMARY ' "$work/$1.log" || true; } | tail -1 | cut -d' ' -f2- > "$work/$1.json"
   [ -s "$work/$1.json" ] || { tail -40 "$work/$1.log"; fail "k6 ($1) gave no summary"; }
   # Failed requests by kind, with the first and last second each was seen (to set them against the rollout's times).
   grep 'msg="Request Failed"' "$work/$1.log" | sed -E 's/^time="([^"]*)".*error="(.*)"$/\1 \2/; s/[0-9]+(\.[0-9]+){3}(:[0-9]+)?/IP/g' \
@@ -124,7 +124,8 @@ k6_result() { # name timeout-in-seconds -> the summary JSON in $work/<name>.json
 k6_figures() { jq -r '"\(.requests // 0) \(.failed // 0) \(.dropped // 0) \(.p95 // 0) \(.p99 // 0)"' "$work/$1.json"; }
 server_pods() { kubectl -n $NS get pods -l app.kubernetes.io/component=server -o json; }
 
-( touch "$work/crashes.txt"
+# Best effort: a slow API server (the node is saturated) must not end the catcher, so no -e/pipefail in it.
+( set +e +o pipefail; touch "$work/crashes.txt"
   while [ ! -e "$work/stop-catcher" ]; do
     kubectl -n $NS get pods -l app.kubernetes.io/component=server -o json 2>/dev/null | jq -r '.items[] | .metadata.name as $p
       | .status.containerStatuses[]? | select(.restartCount > 0) | "\($p) \(.name) \(.restartCount)"' 2>/dev/null \
@@ -145,7 +146,7 @@ kubectl -n $NS wait hpa/$REL-server --for=jsonpath='{.status.currentMetrics[0].r
   --timeout 3m >/dev/null 2>&1 || echo "::warning::the HPA had no CPU metric yet before the peak"
 # One sample every 5 s: seconds since the start, desired and current replicas, ready server pods.
 peak_start=$(date +%s)
-echo "rollout starts at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "peak starts at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # A sample is written only when both reads succeed, with 0 for a missing field: four columns, always.
 ( while [ ! -e "$work/stop" ]; do
     h=$(kubectl -n $NS get hpa $REL-server -o json 2>/dev/null \
@@ -186,7 +187,11 @@ echo "== 2. A version rollout under steady load (the HPA may move meanwhile)"
 before=$(server_pods | jq -r '[.items[].metadata.name] | sort | join(" ")')
 k6_job k6-rollout steady "$ROLLOUT_RATE" "${ROLLOUT_LOAD}s"
 sleep "$ROLLOUT_LEAD"
+# A crash between the peak and the upgrade is not the rollout's: say so before the upgrade starts.
+pre_restarts=$(server_pods | jq '[.items[].status.containerStatuses[]?.restartCount] | add // 0')
+[ "$pre_restarts" = 0 ] || fail "$pre_restarts container restarts after the peak, before the rollout began"
 start=$(date +%s)
+echo "rollout starts at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 helm upgrade $REL charts/ostrom -n $NS "${real[@]}" --set-string server.podAnnotations.drill-rollout=2 \
   --wait --timeout 5m || fail "the upgrade under load"
 kubectl -n $NS rollout status deploy/$REL-server --timeout 5m || fail "the rollout under load"
