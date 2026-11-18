@@ -3,6 +3,7 @@ templates:
   - templates/server-config.yaml
   - templates/web.yaml
   - templates/ingress.yaml
+  - templates/NOTES.txt
 release: { name: o, namespace: ostrom }
 tests:
   - it: off by default, the server still links to the console's artifact page
@@ -67,3 +68,12 @@ tests:
     set: { global.urls.artifacts: "http://api.example.com" }
     asserts:
       - failedTemplate: { errorPattern: "api.example.com is also global.urls.api's" }
+  - it: the NOTES give the pages' origin when set
+    template: templates/NOTES.txt
+    set: { global.urls.artifacts: "https://artifacts.ostrom.run" }
+    asserts:
+      - matchRegexRaw: { pattern: "Artifact pages  https://artifacts.ostrom.run" }
+  - it: and say nothing of it by default
+    template: templates/NOTES.txt
+    asserts:
+      - notMatchRegexRaw: { pattern: "Artifact pages" }
