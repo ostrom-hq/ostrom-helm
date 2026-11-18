@@ -51,13 +51,18 @@ spec:
       securityContext:
         {{- toYaml (mergeOverwrite (deepCopy .Values.podSecurityContext) (dict "runAsUser" $s.runAsUser "runAsGroup" $s.runAsUser "fsGroup" $s.runAsUser)) | nindent 8 }}
       enableServiceLinks: false
-      terminationGracePeriodSeconds: 30
+      {{- $grace := int $s.terminationGracePeriodSeconds }}
+      {{- $needed := add (int $s.shutdownDelaySeconds) (int $s.shutdownGraceSeconds) 15 }}
+      {{- if le $grace $needed }}
+      {{- fail (printf "server.terminationGracePeriodSeconds (%d) must be longer than shutdownDelaySeconds + shutdownGraceSeconds + 15 (%d), or calls in flight are killed during a rollout" $grace $needed) }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ $grace }}
       {{- $proxy := include "ostrom.dbProxy.enabled" . }}
       {{- if or .Values.migrations.initContainer $proxy }}
       initContainers:
         {{- if $proxy }}
         {{- $t := .Values.externalDatabase.tls }}
-        # externalDatabase.tls (AUDIT-SECU-HELM-2 H1): the server's driver has no TLS. The config step writes the
+        # externalDatabase.tls (AUDIT-SECU-HELM-2 H1): the server passes no sslmode to its driver. The config step writes the
         # proxy's password file in memory; the proxy (a native sidecar: it starts before `migrate` and lives with the
         # pod) dials the database in TLS and checks its certificate. The server and `migrate` reach it on 127.0.0.1.
         - name: db-proxy-config
@@ -129,6 +134,9 @@ spec:
                 secretKeyRef: {{- include "ostrom.database.ownerPasswordRef" . | nindent 18 }}
             - name: OSTROM_DATABASE_MIGRATION_URL
               value: {{ regexReplaceAll "^([a-z]+)://" (include "ostrom.database.url" .) "${1}://$(OSTROM_DATABASE_MIGRATION_USER):$(OSTROM_DATABASE_MIGRATION_PASSWORD)@" | quote }}
+            {{- with $s.javaToolOptions }}
+            - { name: JAVA_TOOL_OPTIONS, value: {{ . | quote }} }
+            {{- end }}
           {{- include "ostrom.containerSecurityContext" . | nindent 10 }}
           resources: {{- toYaml $s.resources | nindent 12 }}
         {{- end }}
@@ -156,6 +164,9 @@ spec:
                 secretKeyRef: {{- include "ostrom.database.passwordRef" . | nindent 18 }}
             - name: OSTROM_POD_NAME
               valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            {{- with $s.javaToolOptions }}
+            - { name: JAVA_TOOL_OPTIONS, value: {{ . | quote }} }
+            {{- end }}
             # One key for every replica, kept across upgrades (SECURITY-AUDIT S2-11): never a per-pod key file.
             - name: OSTROM_SECRETS_KEY
               valueFrom:

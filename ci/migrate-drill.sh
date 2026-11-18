@@ -10,7 +10,8 @@
 #      orgs migration hands its functions over (GRANT ostrom_router TO CURRENT_USER, ALTER FUNCTION … OWNER).
 #   C. an external PostgreSQL that accepts TLS only (`hostssl`, its certificate signed by a CA of the test):
 #      with externalDatabase.tls the server migrates and serves (/ready) through the proxy sidecar, over TLS;
-#      without it, the install fails and PostgreSQL logs the refused plain connection (AUDIT-SECU-HELM-2 H1).
+#      without it, the JVM server's driver (pgjdbc, `sslmode=prefer` by default) still encrypts, unverified, and no
+#      connection is in clear (AUDIT-SECU-HELM-2 H1).
 # Each scenario ends with the cross-organization functions owned by ostrom_router and the chart's tests passing.
 # Usage: SERVER_IMAGE=ostrom-server:chart-ci ci/migrate-drill.sh
 set -euo pipefail
@@ -25,7 +26,7 @@ real=(-f charts/ostrom/ci/standin-values.yaml --set ingress.enabled=false --set 
 
 fail() { echo "FAIL: $*" >&2; kubectl get all,jobs -n "$NS" -o wide >&2 || true
   for p in $(kubectl get pods -n "$NS" -o name); do kubectl logs -n "$NS" "$p" --all-containers --tail=40 >&2 || true; done; exit 1; }
-histories="relkind = 'r' AND relnamespace = 'public'::regnamespace AND relname LIKE '\_migrations\_%'"
+histories="relkind = 'r' AND relnamespace = 'public'::regnamespace AND (relname LIKE '\_migrations\_%' OR relname LIKE 'flyway\_%')"
 psql_su() { kubectl -n "$NS" exec -i $POD -- psql -U postgres -d ostrom -v ON_ERROR_STOP=1 -Atc "$1"; }
 restricted_ns() {
   kubectl create namespace "$1"
@@ -38,8 +39,9 @@ migrated() {
       || fail "$p: migrate did not exit 0"
     kubectl -n "$NS" logs "$p" -c migrate --tail=5
   done
-  [ "$(psql_su "SELECT count(*) FROM pg_proc WHERE proname LIKE 'orgs\_%' AND pg_get_userbyid(proowner) <> 'ostrom_router' AND prosecdef")" = 0 ] \
-    || fail "a SECURITY DEFINER function of orgs is not owned by ostrom_router"
+  # The member search's function has its own owner (ostrom-server orgs migration 7, docs/tenancy.md).
+  [ "$(psql_su "SELECT count(*) FROM pg_proc WHERE proname LIKE 'orgs\_%' AND prosecdef AND pg_get_userbyid(proowner) <> CASE proname WHEN 'orgs_search_members' THEN 'ostrom_member_search' ELSE 'ostrom_router' END")" = 0 ] \
+    || fail "a SECURITY DEFINER function of orgs is not owned by ostrom_router (ostrom_member_search for the member search)"
   [ "$(psql_su "SELECT count(*) FROM pg_proc WHERE proname = 'orgs_create_organization' AND pg_get_userbyid(proowner) = 'ostrom_router'")" = 1 ] \
     || fail "orgs_create_organization missing or not owned by ostrom_router"
   # AUDIT-RLS R8: histories exist, ostrom_app reads them, and no role but the owner writes one.
@@ -112,6 +114,11 @@ data:
     GRANT ostrom_tenant TO ostrom_app;
     CREATE ROLE ostrom_router NOLOGIN NOSUPERUSER NOBYPASSRLS;
     GRANT ostrom_router TO ostrom_owner WITH ADMIN OPTION;
+    -- The server's session settings, which the TLS proxy drops (docs/install-kubernetes.md).
+    ALTER ROLE ostrom_app SET statement_timeout = '10s';
+    ALTER ROLE ostrom_app SET lock_timeout = '5s';
+    ALTER ROLE ostrom_app SET idle_in_transaction_session_timeout = '15s';
+    ALTER ROLE ostrom_owner SET lock_timeout = '3s';
     CREATE DATABASE ostrom OWNER ostrom_owner;
     \connect ostrom
     ALTER SCHEMA public OWNER TO ostrom_owner;
@@ -178,20 +185,21 @@ external=(--set postgresql.enabled=false
   --set externalDatabase.username=ostrom_app --set externalDatabase.password=app_pw
   --set externalDatabase.migrationUsername=ostrom_owner --set externalDatabase.migrationPassword=owner_pw
   --set-json 'networkPolicy.server.extraEgress=[{"to":[{"podSelector":{"matchLabels":{"app":"pg-tls"}}}],"ports":[{"protocol":"TCP","port":5432}]}]')
-echo "-- C1. without externalDatabase.tls: refused"
-if helm install $REL charts/ostrom -n $NS "${real[@]}" "${external[@]}" --wait --timeout 3m; then
-  fail "the server started in clear against a TLS-only PostgreSQL"
-fi
-pg_log=$(kubectl -n $NS logs pod/pg-tls)
-grep -q 'no encryption' <<<"$pg_log" || fail "PostgreSQL did not log a refused plain connection"
-echo "plain connection refused by PostgreSQL, as expected"
+echo "-- C1. without externalDatabase.tls: pgjdbc's default sslmode=prefer encrypts (the certificate unverified)"
+helm install $REL charts/ostrom -n $NS "${real[@]}" "${external[@]}" --wait --timeout 10m \
+  || fail "install without the proxy against a TLS-only PostgreSQL"
+[ "$(pg_tls "SELECT count(*) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.usename = 'ostrom_app' AND s.ssl")" -gt 0 ] \
+  || fail "no TLS connection of the serving role without the proxy"
+[ "$(pg_tls "SELECT count(*) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.usename = 'ostrom_app' AND NOT s.ssl")" = 0 ] \
+  || fail "a plain connection of the serving role without the proxy"
+echo "encrypted without the proxy, unverified: externalDatabase.tls is what checks the certificate"
 helm uninstall $REL -n $NS --wait
 echo "-- C2. with externalDatabase.tls (verify-full, the test CA): migrates and serves"
 helm install $REL charts/ostrom -n $NS "${real[@]}" "${external[@]}" \
   --set externalDatabase.tls.enabled=true --set externalDatabase.tls.ca.secretName=pg-tls-ca \
   --wait --timeout 10m || fail "install through the TLS proxy"
 kubectl -n $NS rollout status deploy/$REL-server --timeout 5m || fail "the server is not ready (/ready) through the proxy"
-[ "$(pg_tls "SELECT count(*) FROM pg_class WHERE relname LIKE '\_migrations\_%'")" -gt 0 ] || fail "no migration through the proxy"
+[ "$(pg_tls "SELECT count(*) FROM pg_class WHERE $histories")" -gt 0 ] || fail "no migration through the proxy"
 [ "$(pg_tls "SELECT count(*) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.usename = 'ostrom_app' AND s.ssl")" -gt 0 ] \
   || fail "no TLS connection of the serving role"
 [ "$(pg_tls "SELECT count(*) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.usename = 'ostrom_app' AND NOT s.ssl")" = 0 ] \

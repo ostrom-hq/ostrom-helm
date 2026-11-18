@@ -110,11 +110,18 @@ tests:
     documentSelector: { path: kind, value: Deployment }
     set: { server.image.digest: "sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03" }
     asserts:
-      - equal: { path: 'spec.template.spec.containers[0].image', value: "ghcr.io/ostrom-hq/ostrom-server@sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03" }
-  - it: global tag and registry apply
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "docker.io/ostromhq/ostrom-server@sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03" }
+  - it: the server image comes from Docker Hub, with the global tag; a mirror sets its repository
     template: templates/server.yaml
     documentSelector: { path: kind, value: Deployment }
     set: { global.imageTag: "1.2.3", global.imageRegistry: "registry.local/o", global.imagePullSecrets: [ghcr] }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "docker.io/ostromhq/ostrom-server:1.2.3" }
+      - equal: { path: 'spec.template.spec.initContainers[0].image', value: "docker.io/ostromhq/ostrom-server:1.2.3" }
+  - it: global tag and registry apply to a server repository left empty
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { global.imageTag: "1.2.3", global.imageRegistry: "registry.local/o", global.imagePullSecrets: [ghcr], server.image.repository: "" }
     asserts:
       - equal: { path: 'spec.template.spec.containers[0].image', value: "registry.local/o/ostrom-server:1.2.3" }
       - equal: { path: 'spec.template.spec.imagePullSecrets[0].name', value: ghcr }
@@ -209,3 +216,48 @@ tests:
           content:
             name: OSTROM_SECRETS_KEY
             valueFrom: { secretKeyRef: { name: sealing, key: secrets-key } }
+  - it: the JVM gets TeamCode's options, in the server and in migrate, and 512Mi/1Gi (audit SD-16)
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError" }
+      - contains:
+          path: 'spec.template.spec.initContainers[0].env'
+          content: { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError" }
+      - equal: { path: 'spec.template.spec.containers[0].resources.requests.memory', value: 512Mi }
+      - equal: { path: 'spec.template.spec.containers[0].resources.limits.memory', value: 1Gi }
+  - it: no JAVA_TOOL_OPTIONS when javaToolOptions is empty
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { server.javaToolOptions: "" }
+    asserts:
+      - notContains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError" }
+  - it: a rollout lets calls in flight end, 660 s as TeamCode (audit SD-09)
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal: { path: spec.template.spec.terminationGracePeriodSeconds, value: 660 }
+  - it: a grace period shorter than the drain is refused
+    template: templates/server.yaml
+    set: { server.terminationGracePeriodSeconds: 620 }
+    asserts:
+      - failedTemplate: { errorMessage: "server.terminationGracePeriodSeconds (620) must be longer than shutdownDelaySeconds + shutdownGraceSeconds + 15 (620), or calls in flight are killed during a rollout" }
+  - it: a shorter drain allows a shorter grace period
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { server.shutdownGraceSeconds: 10, server.terminationGracePeriodSeconds: 31 }
+    asserts:
+      - equal: { path: spec.template.spec.terminationGracePeriodSeconds, value: 31 }
+  - it: the drain is written for the server, and bounded
+    template: templates/server-config.yaml
+    asserts:
+      - equal: { path: data.OSTROM_SHUTDOWN_GRACE_SECONDS, value: "600" }
+  - it: a drain past 600 s is refused
+    template: templates/server.yaml
+    set: { server.shutdownGraceSeconds: 601 }
+    asserts:
+      - failedTemplate: { errorMessage: "server.shutdownGraceSeconds must be between 0 and 600, got 601" }

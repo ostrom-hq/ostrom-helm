@@ -19,8 +19,8 @@ reaches your private network and the cloud metadata service.
 {{- end }}
 {{- if and .Values.server.enabled (not .Values.postgresql.enabled) (not (include "ostrom.dbProxy.enabled" .)) }}
 
-The connection to your external PostgreSQL is not encrypted: set externalDatabase.tls (a TLS proxy sidecar,
-see "TLS to an external database" in docs/install-kubernetes.md).
+The server does not check your external PostgreSQL's certificate (encrypted only if it offers TLS): set
+externalDatabase.tls (a TLS proxy sidecar, see "TLS to an external database" in docs/install-kubernetes.md).
 {{- else if and .Values.server.enabled (include "ostrom.dbProxy.enabled" .) (eq .Values.externalDatabase.tls.mode "require") }}
 
 externalDatabase.tls.mode is require: the connection to PostgreSQL is encrypted but its certificate is not checked.

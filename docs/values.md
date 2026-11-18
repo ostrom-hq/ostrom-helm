@@ -56,7 +56,9 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_RUNNERS_ALLOWED_ORGS` | `cloudSessions.allowedOrgs`, only when `cloudSessions.enabled`: organization ids, or `["*"]`; **empty (the default) refuses every organization** (403), audit S2-10. How many sessions run at once comes from each organization's plan |
 | `OSTROM_POD_NAME` | the pod name (downward API) |
 | `OSTROM_TRUSTED_PROXIES` | `server.trustedProxies`: CIDRs (comma separated) of the ingress controller's pods and of the nodes, whose forwarded client address the server believes; unset by default |
-| `OSTROM_SHUTDOWN_DELAY_SECONDS` | `server.shutdownDelaySeconds` (0 to 10, default 5): after SIGTERM, `/ready` answers 503 this long before the server stops, so the Service drops the pod first; readiness probes `/ready`, liveness and startup `/health` |
+| `OSTROM_SHUTDOWN_DELAY_SECONDS` | `server.shutdownDelaySeconds` (0 to 10, default 5): after SIGTERM, `/ready` answers 503 this long before the server stops, so the Service drops the pod first; readiness probes `/ready` (it checks the database), liveness and startup `/health` (the process only: a database outage never restarts the pods) |
+| `OSTROM_SHUTDOWN_GRACE_SECONDS` | `server.shutdownGraceSeconds` (0 to 600, default 600): then the server waits this long at most for the calls in flight (a model's stream, a gate's wait) before it stops. `server.terminationGracePeriodSeconds` (default 660, as TeamCode) must be longer than both plus 15 s: the chart refuses less |
+| `JAVA_TOOL_OPTIONS` | `server.javaToolOptions` (default `-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError`, TeamCode's): the JVM's heap follows the container's limit (`server.resources`, 512Mi requested and 1Gi limit by default) |
 
 A secret never goes in `server.config` (a ConfigMap), `server.extraEnv` with a plain `value`, `web.config` (served to
 every browser) or `site.env`: the chart refuses a key that looks like one (`SECRET`, `PASSWORD`, `TOKEN`, `CREDENTIAL`,
@@ -157,8 +159,9 @@ Job against an external database) and give both: `externalDatabase.username`
 `password` and `migration-password`.
 
 `externalDatabase.tls` (`enabled`, `mode` `verify-full` | `verify-ca` | `require`, `ca.secretName` or
-`ca.configMapName` with `ca.key`, `host`, `proxy.image`, `proxy.resources`): the server's driver has no TLS, so a
-PgBouncer sidecar dials the database in TLS and the server and `migrate` use it on `127.0.0.1:6432`. See "TLS to an
+`ca.configMapName` with `ca.key`, `host`, `proxy.image`, `proxy.resources`): the server passes no `sslmode` to its
+driver (pgjdbc encrypts when it can but checks no certificate), so a PgBouncer sidecar dials the database in TLS,
+checks its certificate, and the server and `migrate` use it on `127.0.0.1:6432`. See "TLS to an
 external database" in [install-kubernetes.md](install-kubernetes.md).
 
 ## Availability

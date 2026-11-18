@@ -19,18 +19,20 @@ nameOverride: ""
 fullnameOverride: ""
 commonLabels: {}
 
-# --- Server (native binary, Ktor CIO) -----------------------------------------------------------------------------
+# --- Server (JVM, Ktor; ostrom-server docs/decisions/0001) ---------------------------------------------------------
 server:
   enabled: true
   image:
-    repository: ""            # default: <global.imageRegistry>/ostrom-server
+    # Docker Hub, built by jib (ostrom-server image.yml). global.imageRegistry does not apply to it: a mirror sets
+    # this repository.
+    repository: docker.io/ostromhq/ostrom-server
     tag: ""                   # default: global.imageTag, then appVersion
     digest: ""                # pins the image (sha256:…); wins over the tag
   command: []
   args: []
   replicas: 2
   port: 8080
-  runAsUser: 65532            # distroless nonroot, the user of the server image
+  runAsUser: 65532            # the user of the server image (jib `container.user`)
   logLevel: info
   database:
     maxConnections: 10
@@ -49,8 +51,17 @@ server:
   # pods and the nodes. Empty: the server sees every request as coming from the proxy (one rate-limit bucket, S2-02).
   trustedProxies: ""
   # Seconds the server keeps answering after SIGTERM while /ready says 503, so the Service drops it first (0 to 10).
-  # With the engine's 15 s stop it stays under terminationGracePeriodSeconds (30).
   shutdownDelaySeconds: 5
+  # Then the server takes no new connection and waits for the calls in flight (a model's stream, a gate's wait) to
+  # end, at most this long (0 to 600), before it stops; the live streams that clients reopen (usage feed, terminal)
+  # are cut. TeamCode's 10 minutes: a model call is bounded by 10 minutes upstream (audit SD-09).
+  shutdownGraceSeconds: 600
+  # Kubernetes kills the pod after this long: shutdownDelaySeconds + shutdownGraceSeconds + the engine's 15 s stop,
+  # and some margin, or a call in flight is killed during a rollout (the chart refuses less). TeamCode: 660.
+  terminationGracePeriodSeconds: 660
+  # The JVM's options: its heap follows the container's limit, and an OutOfMemoryError ends the process (Kubernetes
+  # restarts it) instead of leaving a half-broken server. TeamCode's values.
+  javaToolOptions: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"
   # Non-secret settings, rendered into a ConfigMap and loaded as environment variables.
   config: {}
   # Secret settings (OAuth, Stripe, Resend…), rendered into a Secret and loaded as environment variables.
@@ -59,13 +70,14 @@ server:
   existingSecret: ""
   extraEnv: []
   extraEnvFrom: []
-  # Measured in kind through the ingress (ostrom-e2e chart-load.yml, runs 41507938323, 41519346164 and 41530106515: reads,
-  # writes, gates with their yes, the race of 100 yes; 0 restarts): about 50 req/s per replica peaks at 134-240m CPU
-  # and 128-165 MiB (kubectl top, 15 s windows); at rest a few millicores and under 10 MiB. Requests cover that peak.
-  # The 256 MiB limit stays: memory under the race is the server's to fix (AUDIT-GATES-2), not the limit's to hide.
+  # The JVM server (ostrom-server decision 0001, audit SD-16): about 225 MiB at rest and 340 MiB under a steady load
+  # with a 256 MiB heap (ostrom-server#394, run 43444036220), against 45-80 MiB for the native binary. TeamCode runs
+  # 1Gi/1Gi. The request covers the measured peak; the limit leaves the heap (70 % of it) room for bursts. The CPU
+  # request stays from the native measures (the JVM used 45 % less CPU per request): re-sized from chart-load on the
+  # JVM image.
   resources:
-    requests: { cpu: 250m, memory: 192Mi }
-    limits: { memory: 256Mi }
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
   probes:
     startup: { path: /health, periodSeconds: 2, failureThreshold: 60 }
     liveness: { path: /health, periodSeconds: 10, failureThreshold: 3 }
@@ -76,8 +88,10 @@ server:
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70       # of the 250m request: about 175m, below the measured load peak
-    # Of the 192Mi request: about 173 MiB, above the 128-165 MiB of the measured load peak, below the 256Mi limit.
-    targetMemoryUtilizationPercentage: 90
+    # Off: a JVM keeps the heap it grew (up to 70 % of the limit) after a burst, so memory says nothing of the load and
+    # a memory target would scale up and never back down (audit SD-16). Set a percentage of the memory request to
+    # scale on it anyway.
+    targetMemoryUtilizationPercentage: null
     # Scale up at once, scale down slowly: one pod a minute after 5 minutes of low load (requests stay spread).
     behavior:
       scaleDown:
@@ -264,7 +278,8 @@ externalDatabase:
   # Ory Polis database URL with credentials (postgres://user:pass@host:5432/polis) when polis.enabled.
   polisUrl: ""
   polisExistingSecret: ""     # key `url`
-  # TLS to the database (AUDIT-SECU-HELM-2 H1). The server's PostgreSQL driver has no TLS yet: with `enabled`, a
+  # TLS to the database (AUDIT-SECU-HELM-2 H1). The server passes no sslmode to its driver yet (pgjdbc encrypts when
+  # the database offers TLS, but checks no certificate): with `enabled`, a
   # PgBouncer sidecar in the server pod (native sidecar, before `migrate`) dials the database in TLS and checks its
   # certificate; the server and `migrate` talk to it in clear on the pod's loopback only (127.0.0.1:6432). Needed for
   # a database that refuses plain connections (RDS with rds.force_ssl, Cloud SQL, Azure, `hostssl` only).

@@ -156,6 +156,8 @@ db: {{ regexReplaceAll $re $url "${3}" | quote }}
 The PgBouncer configuration of the TLS proxy (externalDatabase.tls). It listens on 127.0.0.1 only, checks the
 client's password (SCRAM) against the file the config step writes, and logs in to the database with it, in TLS.
 Session pooling: the server's prepared statements and the migration lock (a session advisory lock) need it.
+PgBouncer refuses the session settings the JVM server sends in the startup `options` (statement, lock and
+idle-in-transaction timeouts): it ignores them, and the operator sets them on the roles (docs/install-kubernetes.md).
 */}}
 {{- define "ostrom.dbProxy.ini" -}}
 {{- $t := .Values.externalDatabase.tls -}}
@@ -189,7 +191,7 @@ server_tls_sslmode = {{ $t.mode }}
 server_tls_ca_file = /etc/ostrom/db-ca/{{ $t.ca.key }}
 {{- end }}
 server_tls_protocols = secure
-ignore_startup_parameters = extra_float_digits
+ignore_startup_parameters = extra_float_digits,options
 admin_users =
 stats_users =
 logfile =

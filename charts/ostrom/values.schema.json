@@ -137,6 +137,15 @@
         },
         "shutdownDelaySeconds": {
           "type": "integer"
+        },
+        "shutdownGraceSeconds": {
+          "type": "integer"
+        },
+        "terminationGracePeriodSeconds": {
+          "type": "integer"
+        },
+        "javaToolOptions": {
+          "type": "string"
         }
       }
     },

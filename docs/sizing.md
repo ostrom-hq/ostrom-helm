@@ -1,8 +1,10 @@
 # Sizing
 
-Targets of the server (a native binary, no JVM): API p95 under 50 ms at nominal load, start under 200 ms, a few tens
-of MB of RAM at rest. They are goals, not yet measured on a release: size from the table, then adjust on your own
-metrics.
+The server runs on the JVM (ostrom-server `docs/decisions/0001`, as TeamCode): about 3 s to start, about 225 MiB at
+rest and 340 MiB under a steady 200 req/s with a 256 MiB heap, a p99 of 6.8 ms there (ostrom-server#394, run
+43444036220, on one runner). The chart's defaults follow: 512 Mi requested, 1 Gi limit, the heap at 70 % of the limit
+(`server.javaToolOptions`). The kind measurements below are those of the earlier native binary; they are taken
+again on the JVM image and this page updated.
 
 Measured on the chart (ostrom-e2e `chart-load.yml`, kind, ingress-nginx, 2 server replicas, built-in PostgreSQL,
 ostrom-server main of 02/11/2026: runs [41507938323](https://github.com/ostrom-hq/ostrom-e2e/actions/runs/41507938323),
@@ -18,7 +20,7 @@ ostrom-server main of 02/11/2026: runs [41507938323](https://github.com/ostrom-h
 | gate question, then its yes (60 req/s in all) | 19.0 ms, 25.9 ms | 34.4 ms, 43.4 ms | | | |
 
 p95 and p99 are those of run 41530106515; the peaks, the range over the three runs. Peaks come from `kubectl top` (15 s windows): short bursts go higher. The
-requests below cover them; the server's memory limit stays 256 MiB.
+requests below covered them for the native binary (256 MiB limit then).
 
 Startup and drains are measured by the chart's CI on kind with the real server (`ci/perf-drill.sh`, figures in the
 job summary): a server pod must be ready within 30 s of its init containers (the `migrate` step), and a node drain
@@ -36,8 +38,8 @@ with one ready endpoint and 1 with two, never zero; the eviction of the last pod
 
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|
-| up to 50 people | 2 × (250m CPU, 192 Mi request / 256 Mi limit) | 2 × default | 250m / 256 Mi, 10 Gi disk | 250m / 512 Mi each, limit 2 CPU / 2 Gi |
-| 50-500 | 3 × (250m, 192 Mi / 512 Mi), HPA 3-10 | 2-4 | 500m / 1 Gi, 50 Gi, `max_connections` ≥ replicas × `server.database.maxConnections` + 20 | same; size the nodes for the sessions the organizations' plans allow |
+| up to 50 people | 2 × (250m CPU, 512 Mi request / 1 Gi limit) | 2 × default | 250m / 256 Mi, 10 Gi disk | 250m / 512 Mi each, limit 2 CPU / 2 Gi |
+| 50-500 | 3 × (250m, 512 Mi / 1 Gi), HPA 3-10 on CPU | 2-4 | 500m / 1 Gi, 50 Gi, `max_connections` ≥ replicas × `server.database.maxConnections` + 20 | same; size the nodes for the sessions the organizations' plans allow |
 | 500+ | HPA 4-20, external managed PostgreSQL with backups and a replica | 3-6 | managed | dedicated nodes for sessions, a PriorityClass below your workloads (`cloudSessions.runner.priorityClassName`) |
 
 Rules of thumb:
