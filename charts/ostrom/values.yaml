@@ -120,6 +120,13 @@ migrations:
   initContainer: true
   command: ["/usr/local/bin/ostrom-server", "migrate"]
 
+# Outgoing webhooks (an organization's admins point them at their own URLs). Off by default, they reach public
+# addresses only, checked when saved and again on every address a name resolves to, so an admin's key cannot probe
+# the cluster's network. On, also loopback and private addresses (a receiver inside your network); link-local and
+# cloud metadata addresses stay refused either way.
+webhooks:
+  allowPrivateTargets: false
+
 # --- Observability (OpenTelemetry, Langfuse, PostHog) ---------------------------------------------------------------
 observability:
   otel:

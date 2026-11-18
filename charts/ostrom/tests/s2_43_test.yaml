@@ -84,6 +84,15 @@ tests:
       - equal: { path: data.OSTROM_DATABASE_USER, value: ostrom_app }
       - equal: { path: data.OSTROM_TRUSTED_PROXIES, value: "10.64.0.0/16, 172.21.0.0/16" }
       - equal: { path: data.OSTROM_SHUTDOWN_DELAY_SECONDS, value: "5" }
+  - it: webhooks reach public addresses only by default (TeamCode audit L1)
+    template: templates/server-config.yaml
+    asserts:
+      - notExists: { path: data.OSTROM_WEBHOOKS_ALLOW_PRIVATE_TARGETS }
+  - it: the operator lets webhooks reach private addresses
+    template: templates/server-config.yaml
+    set: { webhooks.allowPrivateTargets: true }
+    asserts:
+      - equal: { path: data.OSTROM_WEBHOOKS_ALLOW_PRIVATE_TARGETS, value: "true" }
   - it: no trusted proxy by default
     template: templates/server-config.yaml
     asserts:

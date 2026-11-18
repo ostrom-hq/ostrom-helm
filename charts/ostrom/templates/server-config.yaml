@@ -47,6 +47,9 @@ data:
   {{- fail (printf "server.shutdownGraceSeconds must be between 0 and 600, got %v" $s.shutdownGraceSeconds) }}
   {{- end }}
   OSTROM_SHUTDOWN_GRACE_SECONDS: {{ $drain | quote }}
+  {{- if eq ((.Values.webhooks | default dict).allowPrivateTargets | toString) "true" }}
+  OSTROM_WEBHOOKS_ALLOW_PRIVATE_TARGETS: "true"
+  {{- end }}
   OSTROM_SIGNING_KEY_FILE: /var/run/ostrom/signing/instance-key.pem
   OSTROM_PUBLIC_URL: {{ .Values.global.urls.api | quote }}
   # The console's origin: device-login page, sign-in redirects, and the only origin a browser session may change
