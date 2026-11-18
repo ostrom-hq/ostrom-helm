@@ -16,6 +16,16 @@ starts; the server itself connects as `ostrom_app`, which owns nothing and canno
 By default everything answers on plain HTTP under `*.localhost`: console `http://app.localhost` (which also serves
 the API under `/api/v1`, one origin for the browser), API `http://api.localhost`.
 
+Then make the first owner: the instance is closed to sign-up until they open its one-time setup link.
+
+```sh
+docker compose exec server ostrom-server bootstrap
+```
+
+It works once, for an hour, and only while the instance has no account; the person signs in with GitHub (or Google,
+or an e-mail link), then invites the others from the console. To let anyone who signs in get an account instead, an
+administrator sets the console's sign-up to open (Admin, sign-up).
+
 ## SAML single sign-on (coming soon)
 
 The server has no SAML code yet, so Ory Polis, the SAML bridge, does not start by default. It is ready for when it
