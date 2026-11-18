@@ -151,7 +151,7 @@ $lock$;
 ```
 
 (`psql -v ON_ERROR_STOP=1 -v owner=ostrom -v app=ostrom_app -v db=ostrom`). Never give the serving role
-`CREATEROLE`, membership of the owner nor `ostrom_router`.
+`CREATEROLE`, membership of the owner, `ostrom_router` nor `ostrom_member_search`.
 
 `helm test` checks it on the live database (`templates/tests/test-database.yaml`): the serving role is neither
 superuser nor `BYPASSRLS`, cannot create or alter a table, reads what the owner creates, reads the migrations' history and writes none of it
