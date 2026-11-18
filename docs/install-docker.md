@@ -74,7 +74,7 @@ install:
 ./demo down      # removes everything it created, cloud sessions included
 ```
 
-What it needs (Docker's memory, ports, the login to `ghcr.io`, a Mac with Apple silicon) and how to sign in:
+What it needs (Docker's memory, ports, a Mac with Apple silicon) and how to sign in (`./demo bootstrap`, the first owner's setup link):
 [compose/demo/README.md](../compose/demo/README.md).
 
 - **Mail**: the server writes its sign-in and invitation mails to a directory (`OSTROM_MAIL_DIR`). A relay hands them

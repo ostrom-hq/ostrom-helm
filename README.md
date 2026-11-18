@@ -38,9 +38,8 @@ git clone https://github.com/ostrom-hq/ostrom-helm.git && cd ostrom-helm
 ./demo down       # removes everything it created
 ```
 
-Before the first `./demo up`: Docker running with 4 GB of memory or more, ports 80, 443 and 3307 free, and, while the
-images are private packages, Docker logged in to `ghcr.io` as a member of `ostrom-hq` (with the GitHub CLI already
-allowed to read packages, `./demo up` logs in by itself; otherwise it prints the two commands). Then open
+Before the first `./demo up`: Docker running with 4 GB of memory or more, and ports 80, 443 and 3307 free (the images
+are public on Docker Hub). Then `./demo bootstrap` prints the first owner's setup link, and the console is
 <http://app.localhost>. Details, and what each check means: [compose/demo/README.md](compose/demo/README.md).
 
 ## What this is

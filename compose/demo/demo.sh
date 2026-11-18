@@ -1,11 +1,12 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
 # The local demo stack (docker-compose.demo.yml): Ostrom whole on this machine, no real outside service.
-# Usage: ./demo up | journey | down | logs        (from the repository's root; compose/demo/demo.sh is the same)
-#   up       checks this machine (Docker running, its memory, the ports, ghcr.io), takes the images of main (the last
+# Usage: ./demo up | bootstrap | journey | down | logs        (from the repository's root; compose/demo/demo.sh is the same)
+#   up       checks this machine (Docker running, its memory, the ports), takes the images of main (the last
 #            ones published: OSTROM_DEMO_IMAGES=pinned takes docker-compose.yml's pins instead), fresh secrets in .env
 #            (install.sh), then the stack, waits until it answers and prints its addresses and how to sign in. Stripe's
 #            test mode too when OSTROM_DEMO_STRIPE_KEY_FILE names a test key file (mode 600, outside git)
+#   bootstrap  prints the first owner's one-time setup link (the instance is invite-only until it is used)
 #   journey  the customer's journey against it (journey.mjs, with check-session.sh and teamcode/check.sh), report in
 #            compose/demo-report.md; needs Node 22 or later
 #   down     stops it and removes its containers, volumes and the cloud sessions' containers and volumes
@@ -20,7 +21,7 @@ die() { echo "demo: $*" >&2; exit 1; }
 
 # The images `up` took, for the commands that follow it on the same stack (journey, logs, down). Gitignored.
 images_file=demo/.images.env
-REGISTRY=ghcr.io/ostrom-hq
+REGISTRY=docker.io/ostromhq
 DEFAULT_RUNNER_IMAGE=$REGISTRY/ostrom-runner:latest
 # Below this, Docker's memory (Docker Desktop: Settings > Resources > Memory) does not hold the stack and a session.
 MIN_MEMORY_MIB=${OSTROM_DEMO_MIN_MEMORY_MIB:-3072}
@@ -43,39 +44,9 @@ memory() {
   echo "Docker: $(docker info --format '{{.OperatingSystem}}, {{.Architecture}}'), ${mib} MiB of memory"
 }
 
-# The private packages of ghcr.io/ostrom-hq: a member of the org reads them once logged in with a token that has
-# read:packages. With the GitHub CLI already allowed to, the login is done here; otherwise the two commands to type.
-login_help() {
-  cat >&2 << 'EOF'
-demo: cannot read ghcr.io/ostrom-hq (the images are private packages of the organization). Once, as a member of
-ostrom-hq, with the GitHub CLI (brew install gh):
-  gh auth refresh -h github.com -s read:packages
-  gh auth token | docker login ghcr.io -u "$(gh api user -q .login)" --password-stdin
-then run this again. Without the GitHub CLI: a classic token with read:packages (github.com/settings/tokens), given
-to `docker login ghcr.io -u <your login> --password-stdin`.
-EOF
-  exit 1
-}
-
-gh_login() {
-  command -v gh > /dev/null 2>&1 || return 1
-  gh auth status -h github.com 2>&1 | grep -qE "(read|write):packages" || return 1
-  echo "Logging Docker in to ghcr.io with the GitHub CLI's token (read:packages)" >&2
-  gh auth token -h github.com | docker login ghcr.io -u "$(gh api user -q .login)" --password-stdin > /dev/null
-}
-
-# pull IMAGE [PLATFORM]: pulls it; refused by ghcr.io, logs in once with the GitHub CLI and tries again, or explains.
+# pull IMAGE: pulls it, or says why not (the images on docker.io/ostromhq are public: no login).
 pull() {
-  err=$(docker pull -q ${2:+--platform "$2"} "$1" 2>&1 > /dev/null) && return 0
-  case "$1" in
-    ghcr.io/*)
-      if printf %s "$err" | grep -qiE 'denied|unauthorized|authentication required' && gh_login; then
-        err=$(docker pull -q ${2:+--platform "$2"} "$1" 2>&1 > /dev/null) && return 0
-      fi
-      echo "$err" >&2
-      login_help
-      ;;
-  esac
+  err=$(docker pull -q "$1" 2>&1 > /dev/null) && return 0
   die "could not pull $1: $err"
 }
 
@@ -84,14 +55,15 @@ digest_of() { docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}
 # Only for Ostrom's published images: one built here may carry its base image's revision label.
 revision_of() {
   r=
-  case "$1" in ghcr.io/*) r=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$1" 2> /dev/null || true) ;; esac
+  case "$1" in docker.io/ostromhq/*) r=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$1" 2> /dev/null || true) ;; esac
   case "$r" in
     '' | '<no value>') case "$1" in *@sha256:*) echo "sha256:$(echo "${1##*@sha256:}" | cut -c1-12)" ;; *) echo "$1" ;; esac ;;
     *) echo "commit $(echo "$r" | cut -c1-7)" ;;
   esac
 }
-# main's last published image of a repository: `edge`, which moves to the head of main once its Image run is done.
-main_image() { pull "$REGISTRY/$1:edge"; digest_of "$REGISTRY/$1:edge"; }
+# main's last published image of a repository: the server's `latest` and the console's `edge`, which move to the head of
+# main once its image run is done.
+main_image() { pull "$REGISTRY/$1:$2"; digest_of "$REGISTRY/$1:$2"; }
 # shellcheck disable=SC2016 # the line is written for the shell that sources the file
 keep() { [ -z "$2" ] || printf ': "${%s:=%s}"; export %s\n' "$1" "$2" "$1"; }
 
@@ -102,20 +74,17 @@ choose_images() {
   mode=${OSTROM_DEMO_IMAGES:-main}
   case "$mode" in main | pinned) ;; *) die "OSTROM_DEMO_IMAGES is main (default) or pinned, not $mode" ;; esac
   if [ "$mode" = main ]; then
-    [ -n "${OSTROM_SERVER_IMAGE:-}" ] || OSTROM_SERVER_IMAGE=$(main_image ostrom-server) || exit 1
-    [ -n "${OSTROM_WEB_IMAGE:-}" ] || OSTROM_WEB_IMAGE=$(main_image ostrom-web) || exit 1
+    [ -n "${OSTROM_SERVER_IMAGE:-}" ] || OSTROM_SERVER_IMAGE=$(main_image ostrom-server latest) || exit 1
+    [ -n "${OSTROM_WEB_IMAGE:-}" ] || OSTROM_WEB_IMAGE=$(main_image ostrom-web edge) || exit 1
   fi
   export OSTROM_SERVER_IMAGE="${OSTROM_SERVER_IMAGE:-}" OSTROM_WEB_IMAGE="${OSTROM_WEB_IMAGE:-}"
-  # Everything Compose runs from ghcr.io (the pins, or what was just chosen), then the sessions' image. The runner is
-  # built for linux/amd64 only: on Apple silicon, Docker Desktop runs it under Rosetta (or QEMU). The other images
-  # are multi-arch (linux/amd64 and linux/arm64) and run natively.
-  for image in $(dc config --images | grep '^ghcr.io/' | sort -u); do pull "$image"; done
+  # Everything Compose runs from docker.io/ostromhq (the pins, or what was just chosen), then the sessions' runner
+  # image. All are multi-arch (linux/amd64 and linux/arm64) and run natively, on Apple silicon too.
+  for image in $(dc config --images | grep '^docker.io/ostromhq/' | sort -u); do pull "$image"; done
   OSTROM_RUNNER_IMAGE=${OSTROM_RUNNER_IMAGE:-$DEFAULT_RUNNER_IMAGE}
-  pull "$OSTROM_RUNNER_IMAGE" linux/amd64
+  pull "$OSTROM_RUNNER_IMAGE"
   case "$OSTROM_RUNNER_IMAGE" in *@sha256:*) ;; *) OSTROM_RUNNER_IMAGE=$(digest_of "$OSTROM_RUNNER_IMAGE") ;; esac
   export OSTROM_RUNNER_IMAGE
-  arch=$(docker run --rm --platform linux/amd64 --entrypoint sh "$OSTROM_RUNNER_IMAGE" -c 'uname -m' 2>&1) || arch=failed
-  [ "$arch" = x86_64 ] || die "this Docker cannot run linux/amd64 containers ($arch), which cloud sessions need: Docker Desktop > Settings > General > « Use Rosetta for x86_64/amd64 emulation on Apple Silicon », then Apply & restart"
   {
     echo "# Written by demo.sh up on $(date -u +%Y-%m-%dT%H:%M:%SZ): the images of this stack."
     keep OSTROM_SERVER_IMAGE "$OSTROM_SERVER_IMAGE"
@@ -196,9 +165,10 @@ case "${1:-up}" in
     cat << EOF
 
   Console      $SCHEME://$APP_HOST
-               « Sign up » with any e-mail address: the sign-in link arrives in the inbox below. Or « Continue with
-               GitHub »: the fake GitHub signs you in as the login you type (alice and rev are the fake TeamCode
-               team's members, for the import). No real account anywhere.
+               Invite-only: ./demo bootstrap prints the first owner's one-time setup link. Open it, then « Continue
+               with GitHub » (the fake GitHub signs you in as the login you type; alice and rev are the fake TeamCode
+               team's members, for the import) or an e-mail link (in the inbox below). Invite the others from the
+               console. No real account anywhere.
   Inbox        $SCHEME://$MAIL_HOST
   API          $SCHEME://$API_HOST
   Fake GitHub  http://github.localtest.me
@@ -206,6 +176,11 @@ case "${1:-up}" in
 
 Next: ./demo journey (the customer's journey, report in compose/demo-report.md), then ./demo down.
 EOF
+    ;;
+  bootstrap)
+    # shellcheck source=/dev/null
+    [ ! -f "$images_file" ] || . "./$images_file"
+    dc exec server ostrom-server bootstrap
     ;;
   journey)
     command -v node > /dev/null 2>&1 || die "the journey needs Node 22 or later (brew install node)"
@@ -245,5 +220,5 @@ EOF
     docker volume rm -f ostrom_stripe > /dev/null
     rm -f "$images_file"
     ;;
-  *) echo "usage: ./demo up|journey|down|logs" >&2; exit 2 ;;
+  *) echo "usage: ./demo up|bootstrap|journey|down|logs" >&2; exit 2 ;;
 esac
