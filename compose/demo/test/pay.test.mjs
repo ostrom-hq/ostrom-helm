@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { CARD, chromiumFrom, cookiesOf, payAndSeeThePlan } from '../pay.mjs';
 
 /** A page that records what is done to it; `card` says whether Checkout lists a card accordion first. */
-function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, hidden = [], failedClicks = 0 } = {}) {
+function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, hidden = [], failedClicks = 0, busy = false } = {}) {
   const log = [];
   let submits = 0;
   const locator = (sel) => {
@@ -22,6 +22,7 @@ function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, h
       press: async (k) => { log.push(['press', sel, k]); },
       getAttribute: async () => 'false',
       isEditable: async () => true,
+      isEnabled: async () => !busy,
       inputValue: async () => '',
       isVisible: async () => !manualAddress,
       isChecked: async () => linkChecked,
@@ -64,11 +65,12 @@ function fakeChromium(page) {
 
 test('cookiesOf gives Playwright the jar for the console’s origin', () => {
   assert.deepEqual(cookiesOf(new Map([['ostrom_session', 'abc']]), 'http://app.localhost'), [{ name: 'ostrom_session', value: 'abc', url: 'http://app.localhost' }]);
+  assert.deepEqual(cookiesOf(new Map([['__Host-ostrom_csrf', 'x']]), 'http://app.localhost'), [{ name: '__Host-ostrom_csrf', value: 'x', url: 'http://app.localhost', secure: true }]);
 });
 
-test('chromiumFrom is undefined without an install of Playwright', () => {
+test('chromiumFrom is undefined when no install is named, and throws on an install that does not load', () => {
   assert.equal(chromiumFrom(''), undefined);
-  assert.equal(chromiumFrom(mkdtempSync(join(tmpdir(), 'no-playwright-'))), undefined);
+  assert.throws(() => chromiumFrom(mkdtempSync(join(tmpdir(), 'no-playwright-'))), /Playwright does not load/);
 });
 
 test('payAndSeeThePlan pays with the test card, then reads the paid plan in the console, and closes the browser', async () => {
@@ -99,4 +101,11 @@ test('a payer Stripe never sends back is an error, and the browser is closed any
   const chromium = fakeChromium(page);
   await assert.rejects(payAndSeeThePlan({ chromium, checkoutUrl: 'https://checkout.stripe.com/x', cookies: [], app: 'http://app.localhost', email: 'o@acme.demo', plan: 'Team' }), /did not send the payer back/);
   assert.equal(chromium.state.closed, true);
+});
+
+test('Subscribe is not clicked again while Checkout is still confirming the payment (the button is disabled)', async () => {
+  const page = fakePage({ backAfter: 99, busy: true });
+  const chromium = fakeChromium(page);
+  await assert.rejects(payAndSeeThePlan({ chromium, checkoutUrl: 'https://checkout.stripe.com/x', cookies: [], app: 'http://app.localhost', email: 'o@acme.demo', plan: 'Team' }), /did not send the payer back/);
+  assert.equal(page.log.filter((e) => e[0] === 'click' && e[1].includes('submit')).length, 1);
 });

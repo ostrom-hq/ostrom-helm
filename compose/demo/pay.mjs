@@ -10,19 +10,23 @@ import { join } from 'node:path';
 /** Stripe's test card that always succeeds, without 3-D Secure. */
 export const CARD = { number: '4242424242424242', expiry: '12 / 34', cvc: '123' };
 
-/** Playwright's Chromium from the install in `dir`, or undefined when there is none. */
+/**
+ * Playwright's Chromium from the install in `dir`, or undefined when no `dir` is given. A `dir` that does not load
+ * throws: the run asked for a browser, so a broken install is an error, not a missing browser.
+ */
 export function chromiumFrom(dir) {
   if (!dir) return undefined;
   try {
     return createRequire(join(dir, 'pay.mjs'))('playwright').chromium;
-  } catch {
-    return undefined;
+  } catch (error) {
+    throw new Error(`OSTROM_DEMO_PLAYWRIGHT_DIR=${dir}: Playwright does not load (${error.message})`);
   }
 }
 
 /** The cookies a person's jar holds, as Playwright takes them for the console's origin. */
 export function cookiesOf(jar, origin) {
-  return [...jar].map(([name, value]) => ({ name, value, url: origin }));
+  // A `__Host-` or `__Secure-` cookie is refused unless Secure; Chromium keeps Secure cookies on *.localhost over http.
+  return [...jar].map(([name, value]) => ({ name, value, url: origin, ...(/^__(Host|Secure)-/.test(name) ? { secure: true } : {}) }));
 }
 
 /** Whether `locator` shows within `timeout` ms (Checkout's layout differs between a phone and a computer). */
@@ -59,11 +63,13 @@ async function pay(page, email) {
   await updated;
   const submit = page.locator('[data-testid="hosted-payment-submit-button"]');
   for (let click = 1; click <= 3; click += 1) {
+    // Clicked again only when Checkout is idle: while a payment is being confirmed, the button is disabled.
+    if (click > 1 && !(await submit.isEnabled().catch(() => false))) continue;
     await submit.click({ timeout: 10000 }).catch(() => undefined);
     const back = await page.waitForURL((u) => !u.hostname.endsWith('stripe.com'), { timeout: 45000 }).then(() => true, () => false);
     if (back) return;
   }
-  throw new Error('Stripe did not send the payer back after three clicks on Subscribe');
+  throw new Error('Stripe did not send the payer back after Subscribe (three waits of 45 s)');
 }
 
 /**

@@ -467,25 +467,33 @@ async function journey() {
     const overview = await owner.call('GET', `/api/v1/orgs/${orgId}/billing`);
     record('H1', 'Page d’abonnement (plan gratuit)', overview.status === 200 ? GREEN : RED, `GET billing → ${brief(overview)}`);
     // Paid in a browser (H3): yearly, a price per person charged now (the monthly one is metered, billed later).
-    const chromium = chromiumFrom(PLAYWRIGHT_DIR);
-    const checkout = await owner.call('POST', `/api/v1/orgs/${orgId}/billing/checkout`, { plan: 'team', interval: chromium ? 'year' : 'month' });
+    let chromium;
+    let noBrowser = 'pas de navigateur dans cette exécution (OSTROM_DEMO_PLAYWRIGHT_DIR)';
+    try {
+      chromium = chromiumFrom(PLAYWRIGHT_DIR);
+    } catch (error) {
+      noBrowser = error.message;
+    }
+    const checkout = await owner.call('POST', `/api/v1/orgs/${orgId}/billing/checkout`, { plan: 'team', interval: 'year' });
     const url = checkout.json.url ?? '';
     const state = url.startsWith('https://checkout.stripe.com/') ? GREEN : /not configured|not enabled on this instance/i.test(checkout.text) ? NOT_YET : RED;
     record('H2', 'Checkout Stripe (mode test)', state, url ? `session Checkout ouverte (${url.slice(0, 48)}…) : payer avec 4242 4242 4242 4242 dans le navigateur` : `checkout → ${brief(checkout)}`);
-    if (state === GREEN && !chromium) {
-      record('H3', 'Paiement par la carte de test 4242, webhook, plan actif dans la console', NOT_YET, 'pas de navigateur dans cette exécution (OSTROM_DEMO_PLAYWRIGHT_DIR) : payer à la main avec 4242 4242 4242 4242 sur le lien de H2');
-    } else if (state === GREEN) {
+    if (state !== GREEN) {
+      record('H3', 'Paiement par la carte de test 4242, webhook, plan actif dans la console', NOT_YET, 'H2 n’a pas ouvert de session Checkout');
+    } else if (!chromium) {
+      record('H3', 'Paiement par la carte de test 4242, webhook, plan actif dans la console', PLAYWRIGHT_DIR ? RED : NOT_YET, `${noBrowser} : payer à la main avec 4242 4242 4242 4242 sur le lien de H2`);
+    } else {
       try {
         const seen = await payAndSeeThePlan({ chromium, checkoutUrl: url, cookies: cookiesOf(owner.jar, APP), app: APP, email: ownerEmail, plan: 'Team' });
         // The plan changes only when the server has Stripe's signed event (forwarded by the Stripe CLI): the console never trusts the way back.
         let plan = {};
         for (let i = 0; i < 45 && !(plan.plan === 'team' && plan.status === 'active'); i++) {
-          plan = (await owner.call('GET', `/api/v1/orgs/${orgId}/billing`)).json;
+          plan = (await owner.call('GET', `/api/v1/orgs/${orgId}/billing`)).json ?? {};
           if (!(plan.plan === 'team' && plan.status === 'active')) await sleep(2000);
         }
         let paid = [];
         for (let i = 0; i < 30 && !paid.includes('paid'); i++) {
-          paid = ((await owner.call('GET', `/api/v1/orgs/${orgId}/billing/invoices`)).json.invoices ?? []).map((v) => v.status);
+          paid = ((await owner.call('GET', `/api/v1/orgs/${orgId}/billing/invoices`)).json?.invoices ?? []).map((v) => v.status);
           if (!paid.includes('paid')) await sleep(2000);
         }
         const ok = plan.plan === 'team' && plan.status === 'active' && paid.includes('paid');
