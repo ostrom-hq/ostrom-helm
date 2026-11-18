@@ -379,12 +379,6 @@
             }
           }
         },
-        "allowedOrgs": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "rbac": {
           "type": "object",
           "properties": {

@@ -17,6 +17,10 @@ services:
       mail-init: { condition: service_completed_successfully }
     environment:
       OSTROM_MAIL_DIR: /var/lib/ostrom-mail
+      # The demo's settings: an administrator sets these in the console, but the demo starts on an empty database with
+      # no administrator yet. The server imports each one once at the first start into the console's settings
+      # (sign-in with GitHub, sharing, cloud runtime and cloud-access), logs that the variable is deprecated, then
+      # ignores it (ostrom-server docs/MODULES.md, "Settings in the console"). Change them in the console afterwards.
       OSTROM_GITHUB_CLIENT_ID: Iv1.ostromdemo
       # Not a secret: the fake GitHub's own value, known to it and the server only, on this machine.
       OSTROM_GITHUB_CLIENT_SECRET: demo-client-secret-of-the-fake-github

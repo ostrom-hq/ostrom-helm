@@ -350,14 +350,15 @@ cloudSessions:
       tag: ""
       digest: ""
     # Volume of each session's workspace (one PVC per session, deleted with it).
+    # Deprecated: imported once into the console's profile at the first start of a server with the console's
+    # clusters (docs/upgrade.md), then set in the console.
     workspaceSize: 10Gi
-    storageClass: ""          # empty: the cluster's default
+    storageClass: ""          # empty: the cluster's default; deprecated like workspaceSize
     # An existing PriorityClass for session pods (the chart creates none: it is cluster-wide).
     priorityClassName: ""
-  # Audit S2-10: the organizations cloud sessions are open to (OSTROM_RUNNERS_ALLOWED_ORGS): organization ids, or
-  # ["*"] for all. Empty: none, every organization gets 403 even with sessions enabled. How many sessions an
-  # organization runs at once comes from its plan (billing), not from here.
-  allowedOrgs: []
+  # The organizations cloud sessions are open to (audit S2-10) are set by an administrator of the instance in the
+  # console (Admin, `cloud-access`): none until then. How many sessions an organization runs at once comes from its
+  # plan (billing).
   # Role given to the server's ServiceAccount, limited to the release namespace.
   rbac:
     create: true

@@ -90,6 +90,9 @@ data:
   OSTROM_RUNNERS_DRIVER: kubernetes
   OSTROM_RUNNERS_SERVER_URL: {{ printf "http://%s-server.%s.svc:%v" $full .Release.Namespace $s.port | quote }}
   OSTROM_RUNNERS_IMAGE: {{ include "ostrom.image" (dict "root" . "image" $r.image "name" "ostrom-runner") | quote }}
+  # Deprecated (ostrom-server#535): read once, at the first start of a server that has the console's clusters, to
+  # import this release's cluster and profile (namespace, storage class, workspace size, pull secret), then only
+  # warned about. Kept for that import during this release; the next one drops them.
   OSTROM_RUNNERS_WORKSPACE_SIZE: {{ $r.workspaceSize | quote }}
   OSTROM_RUNNERS_KUBERNETES_NAMESPACE: {{ .Release.Namespace | quote }}
   OSTROM_RUNNERS_KUBERNETES_STORAGE_CLASS: {{ $r.storageClass | quote }}
@@ -101,21 +104,15 @@ data:
   {{- end }}
   # The server pods' labels, for the sessions' NetworkPolicy (the only internal address a session may reach).
   OSTROM_RUNNERS_KUBERNETES_SERVER_SELECTOR: {{ printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s,app.kubernetes.io/component=server" (include "ostrom.name" .) .Release.Name | quote }}
-  # Audit S2-10: the organizations sessions are open to. Empty = none (every organization gets 403), "*" = all.
-  {{- $orgs := .Values.cloudSessions.allowedOrgs | default list }}
-  {{- range $o := $orgs }}
-  {{- if not (or (eq (toString $o) "*") (regexMatch "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" (toString $o))) }}
-  {{- fail (printf "cloudSessions.allowedOrgs lists organization ids (UUID) or \"*\", not %v" $o) }}
-  {{- end }}
-  {{- end }}
-  {{- if and (has "*" $orgs) (gt (len $orgs) 1) }}
-  {{- fail "cloudSessions.allowedOrgs: \"*\" stands alone" }}
-  {{- end }}
-  OSTROM_RUNNERS_ALLOWED_ORGS: {{ join "," $orgs | quote }}
   {{- if .Values.cloudSessions.rbac.tokenReview }}
   # The runner proves its pod with a projected ServiceAccount token, reviewed by TokenReview (rbac.tokenReview).
   OSTROM_RUNNERS_KUBERNETES_POD_IDENTITY: "true"
   {{- end }}
+  {{- end }}
+  {{- /* Audit S2-10: the organizations sessions are open to are set in the console (Admin, cloud-access), not here.
+  A former list is refused whether sessions are on or off; an empty one, the former default, is let through. */}}
+  {{- if .Values.cloudSessions.allowedOrgs }}
+  {{- fail "cloudSessions.allowedOrgs moved to the console (Admin, cloud-access section): remove it from your values, and to carry the list over set OSTROM_RUNNERS_ALLOWED_ORGS in server.config for one start (docs/upgrade.md)" }}
   {{- end }}
   {{- range $k, $v := $s.config }}
   {{ $k }}: {{ $v | toString | quote }}

@@ -11,7 +11,7 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 | `web`, `site` | the console (nginx) and the site (Next.js) |
 | `postgresql` / `externalDatabase` | built-in StatefulSet with optional daily `pg_dump`, or your own database; `externalDatabase.tls` puts a TLS proxy (PgBouncer) in the server pod |
 | `polis` | Ory Polis, the SAML ↔ OIDC bridge. **Coming soon**: off by default (`polis.enabled: false`), the server has no SAML code yet |
-| `cloudSessions` | runner image, resources, deadline; `allowedOrgs` (S2-10); RBAC of the controller |
+| `cloudSessions` | runner image, resources, deadline; RBAC of the controller (the organizations sessions are open to are set in the console, S2-10) |
 | `mcp` | the MCP stdio host (`ostrom-mcp-host`): `enabled` (default `true`), `image` (repository, tag, digest, pullPolicy; the tag is a pinned ostrom-server main commit, not the server's tag), `token` (`existingSecret`, `key`). Nothing else is a value: limits, launchers, mirrors and resources are fixed in the template |
 | `ingress` | class, hosts, TLS secret or cert-manager issuer, API annotations (streaming, body size) |
 | `networkPolicy` | ingress controller location, DNS, denied egress CIDRs, the server's internet and extra egress rules, Kubernetes API access |
@@ -54,7 +54,6 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_LANGFUSE_HOST`, `OSTROM_LANGFUSE_PUBLIC_KEY`, `OSTROM_LANGFUSE_SECRET_KEY` | `observability.langfuse.*` |
 | `OSTROM_POSTHOG_HOST`, `OSTROM_POSTHOG_API_KEY` | `observability.posthog.*` |
 | `OSTROM_RUNNERS_DRIVER` (`kubernetes`), `OSTROM_RUNNERS_SERVER_URL`, `OSTROM_RUNNERS_IMAGE`, `OSTROM_RUNNERS_WORKSPACE_SIZE`, `OSTROM_RUNNERS_KUBERNETES_{NAMESPACE,STORAGE_CLASS,IMAGE_PULL_SECRET,PRIORITY_CLASS,SERVER_SELECTOR}` | `cloudSessions.*`, only when `cloudSessions.enabled` |
-| `OSTROM_RUNNERS_ALLOWED_ORGS` | `cloudSessions.allowedOrgs`, only when `cloudSessions.enabled`: organization ids, or `["*"]`; **empty (the default) refuses every organization** (403), audit S2-10. How many sessions run at once comes from each organization's plan |
 | `OSTROM_MCP_HOST_URL`, `OSTROM_MCP_HOST_TOKEN` | the release's MCP stdio host (`http://<release>-ostrom-mcp:8090`) and its token (key `token` of the generated Secret `<release>-ostrom-mcp`, or of `mcp.token.existingSecret`), only when `mcp.enabled`. Both or neither; the token is never in the ConfigMap |
 | `OSTROM_POD_NAME` | the pod name (downward API) |
 | `OSTROM_TRUSTED_PROXIES` | `server.trustedProxies`: CIDRs (comma separated) of the ingress controller's pods and of the nodes, whose forwarded client address the server believes; unset by default |
@@ -74,14 +73,22 @@ database URL (`externalDatabase.polisUrl`) goes into Secret `<release>-polis-db`
 pods. Not checked: a ConfigMap of yours given in `server.extraEnvFrom`. The CI renders the chart with a witness in
 every secret input and fails if one shows up outside a Secret, or never reaches one (`ci/secrets-in-render.sh`).
 
-Everything else goes through `server.config` (plain) or `server.existingSecret` / `server.secretEnv` (secret),
-whose keys are environment variable names, e.g. `OSTROM_GITHUB_CLIENT_ID`, `OSTROM_GITHUB_CLIENT_SECRET`,
-`OSTROM_GOOGLE_CLIENT_ID`, `OSTROM_GOOGLE_CLIENT_SECRET`, `OSTROM_RESEND_API_KEY`, `OSTROM_MAIL_FROM`,
-`OSTROM_STRIPE_SECRET_KEY`, `OSTROM_STRIPE_WEBHOOK_SECRET`, `OSTROM_LICENSE_KEY`. The server documents its own keys in
-`ostrom-server/docs/MODULES.md`.
+Only what the server needs to start is in the chart. Everything an administrator decides is set in the console
+(Admin) and stored in PostgreSQL, its secrets sealed with the secrets key (TeamCode's rule):
+- instance administrators;
+- sign-up mode, sign-in with Google and GitHub;
+- the GitHub App and GitHub's address;
+- mail (Resend);
+- Stripe, usage retention, the gateway's provider keys, sharing's token endpoints, push;
+- the enterprise license;
+- the cloud runtime, clusters and access.
 
-The GitHub App's keys (its id, private key and webhook secret) are coming soon: the server of `main` does not read
-them yet (ostrom-server#44).
+The server documents each section, and the variable it replaces, in `ostrom-server/docs/MODULES.md` ("Settings in the
+console"). A former variable left in `server.config` or `server.secretEnv` is imported once, into an empty section,
+with a deprecation warning, then ignored: remove it after the first start. A server image from before these settings
+(ostrom-server#438) still reads the former variables: keep them until you run a newer one ([upgrade.md](upgrade.md)). Any other key of the server still goes
+through `server.config` (plain) or `server.existingSecret` / `server.secretEnv` (secret), whose keys are environment
+variable names.
 
 ## Web console runtime settings
 

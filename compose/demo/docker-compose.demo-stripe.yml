@@ -1,8 +1,10 @@
 # Local demo, optional: billing on Stripe's test mode. The key is read from a file outside git (OSTROM_DEMO_STRIPE_KEY_FILE,
 # for example ~/.config/ostrom/stripe-test.key, mode 600, a sk_test_ or rk_test_ key: never a live one), copied once
 # into a volume only the server and the Stripe CLI read. The Stripe CLI forwards the test events to the server
-# (`stripe listen`), signed with the secret it prints, which the server reads as its webhook secret. Checkout opens
+# (`stripe listen`), signed with the secret it prints, which the server takes as its webhook secret. Checkout opens
 # Stripe's hosted test page: pay with 4242 4242 4242 4242.
+# The server keeps Stripe's settings in the console (Admin, `stripe`): it imports these two files once, at its first
+# start on the empty database every `up` brings, then ignores them. Rotate the key there, not here.
 #   docker compose -f docker-compose.yml -f demo/docker-compose.demo.yml -f demo/docker-compose.demo-stripe.yml up -d --wait
 secrets:
   stripe_key:

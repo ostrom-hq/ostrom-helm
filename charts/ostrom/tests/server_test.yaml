@@ -66,28 +66,26 @@ tests:
     asserts:
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_SAML_POLIS_API_KEY }, any: true }
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: OSTROM_EXTRACTION_API_KEY }, any: true }
-  - it: cloud sessions with no allowed organization set an empty list, an explicit refusal (S2-10)
+  - it: the organizations cloud sessions are open to are set in the console, never in the ConfigMap (S2-10)
     template: templates/server-config.yaml
     set: { cloudSessions.enabled: true, server.replicas: 1 }
     asserts:
-      - equal: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS, value: "" }
-  - it: cloud sessions open to the listed organizations
-    template: templates/server-config.yaml
-    set:
-      cloudSessions: { enabled: true, allowedOrgs: [0192f6a1-7c3e-7d4a-9b2f-1a2b3c4d5e6f, 0192f6a1-7c3e-7d4a-9b2f-1a2b3c4d5e70] }
-      server.replicas: 1
-    asserts:
-      - equal: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS, value: "0192f6a1-7c3e-7d4a-9b2f-1a2b3c4d5e6f,0192f6a1-7c3e-7d4a-9b2f-1a2b3c4d5e70" }
-  - it: cloud sessions open to all with "*"
-    template: templates/server-config.yaml
+      - notExists: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS }
+  - it: refuses the former cloudSessions.allowedOrgs, which moved to the console
+    template: templates/server.yaml
     set: { cloudSessions: { enabled: true, allowedOrgs: ["*"] }, server.replicas: 1 }
     asserts:
-      - equal: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS, value: "*" }
-  - it: refuses an allowed organization that is not an id
+      - failedTemplate: { errorMessage: "cloudSessions.allowedOrgs moved to the console (Admin, cloud-access section): remove it from your values, and to carry the list over set OSTROM_RUNNERS_ALLOWED_ORGS in server.config for one start (docs/upgrade.md)" }
+  - it: refuses the former list with cloud sessions off too
     template: templates/server.yaml
-    set: { cloudSessions: { enabled: true, allowedOrgs: [acme] }, server.replicas: 1 }
+    set: { cloudSessions: { allowedOrgs: [0192f6a1-7c3e-7d4a-9b2f-1a2b3c4d5e6f] } }
     asserts:
-      - failedTemplate: { errorMessage: 'cloudSessions.allowedOrgs lists organization ids (UUID) or "*", not acme' }
+      - failedTemplate: { errorMessage: "cloudSessions.allowedOrgs moved to the console (Admin, cloud-access section): remove it from your values, and to carry the list over set OSTROM_RUNNERS_ALLOWED_ORGS in server.config for one start (docs/upgrade.md)" }
+  - it: lets the former default, an empty list, through
+    template: templates/server-config.yaml
+    set: { cloudSessions: { enabled: true, allowedOrgs: [] }, server.replicas: 1 }
+    asserts:
+      - notExists: { path: data.OSTROM_RUNNERS_ALLOWED_ORGS }
   - it: cloud sessions use the Kubernetes driver in the release namespace
     template: templates/server-config.yaml
     set: { cloudSessions.enabled: true, server.replicas: 1, global.imagePullSecrets: [ghcr], cloudSessions.runner.priorityClassName: low }
