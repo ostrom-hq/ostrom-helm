@@ -1,2 +1,5 @@
 .env
 server.env
+# The local demo (demo/demo.sh): the images `up` took, and the journey report.
+demo/.images.env
+demo-report.md
