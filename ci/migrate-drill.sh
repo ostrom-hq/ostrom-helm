@@ -10,7 +10,8 @@
 #      orgs migration hands its functions over (GRANT ostrom_router TO CURRENT_USER, ALTER FUNCTION … OWNER).
 #   C. an external PostgreSQL that accepts TLS only (`hostssl`, its certificate signed by a CA of the test):
 #      with externalDatabase.tls the server migrates and serves (/ready) through the proxy sidecar, over TLS;
-#      without it, the install fails and PostgreSQL logs the refused plain connection (AUDIT-SECU-HELM-2 H1).
+#      without it, the JVM server's driver (pgjdbc, `sslmode=prefer` by default) still encrypts, unverified, and no
+#      connection is in clear (AUDIT-SECU-HELM-2 H1).
 # Each scenario ends with the cross-organization functions owned by ostrom_router and the chart's tests passing.
 # Usage: SERVER_IMAGE=ostrom-server:chart-ci ci/migrate-drill.sh
 set -euo pipefail
@@ -179,13 +180,14 @@ external=(--set postgresql.enabled=false
   --set externalDatabase.username=ostrom_app --set externalDatabase.password=app_pw
   --set externalDatabase.migrationUsername=ostrom_owner --set externalDatabase.migrationPassword=owner_pw
   --set-json 'networkPolicy.server.extraEgress=[{"to":[{"podSelector":{"matchLabels":{"app":"pg-tls"}}}],"ports":[{"protocol":"TCP","port":5432}]}]')
-echo "-- C1. without externalDatabase.tls: refused"
-if helm install $REL charts/ostrom -n $NS "${real[@]}" "${external[@]}" --wait --timeout 3m; then
-  fail "the server started in clear against a TLS-only PostgreSQL"
-fi
-pg_log=$(kubectl -n $NS logs pod/pg-tls)
-grep -q 'no encryption' <<<"$pg_log" || fail "PostgreSQL did not log a refused plain connection"
-echo "plain connection refused by PostgreSQL, as expected"
+echo "-- C1. without externalDatabase.tls: pgjdbc's default sslmode=prefer encrypts (the certificate unverified)"
+helm install $REL charts/ostrom -n $NS "${real[@]}" "${external[@]}" --wait --timeout 10m \
+  || fail "install without the proxy against a TLS-only PostgreSQL"
+[ "$(pg_tls "SELECT count(*) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.usename = 'ostrom_app' AND s.ssl")" -gt 0 ] \
+  || fail "no TLS connection of the serving role without the proxy"
+[ "$(pg_tls "SELECT count(*) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.usename = 'ostrom_app' AND NOT s.ssl")" = 0 ] \
+  || fail "a plain connection of the serving role without the proxy"
+echo "encrypted without the proxy, unverified: externalDatabase.tls is what checks the certificate"
 helm uninstall $REL -n $NS --wait
 echo "-- C2. with externalDatabase.tls (verify-full, the test CA): migrates and serves"
 helm install $REL charts/ostrom -n $NS "${real[@]}" "${external[@]}" \

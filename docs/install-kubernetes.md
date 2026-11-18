@@ -108,7 +108,9 @@ by default) denies it too: keep that off, or move the database out of the cluste
 
 ### TLS to an external database
 
-The server's PostgreSQL driver has no TLS yet (it refuses a URL with a query string, so no `?sslmode=`). With
+The server's JDBC driver (pgjdbc) encrypts on its own when the database offers TLS (`sslmode=prefer`), but it checks
+no certificate, and the server does not pass TLS settings yet: `OSTROM_DATABASE_URL` takes no query string (so no
+`?sslmode=`), and the server sets no `sslmode` or `sslrootcert`. With
 `externalDatabase.tls.enabled`, the chart puts a TLS proxy in the server pod, on the model of Cloud SQL's
 auth proxy: PgBouncer (`ghcr.io/cloudnative-pg/pgbouncer`, pinned by digest) as a native sidecar, which starts
 before `migrate` and lives with the pod. It dials the database in TLS and checks its certificate; the server and
@@ -138,13 +140,13 @@ externalDatabase:
   lock need it. Pool size: `server.database.maxConnections` + 2.
 - A database that only accepts TLS (`hostssl`, RDS with `rds.force_ssl=1`, Cloud SQL, Azure) works this way; the CI
   proves it on kind against a PostgreSQL that rejects any plain connection.
-- The proxy is the way out until the driver speaks TLS: `sqlx4k`'s Rust `sqlx` is built without a TLS backend. An
-  upstream change (`tls-rustls-ring-webpki`) is planned; once the server takes `sslmode` and `sslrootcert`, the
-  sidecar goes and `externalDatabase.tls` keeps its meaning.
+- The proxy is the way to a verified connection until the server passes `sslmode` and `sslrootcert` to pgjdbc; then
+  the sidecar goes and `externalDatabase.tls` keeps its meaning.
 - Ory Polis (off by default) connects with its own driver, not through this proxy (the NOTES remind it).
 
-Without `externalDatabase.tls`, everything between the server and PostgreSQL crosses the network in the clear (the
-password does not: SCRAM), and a database that forces TLS refuses the server. The chart's own PostgreSQL stays in the
+Without `externalDatabase.tls`, the server encrypts only if the database offers TLS, and never checks who answers (a
+man in the middle is not detected); against a database without TLS everything crosses the network in the clear (the
+password does not: SCRAM). The chart's own PostgreSQL stays in the
 release namespace, behind its NetworkPolicy.
 
 Create the two roles yourself before installing: the owner (`CREATE DATABASE … OWNER ostrom`) and the serving role

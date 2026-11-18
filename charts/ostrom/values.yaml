@@ -278,7 +278,8 @@ externalDatabase:
   # Ory Polis database URL with credentials (postgres://user:pass@host:5432/polis) when polis.enabled.
   polisUrl: ""
   polisExistingSecret: ""     # key `url`
-  # TLS to the database (AUDIT-SECU-HELM-2 H1). The server's PostgreSQL driver has no TLS yet: with `enabled`, a
+  # TLS to the database (AUDIT-SECU-HELM-2 H1). The server passes no sslmode to its driver yet (pgjdbc encrypts when
+  # the database offers TLS, but checks no certificate): with `enabled`, a
   # PgBouncer sidecar in the server pod (native sidecar, before `migrate`) dials the database in TLS and checks its
   # certificate; the server and `migrate` talk to it in clear on the pod's loopback only (127.0.0.1:6432). Needed for
   # a database that refuses plain connections (RDS with rds.force_ssl, Cloud SQL, Azure, `hostssl` only).

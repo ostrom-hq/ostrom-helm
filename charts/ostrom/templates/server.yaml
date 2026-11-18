@@ -62,7 +62,7 @@ spec:
       initContainers:
         {{- if $proxy }}
         {{- $t := .Values.externalDatabase.tls }}
-        # externalDatabase.tls (AUDIT-SECU-HELM-2 H1): the server's driver has no TLS. The config step writes the
+        # externalDatabase.tls (AUDIT-SECU-HELM-2 H1): the server passes no sslmode to its driver. The config step writes the
         # proxy's password file in memory; the proxy (a native sidecar: it starts before `migrate` and lives with the
         # pod) dials the database in TLS and checks its certificate. The server and `migrate` reach it on 127.0.0.1.
         - name: db-proxy-config

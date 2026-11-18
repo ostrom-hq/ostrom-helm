@@ -159,8 +159,9 @@ Job against an external database) and give both: `externalDatabase.username`
 `password` and `migration-password`.
 
 `externalDatabase.tls` (`enabled`, `mode` `verify-full` | `verify-ca` | `require`, `ca.secretName` or
-`ca.configMapName` with `ca.key`, `host`, `proxy.image`, `proxy.resources`): the server's driver has no TLS, so a
-PgBouncer sidecar dials the database in TLS and the server and `migrate` use it on `127.0.0.1:6432`. See "TLS to an
+`ca.configMapName` with `ca.key`, `host`, `proxy.image`, `proxy.resources`): the server passes no `sslmode` to its
+driver (pgjdbc encrypts when it can but checks no certificate), so a PgBouncer sidecar dials the database in TLS,
+checks its certificate, and the server and `migrate` use it on `127.0.0.1:6432`. See "TLS to an
 external database" in [install-kubernetes.md](install-kubernetes.md).
 
 ## Availability
