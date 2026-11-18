@@ -132,7 +132,7 @@ BEGIN
       UNION ALL
       SELECT a.grantee, a.privilege_type, true FROM pg_attribute t, aclexplode(t.attacl) a WHERE t.attrelid = c.oid
     ) g
-    WHERE c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace AND c.relname LIKE '\_migrations\_%'
+    WHERE c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace AND c.relname LIKE 'flyway\_%'
       AND g.grantee <> c.relowner
     GROUP BY c.relname, g.grantee
     HAVING bool_or(g.privilege_type <> 'SELECT' OR g.on_column)

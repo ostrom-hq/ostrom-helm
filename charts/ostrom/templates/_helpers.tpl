@@ -376,7 +376,7 @@ it only administers the roles it creates, never a superuser nor a BYPASSRLS role
 granted to the serving role, which gets neither CREATEROLE nor membership of the owner (the server refuses to start).
 `ostrom_router` owns the cross-organization functions (SECURITY DEFINER, ostrom-server docs/tenancy.md, S2-51): no
 table, administered by the owner who hands it the functions, never granted to the serving role.
-The migrations' history tables (`_migrations_<module>`) are written by the owner alone (AUDIT-RLS R8): the default
+The migrations' history tables (Flyway's `flyway_<module>`) are written by the owner alone (AUDIT-RLS R8): the default
 privileges give the serving role every table. `ostrom-server migrate` revokes the write on its histories at every pass
 (ostrom-server#144), install and external database included; this block does it again before every upgrade, for any
 history of the schema (one an older server migrated, or one a module no longer migrates), from every role but the owner.
@@ -409,7 +409,7 @@ BEGIN
       UNION ALL
       SELECT a.grantee, a.privilege_type, true FROM pg_attribute t, aclexplode(t.attacl) a WHERE t.attrelid = c.oid
     ) g
-    WHERE c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace AND c.relname LIKE '\_migrations\_%'
+    WHERE c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace AND c.relname LIKE 'flyway\_%'
       AND g.grantee <> c.relowner
     GROUP BY c.relname, g.grantee
     HAVING bool_or(g.privilege_type <> 'SELECT' OR g.on_column)

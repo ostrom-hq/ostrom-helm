@@ -26,7 +26,7 @@ real=(-f charts/ostrom/ci/standin-values.yaml --set ingress.enabled=false --set 
 
 fail() { echo "FAIL: $*" >&2; kubectl get all,jobs -n "$NS" -o wide >&2 || true
   for p in $(kubectl get pods -n "$NS" -o name); do kubectl logs -n "$NS" "$p" --all-containers --tail=40 >&2 || true; done; exit 1; }
-histories="relkind = 'r' AND relnamespace = 'public'::regnamespace AND (relname LIKE '\_migrations\_%' OR relname LIKE 'flyway\_%')"
+histories="relkind = 'r' AND relnamespace = 'public'::regnamespace AND relname LIKE 'flyway\_%'"
 psql_su() { kubectl -n "$NS" exec -i $POD -- psql -U postgres -d ostrom -v ON_ERROR_STOP=1 -Atc "$1"; }
 restricted_ns() {
   kubectl create namespace "$1"
@@ -61,11 +61,11 @@ restricted_ns $NS
 helm install $REL charts/ostrom -n $NS "${real[@]}" --wait --timeout 10m || fail "install with the real server"
 migrated
 # A history no migration touches, writable as an older server left it (the owner's default privileges), and more.
-psql_su "SET ROLE ostrom; CREATE TABLE _migrations_legacy (version int, checksum text); RESET ROLE;
-  GRANT INSERT ON _migrations_legacy TO ostrom_tenant; GRANT UPDATE (checksum) ON _migrations_legacy TO PUBLIC" >/dev/null
-[ "$(psql_su "SELECT has_table_privilege('ostrom_app', '_migrations_legacy', 'INSERT')")" = t ] || fail "the planted history is not writable"
+psql_su "SET ROLE ostrom; CREATE TABLE flyway_legacy (version int, checksum text); RESET ROLE;
+  GRANT INSERT ON flyway_legacy TO ostrom_tenant; GRANT UPDATE (checksum) ON flyway_legacy TO PUBLIC" >/dev/null
+[ "$(psql_su "SELECT has_table_privilege('ostrom_app', 'flyway_legacy', 'INSERT')")" = t ] || fail "the planted history is not writable"
 helm upgrade $REL charts/ostrom -n $NS "${real[@]}" --wait --timeout 10m || fail "upgrade"
-[ "$(psql_su "SELECT has_table_privilege('ostrom_app', '_migrations_legacy', 'SELECT')")" = t ] || fail "the roles Job took the read away"
+[ "$(psql_su "SELECT has_table_privilege('ostrom_app', 'flyway_legacy', 'SELECT')")" = t ] || fail "the roles Job took the read away"
 kubectl -n $NS rollout restart deploy/$REL-server
 kubectl -n $NS rollout status deploy/$REL-server --timeout 5m || fail "second migration"
 migrated

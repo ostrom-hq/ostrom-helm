@@ -42,9 +42,9 @@ spec:
           if app "ALTER TABLE helm_test_probe DISABLE ROW LEVEL SECURITY" 2>/dev/null; then echo "the serving role changed RLS"; exit 1; fi
           owner "DROP TABLE helm_test_probe"
           echo "owner: creates tables the serving role reads and cannot alter"
-          # AUDIT-RLS R8: the same scope as the roles block (public, `_migrations_%`); inherited rights (ostrom_tenant,
+          # AUDIT-RLS R8: the same scope as the roles block (public, `flyway_%`); inherited rights (ostrom_tenant,
           # PUBLIC) and column rights count.
-          histories=$(app "SELECT count(*) FILTER (WHERE has_table_privilege(current_user, oid, 'SELECT')) || ' ' || count(*) FILTER (WHERE has_table_privilege(current_user, oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') OR has_any_column_privilege(current_user, oid, 'INSERT, UPDATE, REFERENCES')) || ' ' || count(*) FROM pg_class WHERE relkind = 'r' AND relnamespace = 'public'::regnamespace AND relname LIKE '\_migrations\_%'")
+          histories=$(app "SELECT count(*) FILTER (WHERE has_table_privilege(current_user, oid, 'SELECT')) || ' ' || count(*) FILTER (WHERE has_table_privilege(current_user, oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') OR has_any_column_privilege(current_user, oid, 'INSERT, UPDATE, REFERENCES')) || ' ' || count(*) FROM pg_class WHERE relkind = 'r' AND relnamespace = 'public'::regnamespace AND relname LIKE 'flyway\_%'")
           # shellcheck disable=SC2086
           set -- $histories; readable=$1 writable=$2 total=$3
           if [ "$writable" != 0 ]; then echo "the serving role can write $writable of the migrations' histories"; exit 1; fi
