@@ -77,7 +77,8 @@ yourself and set `server.signingKey.existingSecret` and `server.secretsKey.exist
 ## 6. DNS
 
 Point `api.`, `app.` and the site host at the ingress controller's address (and `sso.` only with
-`polis.enabled: true`; SAML is coming soon).
+`polis.enabled: true`; SAML is coming soon). With `global.urls.artifacts` set (the artifacts' pages, on a host of
+their own such as `artifacts.example.com`), point that host there too, and cover it with the TLS certificate.
 
 ## 7. First owner
 

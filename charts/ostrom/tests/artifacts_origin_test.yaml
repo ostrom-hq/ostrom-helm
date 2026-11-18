@@ -1,0 +1,69 @@
+suite: artifacts — the content origin of the pages (global.urls.artifacts)
+templates:
+  - templates/server-config.yaml
+  - templates/web.yaml
+  - templates/ingress.yaml
+release: { name: o, namespace: ostrom }
+tests:
+  - it: off by default, the server still links to the console's artifact page
+    template: templates/server-config.yaml
+    documentIndex: 0
+    asserts:
+      - notExists: { path: data.OSTROM_ARTIFACTS_CONTENT_ORIGIN }
+      - equal: { path: data.OSTROM_ARTIFACTS_VIEWER_URL, value: "https://app.example.com/artifacts" }
+  - it: off by default, the console frames nothing and no Ingress serves pages
+    template: templates/web.yaml
+    documentSelector: { path: kind, value: ConfigMap }
+    asserts:
+      - notExists: { path: data.OSTROM_ARTIFACTS_CONTENT_ORIGIN }
+  - it: no artifacts Ingress by default
+    template: templates/ingress.yaml
+    asserts:
+      - notContains: { path: metadata.name, content: x }
+        documentSelector: { path: metadata.name, value: o-ostrom-artifacts, skipEmptyTemplates: true }
+  - it: the server serves the pages on the content origin, trailing slash dropped
+    template: templates/server-config.yaml
+    documentIndex: 0
+    set: { global.urls.artifacts: "https://artifacts.ostrom.run/", global.urls.app: "https://app.ostrom.run/" }
+    asserts:
+      - equal: { path: data.OSTROM_ARTIFACTS_CONTENT_ORIGIN, value: "https://artifacts.ostrom.run" }
+      - equal: { path: data.OSTROM_ARTIFACTS_VIEWER_URL, value: "https://app.ostrom.run/artifacts" }
+  - it: the console frames the content origin only, and restarts when it changes
+    template: templates/web.yaml
+    set: { global.urls.artifacts: "https://artifacts.ostrom.run" }
+    asserts:
+      - equal: { path: data.OSTROM_ARTIFACTS_CONTENT_ORIGIN, value: "https://artifacts.ostrom.run" }
+        documentSelector: { path: kind, value: ConfigMap }
+      - notEqual: { path: 'spec.template.metadata.annotations["checksum/config"]', value: "" }
+        documentSelector: { path: kind, value: Deployment }
+  - it: its own Ingress sends every path of the content host to the server, with TLS
+    template: templates/ingress.yaml
+    set: { global.urls.artifacts: "https://artifacts.ostrom.run:8443" }
+    documentSelector: { path: metadata.name, value: o-ostrom-artifacts }
+    asserts:
+      - equal: { path: 'spec.rules[0].host', value: artifacts.ostrom.run }
+      - equal: { path: 'spec.rules[0].http.paths[0].path', value: / }
+      - equal: { path: 'spec.rules[0].http.paths[0].backend.service.name', value: o-ostrom-server }
+      - equal: { path: 'spec.tls[0].hosts[0]', value: artifacts.ostrom.run }
+      - notExists: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]' }
+  - it: no artifacts Ingress without the server
+    template: templates/ingress.yaml
+    set: { global.urls.artifacts: "https://artifacts.ostrom.run", server.enabled: false }
+    asserts:
+      - notContains: { path: metadata.name, content: x }
+        documentSelector: { path: metadata.name, value: o-ostrom-artifacts, skipEmptyTemplates: true }
+  - it: refuses an origin with a path
+    template: templates/web.yaml
+    set: { global.urls.artifacts: "https://example.com/artifacts" }
+    asserts:
+      - failedTemplate: { errorPattern: "global.urls.artifacts is a bare http\\(s\\) origin" }
+  - it: refuses the console's host
+    template: templates/web.yaml
+    set: { global.urls.artifacts: "https://app.example.com:8443" }
+    asserts:
+      - failedTemplate: { errorPattern: "app.example.com is also global.urls.app's" }
+  - it: refuses the API's host
+    template: templates/web.yaml
+    set: { global.urls.artifacts: "http://api.example.com" }
+    asserts:
+      - failedTemplate: { errorPattern: "api.example.com is also global.urls.api's" }

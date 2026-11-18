@@ -4,7 +4,7 @@ The defaults are in [`charts/ostrom/values.yaml`](../charts/ostrom/values.yaml),
 
 | Group | What |
 |---|---|
-| `global` | image registry, tag and pull secrets; public URLs (`urls.api`, `urls.app`, `urls.site`) |
+| `global` | image registry, tag and pull secrets; public URLs (`urls.api`, `urls.app`, `urls.site`, and `urls.artifacts`, the artifacts' content origin, off when empty) |
 | `server` | replicas, resources, probes, HPA, PDB, `config` (non-secret env), `secretEnv` / `existingSecret` (secret env), signing key, secrets key |
 | `migrations` | `initContainer: true` runs `ostrom-server migrate` before each pod starts |
 | `observability` | `otel` (OTLP/HTTP endpoint and headers), `langfuse`, `posthog` |
@@ -50,6 +50,8 @@ The chart sets these for the server (ConfigMap `<release>-server`, Secret `<rele
 | `OSTROM_SECRETS_KEY` | key `secrets-key` of the generated Secret `<release>-secrets-key`, or of `server.secretsKey.existingSecret` |
 | `OSTROM_PUBLIC_URL` | `global.urls.api` |
 | `OSTROM_CONSOLE_URL` | `global.urls.app`: device-login page, sign-in redirects, and the only origin a browser session may change state from |
+| `OSTROM_ARTIFACTS_VIEWER_URL` | `global.urls.app` + `/artifacts`: the console's artifact page, in the links the API and agents give, and the only page that may frame an artifact |
+| `OSTROM_ARTIFACTS_CONTENT_ORIGIN` | `global.urls.artifacts`, only when set: the origin artifact pages are served from, sandboxed and without a session. A bare http(s) origin on a host of its own (neither the console's nor the API's: the chart refuses both); its own Ingress, `<release>-artifacts`, sends every path of that host to the server. The console gets it too, as the only origin it frames (CSP `frame-src`). Empty: artifacts are kept and listed, their pages are not shown |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` (always `http/protobuf`), `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER_ARG` | `observability.otel.*` (`tracesSampleRatio` for the last) |
 | `OSTROM_LANGFUSE_HOST`, `OSTROM_LANGFUSE_PUBLIC_KEY`, `OSTROM_LANGFUSE_SECRET_KEY` | `observability.langfuse.*` |
 | `OSTROM_POSTHOG_HOST`, `OSTROM_POSTHOG_API_KEY` | `observability.posthog.*` |

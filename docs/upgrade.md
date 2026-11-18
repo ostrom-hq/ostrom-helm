@@ -37,6 +37,14 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
 `/ready`; set `server.trustedProxies` to your ingress pods' and nodes' CIDRs. An external database: play the SQL of
 [values.md](values.md#database-roles) as its administrator first.
 
+### 0.3.2 → next: artifact pages on their own origin
+
+- `global.urls.artifacts` (empty by default) turns the artifacts' pages on: the server serves them on that origin
+  only (`OSTROM_ARTIFACTS_CONTENT_ORIGIN`), through a new Ingress `<release>-artifacts`, and the console frames it.
+  Give it a host of its own, in DNS and in the certificate. Left empty, nothing changes but one thing:
+- the server now gets `OSTROM_ARTIFACTS_VIEWER_URL` (`global.urls.app` + `/artifacts`): the links to artifacts the
+  API and agents give are absolute, and only the console may frame an artifact page.
+
 ### 0.3.2 → next: settings in the console
 
 Needs a server image with the settings in the console (ostrom-server#438 and the slices after it, up to #499).
