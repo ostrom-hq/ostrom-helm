@@ -39,6 +39,10 @@ ingress:
 networkPolicy:
   ingressController:
     namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+# The MCP host's image has no stand-in (its probes and port come from the real image): off here, rendered and unit
+# tested on the default values (tests/mcp_host_test.yaml).
+mcp:
+  enabled: false
 # Off by default until the server speaks SAML ("Coming soon"); kept on here so its support stays installed and tested.
 polis:
   enabled: true

@@ -370,6 +370,29 @@ cloudSessions:
     # TeamCode's. Off, the runner authenticates with its execution's runner token only.
     tokenReview: false
 
+# --- MCP stdio host (the server's hosted stdio MCP servers: pinned npm and PyPI packages) --------------------------
+# A Deployment of its own, reached only by the server pods, with no database, encryption key or Kubernetes token. On by
+# default, as in TeamCode's chart: a plain `helm upgrade` deploys it, generates its token and gives the server
+# OSTROM_MCP_HOST_URL and OSTROM_MCP_HOST_TOKEN. false renders nothing and the server gets neither variable. Limits,
+# launchers, mirrors and the pod's resources are fixed in templates/mcp.yaml (the host's settings come to the dashboard).
+mcp:
+  enabled: true
+  image:
+    repository: ""            # default: <global.imageRegistry>/ostrom-mcp-host
+    # The full commit of an ostrom-server main commit whose "MCP host image" run succeeded (the host is built only when
+    # mcp-host/ changes, so it has no image at most server tags; it is versioned by its protocol header, not by the
+    # server's tag). It does not follow global.imageTag. Bumped by hand.
+    tag: df227e1c5b9c5206aaeea31ac8b39b1355027c2a
+    digest: ""                # pins the image (sha256:…); wins over the tag
+    pullPolicy: ""            # default: global.imagePullPolicy
+  token:
+    # Empty: the chart generates a Secret <release>-mcp (key `token`, 48 random characters), keeps its value across
+    # upgrades (read back with lookup) and leaves it on uninstall. `helm template` and `--dry-run=client` cannot read
+    # it and show a new value; use existingSecret when the chart is rendered outside the cluster (GitOps).
+    existingSecret: ""
+    # The key of existingSecret holding the token (at least 32 characters).
+    key: token
+
 # --- Ingress (uses the cluster's ingress controller; creates nothing cluster-wide) ---------------------------------
 ingress:
   enabled: true

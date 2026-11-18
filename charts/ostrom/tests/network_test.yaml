@@ -91,10 +91,11 @@ tests:
     documentSelector: { path: metadata.name, value: o-ostrom-web-egress }
     asserts:
       - equal: { path: 'spec.egress[0].to[0].podSelector.matchLabels["app.kubernetes.io/component"]', value: server }
-  - it: the server reaches the internet minus the denied ranges by default
+  - it: the server reaches the internet minus the denied ranges by default, then its MCP host
     documentSelector: { path: metadata.name, value: o-ostrom-server-egress }
     asserts:
-      - lengthEqual: { path: spec.egress, count: 2 }
+      # PostgreSQL, the internet, the MCP host (mcp_host_test.yaml).
+      - lengthEqual: { path: spec.egress, count: 3 }
       - equal: { path: 'spec.egress[1].to[0].ipBlock.cidr', value: 0.0.0.0/0 }
   - it: without the internet, the server keeps PostgreSQL and the rules it declares
     set:
@@ -104,7 +105,8 @@ tests:
           ports: [{ protocol: TCP, port: 3128 }]
     documentSelector: { path: metadata.name, value: o-ostrom-server-egress }
     asserts:
-      - lengthEqual: { path: spec.egress, count: 2 }
+      # PostgreSQL, the declared rule, the MCP host.
+      - lengthEqual: { path: spec.egress, count: 3 }
       - equal: { path: 'spec.egress[0].ports[0].port', value: 5432 }
       - equal:
           path: 'spec.egress[1]'
