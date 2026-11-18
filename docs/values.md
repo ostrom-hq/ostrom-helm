@@ -100,6 +100,7 @@ The built-in PostgreSQL starts with four roles (`templates/postgresql.yaml`, the
 | `polis` | its own `polis` database only | Ory Polis |
 | `ostrom_tenant` | `NOLOGIN`: the role the server switches to (`SET LOCAL ROLE`) for row-level security | granted to `ostrom_app`; the owner administers it |
 | `ostrom_router` | `NOLOGIN`: owns the cross-organization functions (`SECURITY DEFINER`, ostrom-server `docs/tenancy.md`), no table | the owner administers it; never granted to `ostrom_app` |
+| `ostrom_member_search` | `NOLOGIN`: owns the member search's function (`SECURITY DEFINER`, ostrom-server orgs migration 7); reads `id`, `login`, `display_name` of `identity_users` and one organization's members | the owner administers it; never granted to `ostrom_app` |
 
 Since server 4e4137d (S2-43) the server does not migrate and refuses to start if the migrations are not applied, or
 if its role is a superuser, `BYPASSRLS`, owns a table or is a member of the owner. The migrations create
@@ -116,6 +117,9 @@ GRANT ostrom_tenant TO :"app";
 SELECT 'CREATE ROLE ostrom_router NOLOGIN NOSUPERUSER NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_router') \gexec
 GRANT ostrom_router TO :"owner" WITH ADMIN OPTION;
+SELECT 'CREATE ROLE ostrom_member_search NOLOGIN NOSUPERUSER NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ostrom_member_search') \gexec
+GRANT ostrom_member_search TO :"owner" WITH ADMIN OPTION;
 \connect :"db"
 GRANT USAGE ON SCHEMA public TO ostrom_tenant;
 -- AUDIT-RLS R8: the migrations' history is written by its owner alone. Any other role (the serving role, ostrom_tenant
@@ -148,7 +152,7 @@ $lock$;
 ```
 
 (`psql -v ON_ERROR_STOP=1 -v owner=ostrom -v app=ostrom_app -v db=ostrom`). Never give the serving role
-`CREATEROLE`, membership of the owner nor `ostrom_router`.
+`CREATEROLE`, membership of the owner, `ostrom_router` nor `ostrom_member_search`.
 
 `helm test` checks it on the live database (`templates/tests/test-database.yaml`): the serving role is neither
 superuser nor `BYPASSRLS`, cannot create or alter a table, reads what the owner creates, reads the migrations' history and writes none of it

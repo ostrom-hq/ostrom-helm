@@ -56,6 +56,8 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
   play the end of the block in [values.md](values.md#database-roles) once (a server with ostrom-server#144 also does
   it at every `migrate`).
 - `cloudSessions.allowedOrgs` (S2-10): with sessions on, list the organizations they are open to; empty refuses all.
+- The `pre-upgrade` roles Job also creates `ostrom_member_search` (owner of the member search's function, ostrom-server
+  orgs migration 7) and gives the owner ADMIN on it, as for `ostrom_router`: needed before a server with that migration.
 - The console's host serves `/api/v1` from the server (one origin for the browser). A pre-upgrade Job adds the
   `ostrom_router` role.
 - Request bodies (S2-46): `/api/v1/artifacts` and `/api/v1/inference` take 32m, `/api/v1/import` 8m, each on its own

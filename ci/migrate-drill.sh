@@ -72,16 +72,18 @@ migrated
 helm uninstall $REL -n $NS --wait
 kubectl delete namespace $NS --wait=false
 
-echo "== B. ostrom_router already there, not administered by the owner"
+echo "== B. ostrom_router and ostrom_member_search already there, not administered by the owner"
 NS=ostrom-migrate-b
 restricted_ns $NS
 helm install $REL charts/ostrom -n $NS "${real[@]}" --set server.enabled=false --wait --timeout 10m || fail "database only"
-psql_su "REVOKE ostrom_router FROM ostrom" >/dev/null
-[ "$(psql_su "SELECT count(*) FROM pg_auth_members WHERE roleid = 'ostrom_router'::regrole AND member = 'ostrom'::regrole")" = 0 ] \
+psql_su "REVOKE ostrom_router FROM ostrom; REVOKE ostrom_member_search FROM ostrom" >/dev/null
+[ "$(psql_su "SELECT count(*) FROM pg_auth_members WHERE roleid IN ('ostrom_router'::regrole, 'ostrom_member_search'::regrole) AND member = 'ostrom'::regrole")" = 0 ] \
   || fail "the setup did not remove the owner's membership"
 helm upgrade $REL charts/ostrom -n $NS "${real[@]}" --wait --timeout 10m || fail "upgrade over the pre-existing role"
 [ "$(psql_su "SELECT bool_or(admin_option) FROM pg_auth_members WHERE roleid = 'ostrom_router'::regrole AND member = 'ostrom'::regrole")" = t ] \
   || fail "the roles Job did not give the owner ADMIN on ostrom_router"
+[ "$(psql_su "SELECT bool_or(admin_option) FROM pg_auth_members WHERE roleid = 'ostrom_member_search'::regrole AND member = 'ostrom'::regrole")" = t ] \
+  || fail "the roles Job did not give the owner ADMIN on ostrom_member_search"
 migrated
 helm uninstall $REL -n $NS --wait
 kubectl delete namespace $NS --wait=false
@@ -114,6 +116,8 @@ data:
     GRANT ostrom_tenant TO ostrom_app;
     CREATE ROLE ostrom_router NOLOGIN NOSUPERUSER NOBYPASSRLS;
     GRANT ostrom_router TO ostrom_owner WITH ADMIN OPTION;
+    CREATE ROLE ostrom_member_search NOLOGIN NOSUPERUSER NOBYPASSRLS;
+    GRANT ostrom_member_search TO ostrom_owner WITH ADMIN OPTION;
     -- The server's session settings, which the TLS proxy drops (docs/install-kubernetes.md).
     ALTER ROLE ostrom_app SET statement_timeout = '10s';
     ALTER ROLE ostrom_app SET lock_timeout = '5s';
