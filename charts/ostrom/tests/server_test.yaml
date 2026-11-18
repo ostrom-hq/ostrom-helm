@@ -119,6 +119,12 @@ tests:
       - equal: { path: 'spec.template.spec.containers[0].image', value: "registry.local/o/ostrom-server:1.2.3" }
       - equal: { path: 'spec.template.spec.initContainers[0].image', value: "registry.local/o/ostrom-server:1.2.3" }
       - equal: { path: 'spec.template.spec.imagePullSecrets[0].name', value: ghcr }
+  - it: an explicit server repository wins over the global registry
+    template: templates/server.yaml
+    documentSelector: { path: kind, value: Deployment }
+    set: { global.imageRegistry: "registry.local/o", server.image.repository: "mirror.local/ostrom-server", server.image.tag: "1.2.3" }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "mirror.local/ostrom-server:1.2.3" }
   - it: migrations run first, with the owner's credentials, which the serving container never receives
     template: templates/server.yaml
     documentSelector: { path: kind, value: Deployment }

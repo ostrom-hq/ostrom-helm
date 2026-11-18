@@ -23,6 +23,12 @@ helm test ostrom -n ostrom
 - Pin images by digest in production (`server.image.digest`…) and verify their signature before
   ([images.md](images.md)).
 
+## Next release
+
+- The images and the chart move to Docker Hub: `global.imageRegistry` defaults to `docker.io/ostromhq` (it was
+  `ghcr.io/ostrom-hq`), the server's image included, and the chart is `oci://registry-1.docker.io/ostromhq/ostrom`. The
+  images are public: drop an `imagePullSecrets` entry kept for ghcr. A mirror keeps setting `global.imageRegistry`.
+
 ## 0.2.x → 0.3.x
 
 Needs a server image from main 4e4137d or later (it has `ostrom-server migrate` and no longer migrates itself). Keep

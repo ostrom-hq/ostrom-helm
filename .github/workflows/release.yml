@@ -43,6 +43,7 @@ jobs:
           echo "$DOCKER_HUB_PASSWORD" | helm registry login registry-1.docker.io -u ostromhq --password-stdin
           out=$(helm push "dist/ostrom-${TAG}.tgz" oci://registry-1.docker.io/ostromhq 2>&1); echo "$out"
           digest=$(echo "$out" | awk '/^Digest:/{print $2}')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "helm push printed no digest: $digest" >&2; exit 1; }
           echo "$DOCKER_HUB_PASSWORD" | cosign login registry-1.docker.io -u ostromhq --password-stdin
           cosign sign --yes --key env://COSIGN_PRIVATE_KEY --tlog-upload=false "registry-1.docker.io/ostromhq/ostrom@${digest}"
           cosign sign-blob --yes --key env://COSIGN_PRIVATE_KEY --tlog-upload=false \
