@@ -58,7 +58,7 @@ tests:
     asserts:
       - equal: { path: data.OSTROM_RUNNERS_DRIVER, value: kubernetes }
       - equal: { path: data.OSTROM_RUNNERS_SERVER_URL, value: "http://o-ostrom-server.ostrom.svc:8080" }
-      - equal: { path: data.OSTROM_RUNNERS_IMAGE, value: "ghcr.io/ostrom-hq/ostrom-runner:0.1.0" }
+      - equal: { path: data.OSTROM_RUNNERS_IMAGE, value: "docker.io/ostromhq/ostrom-runner:0.1.0" }
       - equal: { path: data.OSTROM_RUNNERS_KUBERNETES_NAMESPACE, value: ostrom }
       - equal: { path: data.OSTROM_RUNNERS_KUBERNETES_IMAGE_PULL_SECRET, value: ghcr }
       - equal: { path: data.OSTROM_RUNNERS_KUBERNETES_PRIORITY_CLASS, value: low }
@@ -111,20 +111,20 @@ tests:
     set: { server.image.digest: "sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03" }
     asserts:
       - equal: { path: 'spec.template.spec.containers[0].image', value: "docker.io/ostromhq/ostrom-server@sha256:47f4426aa907c0032925d8f263ced78249edf50ff90841fca3184eef29ddfa03" }
-  - it: the server image comes from Docker Hub, with the global tag; a mirror sets its repository
+  - it: global tag and registry apply (the server's image is on Docker Hub by default, like the others)
     template: templates/server.yaml
     documentSelector: { path: kind, value: Deployment }
     set: { global.imageTag: "1.2.3", global.imageRegistry: "registry.local/o", global.imagePullSecrets: [ghcr] }
     asserts:
-      - equal: { path: 'spec.template.spec.containers[0].image', value: "docker.io/ostromhq/ostrom-server:1.2.3" }
-      - equal: { path: 'spec.template.spec.initContainers[0].image', value: "docker.io/ostromhq/ostrom-server:1.2.3" }
-  - it: global tag and registry apply to a server repository left empty
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "registry.local/o/ostrom-server:1.2.3" }
+      - equal: { path: 'spec.template.spec.initContainers[0].image', value: "registry.local/o/ostrom-server:1.2.3" }
+      - equal: { path: 'spec.template.spec.imagePullSecrets[0].name', value: ghcr }
+  - it: an explicit server repository wins over the global registry
     template: templates/server.yaml
     documentSelector: { path: kind, value: Deployment }
-    set: { global.imageTag: "1.2.3", global.imageRegistry: "registry.local/o", global.imagePullSecrets: [ghcr], server.image.repository: "" }
+    set: { global.imageRegistry: "registry.local/o", server.image.repository: "mirror.local/ostrom-server", server.image.tag: "1.2.3" }
     asserts:
-      - equal: { path: 'spec.template.spec.containers[0].image', value: "registry.local/o/ostrom-server:1.2.3" }
-      - equal: { path: 'spec.template.spec.imagePullSecrets[0].name', value: ghcr }
+      - equal: { path: 'spec.template.spec.containers[0].image', value: "mirror.local/ostrom-server:1.2.3" }
   - it: migrations run first, with the owner's credentials, which the serving container never receives
     template: templates/server.yaml
     documentSelector: { path: kind, value: Deployment }

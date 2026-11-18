@@ -13,11 +13,13 @@ kubectl create namespace ostrom
 kubectl label namespace ostrom pod-security.kubernetes.io/enforce=restricted
 ```
 
-## 2. Image pull secret (while the images are private)
+## 2. Image pull secret (only for a private mirror of the images)
+
+The images on `docker.io/ostromhq` are public: skip this step unless you pull from a private mirror.
 
 ```sh
-kubectl -n ostrom create secret docker-registry ghcr \
-  --docker-server=ghcr.io --docker-username=<github user> --docker-password=<token with read:packages>
+kubectl -n ostrom create secret docker-registry mirror \
+  --docker-server=<registry host> --docker-username=<user> --docker-password=<token>
 ```
 
 ## 3. TLS
@@ -36,7 +38,7 @@ Pick one:
 ```yaml
 global:
   imageTag: "<ostrom version>"   # or pin each image: server.image.digest: sha256:…
-  imagePullSecrets: [ghcr]
+  # imagePullSecrets: [mirror]   # only for a private mirror; docker.io/ostromhq is public
   urls: { api: https://api.example.com, app: https://app.example.com, site: https://example.com }
 ingress:
   hosts: { api: api.example.com, app: app.example.com, site: example.com, siteAliases: [www.example.com], sso: sso.example.com }
@@ -60,7 +62,7 @@ kubectl -n ostrom create secret generic ostrom-server --from-env-file=server.env
 ## 5. Install
 
 ```sh
-helm install ostrom oci://ghcr.io/ostrom-hq/charts/ostrom --version <chart version> -n ostrom -f values-mine.yaml
+helm install ostrom oci://registry-1.docker.io/ostromhq/ostrom --version <chart version> -n ostrom -f values-mine.yaml
 # or from a clone: helm install ostrom ./charts/ostrom -n ostrom -f values-mine.yaml
 helm test ostrom -n ostrom
 ```

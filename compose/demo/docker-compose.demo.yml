@@ -29,7 +29,7 @@ services:
       OSTROM_RUNNERS_DOCKER_API_URL: http://docker-api:2375
       OSTROM_RUNNERS_DOCKER_NETWORK: ostrom-sessions
       OSTROM_RUNNERS_SERVER_URL: http://server:8080
-      OSTROM_RUNNERS_IMAGE: ${OSTROM_RUNNER_IMAGE:-ghcr.io/ostrom-hq/ostrom-runner:latest}
+      OSTROM_RUNNERS_IMAGE: ${OSTROM_RUNNER_IMAGE:-docker.io/ostromhq/ostrom-runner:latest}
       OSTROM_RUNNERS_ALLOWED_ORGS: "*"
     volumes:
       - mail:/var/lib/ostrom-mail

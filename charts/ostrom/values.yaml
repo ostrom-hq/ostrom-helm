@@ -2,7 +2,7 @@
 
 global:
   # Registry prefix of the Ostrom images (server, web, site, runner).
-  imageRegistry: ghcr.io/ostrom-hq
+  imageRegistry: docker.io/ostromhq
   # Version of every Ostrom image when an image tag is not set; defaults to the chart appVersion.
   imageTag: ""
   # Every image of the chart, Ostrom's and the third-party ones (PostgreSQL, Ory Polis, the helm test image).
@@ -23,9 +23,7 @@ commonLabels: {}
 server:
   enabled: true
   image:
-    # Docker Hub, built by jib (ostrom-server image.yml). global.imageRegistry does not apply to it: a mirror sets
-    # this repository.
-    repository: docker.io/ostromhq/ostrom-server
+    repository: ""            # default: <global.imageRegistry>/ostrom-server (Docker Hub, built by jib)
     tag: ""                   # default: global.imageTag, then appVersion
     digest: ""                # pins the image (sha256:…); wins over the tag
   command: []

@@ -19,7 +19,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-      packages: write
     env:
       TAG: ${{ github.ref_name }}
     steps:
@@ -35,18 +34,18 @@ jobs:
             echo "::error::tag $TAG but charts/ostrom/Chart.yaml says version $version"; exit 1
           fi
           helm package charts/ostrom -d dist
-      - name: Push to GHCR and sign
+      - name: Push to Docker Hub and sign
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-          REGISTRY_TOKEN: ${{ github.token }}
-          ACTOR: ${{ github.actor }}
+          DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
         run: |
-          echo "$REGISTRY_TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
-          out=$(helm push "dist/ostrom-${TAG}.tgz" oci://ghcr.io/ostrom-hq/charts 2>&1); echo "$out"
+          echo "$DOCKER_HUB_PASSWORD" | helm registry login registry-1.docker.io -u ostromhq --password-stdin
+          out=$(helm push "dist/ostrom-${TAG}.tgz" oci://registry-1.docker.io/ostromhq 2>&1); echo "$out"
           digest=$(echo "$out" | awk '/^Digest:/{print $2}')
-          echo "$REGISTRY_TOKEN" | cosign login ghcr.io -u "$ACTOR" --password-stdin
-          cosign sign --yes --key env://COSIGN_PRIVATE_KEY --tlog-upload=false "ghcr.io/ostrom-hq/charts/ostrom@${digest}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "helm push printed no digest: $digest" >&2; exit 1; }
+          echo "$DOCKER_HUB_PASSWORD" | cosign login registry-1.docker.io -u ostromhq --password-stdin
+          cosign sign --yes --key env://COSIGN_PRIVATE_KEY --tlog-upload=false "registry-1.docker.io/ostromhq/ostrom@${digest}"
           cosign sign-blob --yes --key env://COSIGN_PRIVATE_KEY --tlog-upload=false \
             --output-signature "dist/ostrom-${TAG}.tgz.sig" "dist/ostrom-${TAG}.tgz"
       - name: GitHub release
@@ -54,4 +53,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$TAG" "dist/ostrom-${TAG}.tgz" "dist/ostrom-${TAG}.tgz.sig" --verify-tag \
-            --title "Chart ostrom ${TAG}" --notes "oci://ghcr.io/ostrom-hq/charts/ostrom --version ${TAG}"
+            --title "Chart ostrom ${TAG}" --notes "oci://registry-1.docker.io/ostromhq/ostrom --version ${TAG}"

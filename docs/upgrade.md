@@ -6,8 +6,8 @@ a release that adds database migrations says so.
 ## Kubernetes
 
 ```sh
-helm diff upgrade ostrom oci://ghcr.io/ostrom-hq/charts/ostrom --version <new> -n ostrom -f values-mine.yaml   # optional, helm-diff plugin
-helm upgrade ostrom oci://ghcr.io/ostrom-hq/charts/ostrom --version <new> -n ostrom -f values-mine.yaml --atomic --timeout 10m
+helm diff upgrade ostrom oci://registry-1.docker.io/ostromhq/ostrom --version <new> -n ostrom -f values-mine.yaml   # optional, helm-diff plugin
+helm upgrade ostrom oci://registry-1.docker.io/ostromhq/ostrom --version <new> -n ostrom -f values-mine.yaml --atomic --timeout 10m
 helm test ostrom -n ostrom
 ```
 
@@ -22,6 +22,12 @@ helm test ostrom -n ostrom
   the old version cannot read the new schema.
 - Pin images by digest in production (`server.image.digest`…) and verify their signature before
   ([images.md](images.md)).
+
+## Next release
+
+- The images and the chart move to Docker Hub: `global.imageRegistry` defaults to `docker.io/ostromhq` (it was
+  `ghcr.io/ostrom-hq`), the server's image included, and the chart is `oci://registry-1.docker.io/ostromhq/ostrom`. The
+  images are public: drop an `imagePullSecrets` entry kept for ghcr. A mirror keeps setting `global.imageRegistry`.
 
 ## 0.2.x → 0.3.x
 
@@ -79,6 +85,6 @@ An install without data only needs step 2. With an external database, create the
 ```sh
 cd compose
 # by digest: OSTROM_SERVER_IMAGE and OSTROM_WEB_IMAGE (docker-compose.yml pins a signed build of main by default)
-sed -i.bak 's|^OSTROM_SERVER_IMAGE=.*|OSTROM_SERVER_IMAGE=ghcr.io/ostrom-hq/ostrom-server@sha256:<new>|' .env
+sed -i.bak 's|^OSTROM_SERVER_IMAGE=.*|OSTROM_SERVER_IMAGE=docker.io/ostromhq/ostrom-server@sha256:<new>|' .env
 docker compose pull && docker compose up -d --wait
 ```
