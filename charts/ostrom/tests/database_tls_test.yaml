@@ -36,6 +36,7 @@ tests:
       - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'listen_addr = 127\.0\.0\.1' }
       - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'auth_type = scram-sha-256' }
       - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'pool_mode = session' }
+      - matchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'ignore_startup_parameters = extra_float_digits,options' }
       - notMatchRegex: { path: 'data["pgbouncer.ini"]', pattern: 'app|owner"|password' }
   - it: config step, native sidecar, then migrate; the passwords only from Secrets
     template: templates/server.yaml

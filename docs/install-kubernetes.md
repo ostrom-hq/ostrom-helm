@@ -136,6 +136,15 @@ externalDatabase:
   `migrations.initContainer: false`, the proxy only knows the serving role's.
 - The proxy serves the one database of `url`, nothing else on the server. `url` takes a host name (the one the
   certificate names, or set `host`), not an IPv6 literal.
+- PgBouncer cannot pass on the session settings the server sends when it connects (its startup `options`): the
+  proxy drops them. Set them on the roles once, or a stuck query or lock holds a connection for good:
+
+  ```sql
+  ALTER ROLE ostrom_app SET statement_timeout = '10s';
+  ALTER ROLE ostrom_app SET lock_timeout = '5s';
+  ALTER ROLE ostrom_app SET idle_in_transaction_session_timeout = '15s';
+  ALTER ROLE ostrom SET lock_timeout = '3s';          -- the owner, for `migrate`
+  ```
 - Session pooling, one server connection per client connection: the server's prepared statements and the migration
   lock need it. Pool size: `server.database.maxConnections` + 2.
 - A database that only accepts TLS (`hostssl`, RDS with `rds.force_ssl=1`, Cloud SQL, Azure) works this way; the CI
