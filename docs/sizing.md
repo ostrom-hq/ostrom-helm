@@ -3,8 +3,8 @@
 The server runs on the JVM (ostrom-server `docs/decisions/0001`, as TeamCode): about 3 s to start, about 225 MiB at
 rest and 340 MiB under a steady 200 req/s with a 256 MiB heap, a p99 of 6.8 ms there (ostrom-server#394, run
 43444036220, on one runner). The chart's defaults follow: 512 Mi requested, 1 Gi limit, the heap at 70 % of the limit
-(`server.javaToolOptions`). The kind measurements below are those of the earlier native binary; they are taken
-again on the JVM image and this page updated.
+(`server.javaToolOptions`). The ingress and startup tables below are those of the earlier native binary, to be taken
+again on the JVM image; the scaling drill already runs on it.
 
 Measured on the chart (ostrom-e2e `chart-load.yml`, kind, ingress-nginx, 2 server replicas, built-in PostgreSQL,
 ostrom-server main of 02/11/2026: runs [41507938323](https://github.com/ostrom-hq/ostrom-e2e/actions/runs/41507938323),
@@ -49,33 +49,27 @@ What the drill proves:
 - nothing more. The CI's requests are below the defaults, so its HPA reacts sooner than yours, and its threshold is
   not yours.
 
-Run 41549988209 (probe timeouts explicit, CI requests 50m / 64Mi):
+Run [44350369154](https://github.com/ostrom-hq/ostrom-helm/actions/runs/44350369154), the JVM server (ostrom-server
+main, built with jib), probe timeouts explicit, CI requests 50m / 64Mi:
 
-| Pass | Requests | Failed | p95 | p99 | Replicas |
-|---|---|---|---|---|---|
-| peak to 120 req/s | 19 950 | 0 | 3.3 ms | 6.4 ms | the HPA asked for 4 after 47 s, 4 ready after 53 s, no restart |
-| rollout under 50 req/s | 12 001 | 198 | 4.1 ms | 9.4 ms | 4 pods replaced; the failures are a crash, see below |
+| Pass | Requests | Failed | Replicas |
+|---|---|---|---|
+| peak to 120 req/s | 19 949 | 0 | the HPA went to 4, all 4 ready, no restart |
+| rollout under 50 req/s | 12 000 | 0 | every pod replaced in 41 s, no restart |
 
-**The rollout pass failed.** A server container crashed between the peak and the upgrade:
-- the event was `BackOff`: the container exited by itself, with no liveness failure;
-- k6 got `connection refused` on the Service before the upgrade began, until readiness took the pod out;
-- the rollout then deleted the pod, and its exit code with it.
-
-The drill now records the last termination and the previous logs of every restart while the pod still exists. Until a
-run shows the exit code, the cause stays open. It matches neither the probes nor the chart, and may fall under one of
-the two leads below.
+Latencies (p95, p99) and the HPA's timings are in that run's job summary. On the earlier native binary (run
+41549988209) the rollout pass lost 198 requests to a server container that exited by itself between the peak and the
+upgrade; the JVM image does not reproduce it. The drill still records the last termination and the previous logs of
+any restart, and a crash before the rollout starts is reported as such.
 
 What it does not prove:
-- **300 requests/s is not held on this runner.** On the first run (41545347185), still with Kubernetes' 1 s probe
-  timeouts:
+- **300 requests/s is not held on this runner.** On the first run (41545347185, native binary), still with
+  Kubernetes' 1 s probe timeouts:
   - 7 100 of 12 013 requests failed;
   - the four replicas went into CrashLoopBackOff;
   - the node itself was saturated.
 - No conclusion on real capacity follows from either figure. One node with 2 vCPU says nothing about a cluster
   where replicas get their own CPU.
-- Two open leads may limit a replica under bursts, whatever the node. Neither is settled by this drill:
-  - RELAY: 200 open streams bring pods down, probably `pselect` and `FD_SETSIZE` 1024 in native Ktor;
-  - GATES: the Kotlin heap holds 54 to 118 MB after a burst.
 
 | Team | Server | Web, site | PostgreSQL | Cloud sessions |
 |---|---|---|---|---|
