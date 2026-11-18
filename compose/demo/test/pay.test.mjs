@@ -10,13 +10,17 @@ import { CARD, chromiumFrom, cookiesOf, payAndSeeThePlan } from '../pay.mjs';
 function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, hidden = [], failedClicks = 0, busy = false } = {}) {
   const log = [];
   let submits = 0;
+  let manualClicked = false;
+  // A selector lists alternatives: it shows when one of them does.
+  const shows = (sel) => sel.split(', ').some((one) => !hidden.some((h) => one.startsWith(h))
+    && !(manualAddress && !manualClicked && /AddressLine1|address-line1/.test(one)));
   const locator = (sel) => {
     const self = {
       sel,
       first: () => self,
       or: () => locator('either'),
       waitFor: async () => { log.push(['wait', sel]); if (hidden.includes(sel)) throw new Error('not shown'); },
-      click: async () => { if (sel.includes('submit')) { submits += 1; if (submits <= failedClicks) throw new Error('no button'); } log.push(['click', sel]); },
+      click: async () => { if (sel === 'button') manualClicked = true; if (sel.includes('submit')) { submits += 1; if (submits <= failedClicks) throw new Error('no button'); } log.push(['click', sel]); },
       fill: async (v) => { log.push(['fill', sel, v]); },
       selectOption: async (v) => { log.push(['select', sel, v]); },
       press: async (k) => { log.push(['press', sel, k]); },
@@ -24,7 +28,7 @@ function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, h
       isEditable: async () => true,
       isEnabled: async () => !busy,
       inputValue: async () => '',
-      isVisible: async () => !manualAddress,
+      isVisible: async () => shows(sel),
       isChecked: async () => linkChecked,
       uncheck: async () => { log.push(['uncheck', sel]); },
       getByText: (t) => { log.push(['text', t]); return self; },
@@ -36,10 +40,10 @@ function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, h
   const page = {
     log,
     url: () => 'https://checkout.stripe.com/x',
-    frames: () => [{ url: () => 'https://checkout.stripe.com/x' }, { url: () => 'about:blank' }],
-    $$eval: async () => ['#cardNumber', '[hosted-payment-submit-button]'],
+    // Checkout's form in a frame of its own (the payment Element), next to an empty one.
+    frames: () => [{ url: () => 'about:blank', locator: () => ({ first: () => ({ isVisible: async () => false }) }), $$eval: async () => [] }, form],
     goto: async (u) => { log.push(['goto', u]); },
-    locator,
+    locator: () => { throw new Error('the form is in its frame, not in the page'); },
     getByRole: (role, o) => (log.push(['role', role, o.name]), locator(role)),
     waitForResponse: (match) => {
       assert.equal(match({ request: () => ({ method: () => 'POST' }), url: () => 'https://checkout.stripe.com/v1/payment_pages/cs_x/confirm' }), true);
@@ -51,6 +55,12 @@ function fakePage({ manualAddress = false, linkChecked = false, backAfter = 1, h
       assert.equal(match(new URL('http://app.localhost/billing?checkout=success')), true);
       if (submits < backAfter) throw new Error('still on Stripe');
     },
+  };
+  const form = {
+    url: () => 'https://js.stripe.com/v3/elements-inner-payment',
+    locator,
+    getByRole: (role, o) => (log.push(['role', role, o.name]), locator(role)),
+    $$eval: async () => ['#cardNumber', '[hosted-payment-submit-button]'],
   };
   return page;
 }
@@ -82,8 +92,8 @@ test('payAndSeeThePlan pays with the test card, then reads the paid plan in the 
   const seen = await payAndSeeThePlan({ chromium, checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_x', cookies: [{ name: 'a', value: 'b', url: 'http://app.localhost' }], app: 'http://app.localhost', email: 'o@acme.demo', plan: 'Team' });
   assert.equal(seen, 'Team Active');
   assert.deepEqual(page.log.filter((e) => e[0] === 'goto'), [['goto', 'https://checkout.stripe.com/c/pay/cs_test_x'], ['goto', 'http://app.localhost/billing']]);
-  assert.ok(page.log.some((e) => e[0] === 'fill' && e[1] === '#cardNumber' && e[2] === CARD.number));
-  assert.ok(page.log.some((e) => e[0] === 'fill' && e[1] === '#email' && e[2] === 'o@acme.demo'));
+  assert.ok(page.log.some((e) => e[0] === 'fill' && e[1].startsWith('#cardNumber') && e[2] === CARD.number));
+  assert.ok(page.log.some((e) => e[0] === 'fill' && e[1].startsWith('#email') && e[2] === 'o@acme.demo'));
   assert.ok(page.log.some((e) => e[0] === 'select' && e[2] === 'FR'));
   assert.deepEqual(chromium.state.cookies, [{ name: 'a', value: 'b', url: 'http://app.localhost' }]);
   assert.equal(chromium.state.closed, true);
@@ -102,7 +112,7 @@ test('the address may be typed by hand, the Link box is unchecked, and Subscribe
 test('a payer Stripe never sends back is an error, and the browser is closed anyway', async () => {
   const page = fakePage({ backAfter: 99 });
   const chromium = fakeChromium(page);
-  await assert.rejects(payAndSeeThePlan({ chromium, checkoutUrl: 'https://checkout.stripe.com/x', cookies: [], app: 'http://app.localhost', email: 'o@acme.demo', plan: 'Team' }), /did not send the payer back.*page https:\/\/checkout\.stripe\.com\/x; frames 1: .*fields: #cardNumber \[hosted-payment-submit-button\]/);
+  await assert.rejects(payAndSeeThePlan({ chromium, checkoutUrl: 'https://checkout.stripe.com/x', cookies: [], app: 'http://app.localhost', email: 'o@acme.demo', plan: 'Team' }), /did not send the payer back.*page https:\/\/checkout\.stripe\.com\/x; frames 1: .*fields: https:\/\/js\.stripe\.com\/v3\/elements-inner-payment: #cardNumber \[hosted-payment-submit-button\]/);
   assert.equal(chromium.state.closed, true);
 });
 
