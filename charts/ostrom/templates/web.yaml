@@ -14,6 +14,10 @@ data:
   OSTROM_API_UPSTREAM: {{ printf "http://%s-server:%v" $full .Values.server.service.port | quote }}
   OSTROM_APP_URL: {{ .Values.global.urls.app | quote }}
   OSTROM_SITE_URL: {{ .Values.global.urls.site | quote }}
+  {{- with include "ostrom.artifacts.origin" . }}
+  # The only origin the console frames (its CSP frame-src): the artifact pages of global.urls.artifacts.
+  OSTROM_ARTIFACTS_CONTENT_ORIGIN: {{ . | quote }}
+  {{- end }}
   {{- with .Values.observability.posthog }}
   {{- if .enabled }}
   OSTROM_POSTHOG_HOST: {{ .host | quote }}
@@ -46,7 +50,7 @@ spec:
     metadata:
       labels: {{- include "ostrom.labels" (dict "root" . "component" "web") | nindent 8 }}
       annotations:
-        checksum/config: {{ toYaml $w.config | cat .Values.global.urls.api .Values.global.urls.app (toYaml .Values.observability.posthog) | sha256sum | trunc 16 }}
+        checksum/config: {{ toYaml $w.config | cat .Values.global.urls.api .Values.global.urls.app (include "ostrom.artifacts.origin" .) (toYaml .Values.observability.posthog) | sha256sum | trunc 16 }}
         {{- with $w.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
     spec:
       automountServiceAccountToken: false

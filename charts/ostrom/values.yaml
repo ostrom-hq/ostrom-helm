@@ -14,6 +14,11 @@ global:
     api: https://api.example.com
     app: https://app.example.com
     site: https://example.com
+    # The artifacts' content origin (https://artifacts.example.com): the pages agents publish are served there,
+    # sandboxed, on a host of its own (never the console's nor the API's), routed to the server by its own Ingress.
+    # Empty: artifacts are kept and listed, but their pages are not shown. Point its DNS at the ingress, and give it
+    # a certificate (cert-manager issues it with the other hosts; an existing tls.secretName must cover it).
+    artifacts: ""
 
 nameOverride: ""
 fullnameOverride: ""

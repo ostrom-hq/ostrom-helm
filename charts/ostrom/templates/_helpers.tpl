@@ -522,3 +522,25 @@ the cluster it cannot change, and a rotation needs `kubectl rollout restart` of 
 {{- define "ostrom.mcp.url" -}}
 {{- printf "http://%s:%d" (include "ostrom.mcp.fullname" .) 8090 -}}
 {{- end -}}
+
+{{/*
+The artifacts' content origin (global.urls.artifacts), trailing slash dropped, or "" when artifact pages are off. Its
+own host, never the console's nor the API's: a page served there runs apart from every session (ostrom-server
+OSTROM_ARTIFACTS_CONTENT_ORIGIN, which refuses the same values).
+*/}}
+{{- define "ostrom.artifacts.origin" -}}
+{{- $o := trimSuffix "/" ((.Values.global.urls.artifacts | default "") | toString) -}}
+{{- if $o -}}
+{{- if not (regexMatch "^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$" $o) -}}
+{{- fail (printf "global.urls.artifacts is a bare http(s) origin (https://artifacts.example.com: no path, no user), not %q" $o) -}}
+{{- end -}}
+{{- $host := lower (urlParse $o).hostname -}}
+{{- $taken := dict "global.urls.app" (urlParse (.Values.global.urls.app | toString)).hostname "global.urls.api" (urlParse (.Values.global.urls.api | toString)).hostname "ingress.hosts.app" .Values.ingress.hosts.app "ingress.hosts.api" .Values.ingress.hosts.api -}}
+{{- range $name, $h := $taken -}}
+{{- if eq $host (lower (trimSuffix "." ($h | toString))) -}}
+{{- fail (printf "global.urls.artifacts needs a host of its own: %s is also %s's (pages would run next to its session)" $host $name) -}}
+{{- end -}}
+{{- end -}}
+{{- $o -}}
+{{- end -}}
+{{- end }}

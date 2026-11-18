@@ -55,6 +55,12 @@ data:
   # The console's origin: device-login page, sign-in redirects, and the only origin a browser session may change
   # state from (the console serves /api/v1 on its own host, see the Ingress).
   OSTROM_CONSOLE_URL: {{ .Values.global.urls.app | quote }}
+  # The console's artifact page: the links the API and agents give, and the only page that may frame the content.
+  OSTROM_ARTIFACTS_VIEWER_URL: {{ printf "%s/artifacts" (trimSuffix "/" .Values.global.urls.app) | quote }}
+  {{- with include "ostrom.artifacts.origin" . }}
+  # Artifact pages are served on this origin of their own only (global.urls.artifacts), sandboxed, without a session.
+  OSTROM_ARTIFACTS_CONTENT_ORIGIN: {{ . | quote }}
+  {{- end }}
   {{- with .Values.observability.otel }}
   {{- if .enabled }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ required "observability.otel.endpoint is required when otel is enabled" .endpoint | quote }}

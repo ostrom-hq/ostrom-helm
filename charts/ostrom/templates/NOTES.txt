@@ -4,6 +4,9 @@ Ostrom {{ .Chart.AppVersion }} is installed in namespace {{ .Release.Namespace }
   API      {{ .Values.global.urls.api }}
   Console  {{ .Values.global.urls.app }}
   Site     {{ .Values.global.urls.site }}
+{{- with include "ostrom.artifacts.origin" . }}
+  Artifact pages  {{ . }}
+{{- end }}
 {{- if .Values.polis.enabled }}
   SSO      {{ include "ostrom.polis.externalUrl" . }}  (SAML ACS: {{ include "ostrom.polis.externalUrl" . }}/api/oauth/saml)
 {{- end }}

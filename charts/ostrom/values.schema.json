@@ -48,6 +48,10 @@
             "site": {
               "type": "string",
               "pattern": "^https?://"
+            },
+            "artifacts": {
+              "type": "string",
+              "pattern": "^(https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?)?$"
             }
           }
         }

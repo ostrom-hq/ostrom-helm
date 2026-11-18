@@ -21,6 +21,12 @@
 {{- end }}
 {{- end }}
 {{- end -}}
+{{- /* The artifacts' content origin (global.urls.artifacts): its own host, and on it only the pages' two paths
+       (`/a/` for members, `/l/` for public links), so the API is never reached there. */ -}}
+{{- with include "ostrom.artifacts.origin" . }}
+{{- $h := lower (urlParse .).hostname -}}
+{{- if $.Values.server.enabled }}{{ $routes = append $routes (dict "name" "artifacts" "rules" (list (dict "host" $h "path" "/a/") (dict "host" $h "path" "/l/")) "svc" $server "port" $sport "annotations" dict) }}{{ end -}}
+{{- end -}}
 {{- if .Values.web.enabled }}{{ $routes = append $routes (dict "name" "app" "rules" (list (dict "host" $i.hosts.app "path" "/")) "svc" (printf "%s-web" $full) "port" .Values.web.service.port "annotations" dict) }}{{ end -}}
 {{- if .Values.site.enabled }}
 {{- $siteRules := list -}}
@@ -68,8 +74,9 @@ spec:
   {{- if $i.tls.enabled }}
   tls:
     - hosts:
-        {{- range $h := $r.rules | uniq }}
-        - {{ $h.host | quote }}
+        {{- $hosts := list }}{{ range $rule := $r.rules }}{{ $hosts = append $hosts $rule.host }}{{ end }}
+        {{- range $h := $hosts | uniq }}
+        - {{ $h | quote }}
         {{- end }}
       secretName: {{ include "ostrom.tls.secretName" $ }}
   {{- end }}
