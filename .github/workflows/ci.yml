@@ -278,7 +278,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      SERVER_TAG: sha-4c6fefd5b145e27d6c2224b1f6ce139f19c6db29
+      SERVER_TAG: sha-dae96020e07174ea7e8a5355b38963f3a268d655
       WEB_TAG: sha-d090cc4
       SITE_TAG: sha-5c14073
     steps:
