@@ -40,3 +40,9 @@ Back it up: every receipt this instance signs is verified with it.
 The secrets key is in Secret {{ include "ostrom.secretsKey.secretName" . }} (kept on uninstall).
 Back it up with the database: it seals every org secret, which is unreadable without it.
 {{- end }}
+{{- if .Values.server.enabled }}
+
+Sign-up is by invitation until an administrator opens it (console: Admin, sign-up). Print the first owner's
+one-time setup link:
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "ostrom.fullname" . }}-server -- ostrom-server bootstrap
+{{- end }}

@@ -79,6 +79,21 @@ yourself and set `server.signingKey.existingSecret` and `server.secretsKey.exist
 Point `api.`, `app.` and the site host at the ingress controller's address (and `sso.` only with
 `polis.enabled: true`; SAML is coming soon).
 
+## 7. First owner
+
+The instance is closed to sign-up: nobody gets an account until its first owner does.
+Print their one-time setup link:
+
+```sh
+kubectl -n ostrom exec deploy/ostrom-server -- ostrom-server bootstrap
+```
+
+It works once, for an hour (run the command again for a new one), and only while the instance has no account. The
+person opens it, signs in with GitHub (or Google, or an e-mail link) and creates the organization; from then on,
+owners and admins invite people from the console. The link is printed on the command's output only, never in the
+server's logs; until it is used, the server logs a warning that says to run the command. To let anyone who signs in
+get an account and create organizations instead, an administrator sets the console's sign-up to open (Admin, sign-up).
+
 ## External PostgreSQL
 
 ```yaml
