@@ -499,7 +499,7 @@ const MACHINE_SERVER_URL = env('OSTROM_DEMO_MACHINE_SERVER_URL', 'http://server:
 
 /**
  * M1-M4 (6.2): a machine of the organization registered by the owner (`POST /runners`, its key shown once), running
- * the runner image as `ostrom-runner machine` on the sessions' network. It shows `online` in `GET /runners` from its
+ * the runner image as `ostrom cloud machine` on the sessions' network. It shows `online` in `GET /runners` from its
  * heartbeats; stopped, `offline` once 90 s passed since its last one; started again then removed, its next heartbeat
  * is refused (401), and after three refusals in a row the process ends with code 3. The key goes to the container through the environment, never on
  * a command line nor in the report.
