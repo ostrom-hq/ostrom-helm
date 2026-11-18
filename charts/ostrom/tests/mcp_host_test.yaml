@@ -121,7 +121,7 @@ tests:
           path: 'spec.template.spec.containers[0].env'
           content: { name: OSTROM_MCP_HOST_TOKEN, valueFrom: { secretKeyRef: { name: corp-mcp, key: host-token } } }
         documentSelector: { path: kind, value: Deployment }
-  - it: the host NetworkPolicy takes ingress from this release's server pods on 8090 only, and egress to DNS and the public Internet
+  - it: the host NetworkPolicy takes ingress from this release's server pods on 8090 only, and egress to the public Internet (DNS through the release's -dns policy)
     template: templates/mcp.yaml
     documentSelector: { path: kind, value: NetworkPolicy }
     asserts:
@@ -130,12 +130,11 @@ tests:
       - equal: { path: 'spec.ingress[0].from[0].podSelector.matchLabels["app.kubernetes.io/component"]', value: server }
       - equal: { path: 'spec.ingress[0].from[0].podSelector.matchLabels["app.kubernetes.io/instance"]', value: o }
       - equal: { path: 'spec.ingress[0].ports', value: [{ protocol: TCP, port: 8090 }] }
-      - equal: { path: 'spec.egress[0].ports[0].port', value: 53 }
-      - equal: { path: 'spec.egress[1].to[0].ipBlock.cidr', value: 0.0.0.0/0 }
-      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: 169.254.0.0/16 }
-      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: 10.0.0.0/8 }
-      - equal: { path: 'spec.egress[2].to[0].ipBlock.cidr', value: "::/0" }
-      - contains: { path: 'spec.egress[2].to[0].ipBlock.except', content: fe80::/10 }
+      - equal: { path: 'spec.egress[0].to[0].ipBlock.cidr', value: 0.0.0.0/0 }
+      - contains: { path: 'spec.egress[0].to[0].ipBlock.except', content: 169.254.0.0/16 }
+      - contains: { path: 'spec.egress[0].to[0].ipBlock.except', content: 10.0.0.0/8 }
+      - equal: { path: 'spec.egress[1].to[0].ipBlock.cidr', value: "::/0" }
+      - contains: { path: 'spec.egress[1].to[0].ipBlock.except', content: fe80::/10 }
   - it: no host NetworkPolicy when the chart's networkPolicy is off, the rest stays
     template: templates/mcp.yaml
     set: { networkPolicy.enabled: false }

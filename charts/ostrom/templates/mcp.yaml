@@ -159,7 +159,8 @@ data:
 {{- end }}
 {{- if .Values.networkPolicy.enabled }}
 ---
-# Ingress: this release's server pods only, on 8090. Egress: DNS, then the public Internet only (registries and the
+# Ingress: this release's server pods only, on 8090. Egress: DNS to the cluster's resolver (the release's shared
+# `-dns` policy, networkPolicy.dns), then the public Internet only (registries and the
 # servers' own APIs), never pod, service, node, private, link-local or metadata addresses. Enforced by CNIs that
 # implement NetworkPolicy. The same ranges as TeamCode's host policy, with its NAT64 and 6to4 forms of the IPv4 ranges.
 apiVersion: networking.k8s.io/v1
@@ -178,11 +179,6 @@ spec:
         - protocol: TCP
           port: 8090
   egress:
-    - ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
