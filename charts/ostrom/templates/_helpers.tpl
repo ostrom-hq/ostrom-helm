@@ -534,10 +534,11 @@ OSTROM_ARTIFACTS_CONTENT_ORIGIN, which refuses the same values).
 {{- if not (regexMatch "^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$" $o) -}}
 {{- fail (printf "global.urls.artifacts is a bare http(s) origin (https://artifacts.example.com: no path, no user), not %q" $o) -}}
 {{- end -}}
-{{- $host := (urlParse $o).hostname -}}
-{{- range $name, $u := dict "app" .Values.global.urls.app "api" .Values.global.urls.api -}}
-{{- if eq $host ((urlParse ($u | toString)).hostname) -}}
-{{- fail (printf "global.urls.artifacts needs a host of its own: %s is also global.urls.%s's (pages would run next to its session)" $host $name) -}}
+{{- $host := lower (urlParse $o).hostname -}}
+{{- $taken := dict "global.urls.app" (urlParse (.Values.global.urls.app | toString)).hostname "global.urls.api" (urlParse (.Values.global.urls.api | toString)).hostname "ingress.hosts.app" .Values.ingress.hosts.app "ingress.hosts.api" .Values.ingress.hosts.api -}}
+{{- range $name, $h := $taken -}}
+{{- if eq $host (lower (trimSuffix "." ($h | toString))) -}}
+{{- fail (printf "global.urls.artifacts needs a host of its own: %s is also %s's (pages would run next to its session)" $host $name) -}}
 {{- end -}}
 {{- end -}}
 {{- $o -}}

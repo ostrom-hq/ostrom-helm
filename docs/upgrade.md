@@ -41,7 +41,8 @@ owner on the existing database ([values.md](values.md#database-roles)); no dump 
 
 - `global.urls.artifacts` (empty by default) turns the artifacts' pages on: the server serves them on that origin
   only (`OSTROM_ARTIFACTS_CONTENT_ORIGIN`), through a new Ingress `<release>-artifacts`, and the console frames it.
-  Give it a host of its own, in DNS and in the certificate. Left empty, nothing changes but one thing:
+  Only `/a/` and `/l/` of that host are routed. Give it a host of its own, in DNS and in the certificate (any server
+  image serves the pages, since ostrom-server#33). Left empty, nothing changes but one thing:
 - the server now gets `OSTROM_ARTIFACTS_VIEWER_URL` (`global.urls.app` + `/artifacts`): the links to artifacts the
   API and agents give are absolute, and only the console may frame an artifact page.
 

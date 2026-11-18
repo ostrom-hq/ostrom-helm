@@ -17,11 +17,10 @@ tests:
     documentSelector: { path: kind, value: ConfigMap }
     asserts:
       - notExists: { path: data.OSTROM_ARTIFACTS_CONTENT_ORIGIN }
-  - it: no artifacts Ingress by default
+  - it: no artifacts Ingress by default (api, its three bodies, app, site)
     template: templates/ingress.yaml
     asserts:
-      - notContains: { path: metadata.name, content: x }
-        documentSelector: { path: metadata.name, value: o-ostrom-artifacts, skipEmptyTemplates: true }
+      - hasDocuments: { count: 6 }
   - it: the server serves the pages on the content origin, trailing slash dropped
     template: templates/server-config.yaml
     documentIndex: 0
@@ -37,30 +36,35 @@ tests:
         documentSelector: { path: kind, value: ConfigMap }
       - notEqual: { path: 'spec.template.metadata.annotations["checksum/config"]', value: "" }
         documentSelector: { path: kind, value: Deployment }
-  - it: its own Ingress sends every path of the content host to the server, with TLS
+  - it: its own Ingress sends the pages' paths of the content host to the server, never the API, with TLS once
     template: templates/ingress.yaml
-    set: { global.urls.artifacts: "https://artifacts.ostrom.run:8443" }
+    set: { global.urls.artifacts: "https://Artifacts.ostrom.run" }
     documentSelector: { path: metadata.name, value: o-ostrom-artifacts }
     asserts:
       - equal: { path: 'spec.rules[0].host', value: artifacts.ostrom.run }
-      - equal: { path: 'spec.rules[0].http.paths[0].path', value: / }
-      - equal: { path: 'spec.rules[0].http.paths[0].backend.service.name', value: o-ostrom-server }
-      - equal: { path: 'spec.tls[0].hosts[0]', value: artifacts.ostrom.run }
+      - equal: { path: 'spec.rules[0].http.paths[0].path', value: /a/ }
+      - equal: { path: 'spec.rules[1].http.paths[0].path', value: /l/ }
+      - equal: { path: 'spec.rules[1].http.paths[0].backend.service.name', value: o-ostrom-server }
+      - equal: { path: "spec.tls[0].hosts", value: ["artifacts.ostrom.run"] }
       - notExists: { path: 'metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]' }
-  - it: no artifacts Ingress without the server
+  - it: one more Ingress with the origin set
+    template: templates/ingress.yaml
+    set: { global.urls.artifacts: "https://artifacts.ostrom.run" }
+    asserts:
+      - hasDocuments: { count: 7 }
+  - it: no artifacts Ingress without the server (app and site only)
     template: templates/ingress.yaml
     set: { global.urls.artifacts: "https://artifacts.ostrom.run", server.enabled: false }
     asserts:
-      - notContains: { path: metadata.name, content: x }
-        documentSelector: { path: metadata.name, value: o-ostrom-artifacts, skipEmptyTemplates: true }
-  - it: refuses an origin with a path
-    template: templates/web.yaml
+      - hasDocuments: { count: 2 }
+  - it: refuses an origin with a path (the schema, before any template)
     set: { global.urls.artifacts: "https://example.com/artifacts" }
     asserts:
-      - failedTemplate: { errorPattern: "global.urls.artifacts is a bare http\\(s\\) origin" }
-  - it: refuses the console's host
+      - failedTemplate: { errorPattern: "artifacts" }
+        template: templates/web.yaml
+  - it: refuses the console's host, whatever its case or port
     template: templates/web.yaml
-    set: { global.urls.artifacts: "https://app.example.com:8443" }
+    set: { global.urls.artifacts: "https://APP.example.com:8443" }
     asserts:
       - failedTemplate: { errorPattern: "app.example.com is also global.urls.app's" }
   - it: refuses the API's host
@@ -77,3 +81,8 @@ tests:
     template: templates/NOTES.txt
     asserts:
       - notMatchRegexRaw: { pattern: "Artifact pages" }
+  - it: refuses the host the Ingress gives the console, even when global.urls.app differs
+    template: templates/web.yaml
+    set: { global.urls.artifacts: "https://console.corp.example", ingress.hosts.app: console.corp.example }
+    asserts:
+      - failedTemplate: { errorPattern: "console.corp.example is also ingress.hosts.app's" }
