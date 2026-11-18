@@ -522,7 +522,7 @@ const CHECK_CLIENT = [
   'sys.stdout.write(out.decode())',
 ].join('\n');
 
-/** The first value of a variable in the environment of a process of the container (the agent's, UID 1000). */
+/** The first value of a variable in the environment of a process of the container (the agent's, UID 1001). */
 function containerVariable(container, name) {
   const read = `for p in /proc/[0-9]*; do tr '\\0' '\\n' < "$p/environ" 2>/dev/null | grep -m1 '^${name}=' && break; done; true`;
   return execFileSync('docker', ['exec', container, 'sh', '-c', read], { encoding: 'utf8' }).trim().slice(name.length + 1);

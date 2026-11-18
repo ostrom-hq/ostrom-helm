@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Local demo: what a running cloud session's containers can reach (journey.mjs runs it, OSTROM_DEMO_SESSION_CHECK).
 # Given SESSION_ID, checks on the engine that:
-#   - the session runs as three containers, the agent host and the check host (UID 1000) and the runner (UID 1001), on
-#     ostrom-sessions only (the check host runs the hooks' checks, `isolated_runner`, ostrom-server#130);
+#   - the session runs as three containers, the agent host and the check host (UID 1001) and the runner (UID 1000),
+#     TeamCode's image contract since ostrom-server#494, on ostrom-sessions only (the check host runs the hooks'
+#     checks, `isolated_runner`, ostrom-server#130);
 #   - the agent's container does not mount the check socket's volume, so it cannot ask a check of its own;
 #   - from the agent's container, the server answers; the database and the Docker engine proxy do not resolve; this
 #     machine's published ports and the internet do not answer.
@@ -17,13 +18,15 @@ for id in $ids; do
   [ "$networks" = "ostrom-sessions " ] || { echo "container $id on: $networks"; exit 1; }
 done
 agent=$(docker ps -q --filter "label=ostrom.run/session=$hex" --filter "name=-agent")
-[ "$(docker exec "$agent" id -u)" = 1000 ] || { echo "the agent does not run as 1000"; exit 1; }
+[ "$(docker exec "$agent" id -u)" = 1001 ] || { echo "the agent does not run as 1001"; exit 1; }
 checks=$(docker ps -q --filter "label=ostrom.run/session=$hex" --filter "name=-checks")
 [ -n "$checks" ] || { echo "no check host container"; exit 1; }
-[ "$(docker exec "$checks" id -u)" = 1000 ] || { echo "the check host does not run as 1000"; exit 1; }
+[ "$(docker exec "$checks" id -u)" = 1001 ] || { echo "the check host does not run as 1001"; exit 1; }
 # The check socket's volume is the one the check host and the runner share; the agent must not mount it.
 # The runner's container is the execution's own name, without a suffix: the one that is neither of the others.
 runner=$(printf '%s\n' "$ids" | grep -vx -e "$agent" -e "$checks")
+# The user the engine started the runner as (its image need not have `id`).
+[ "$(docker inspect -f '{{.Config.User}}' "$runner" | cut -d: -f1)" = 1000 ] || { echo "the runner does not run as 1000"; exit 1; }
 volumes() { docker inspect -f '{{range .Mounts}}{{if .Name}}{{.Name}}{{"\n"}}{{end}}{{end}}' "$1" | sort -u; }
 shared=$(volumes "$checks" | while read -r v; do volumes "$runner" | grep -qx "$v" && echo "$v"; done)
 [ -n "$shared" ] || { echo "the check host and the runner share no volume: no check socket found"; exit 1; }
@@ -38,4 +41,4 @@ done
 for url in http://host.docker.internal/ http://1.1.1.1/; do
   if docker exec "$agent" curl -s -o /dev/null -m 5 "$url"; then echo "the agent reaches $url"; exit 1; fi
 done
-echo "3 containers (agent, check host, runner) on ostrom-sessions only, agent and check host UID 1000, the check socket not in the agent's mounts; server reachable; postgres, docker-api, the host and the internet unreachable"
+echo "3 containers (agent, check host, runner) on ostrom-sessions only, agent and check host UID 1001, runner UID 1000, the check socket not in the agent's mounts; server reachable; postgres, docker-api, the host and the internet unreachable"

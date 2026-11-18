@@ -5,9 +5,15 @@ services:
   migrate:
     image: ostrom-ci-standin-server:local
     build: { context: ci-standin }
+  # The same stand-in image, serving the server's health answer with busybox httpd: the real image's healthcheck needs
+  # bash, so this one asks with busybox wget.
   server:
-    image: docker.io/hashicorp/http-echo:1.0
-    command: ["-listen=:8080", "-text={\"status\":\"ok\"}"]
+    image: ostrom-ci-standin-server:local
+    build: { context: ci-standin }
+    entrypoint: ["httpd", "-f", "-p", "8080", "-h", "/www"]
+    command: []
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
   web:
     image: docker.io/hashicorp/http-echo:1.0
     command: ["-listen=:8080", "-text=console"]
