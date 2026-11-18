@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # Ostrom whole on this computer, in one command (macOS with Docker Desktop, or Linux with Docker):
 #   ./demo up        checks the machine, takes main's images, starts everything, prints the addresses and sign-in
 #   ./demo bootstrap the first owner's one-time setup link (the instance is invite-only)
