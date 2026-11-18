@@ -340,6 +340,9 @@
           "properties": {
             "create": {
               "type": "boolean"
+            },
+            "volumeReader": {
+              "type": "boolean"
             }
           }
         }

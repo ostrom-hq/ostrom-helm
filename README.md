@@ -70,7 +70,8 @@ flowchart LR
 
 ## Security posture
 
-The chart creates **namespaced objects only** (no ClusterRole, CRD, webhook or namespace; CI checks it), reuses the
+The chart creates **namespaced objects only** (no ClusterRole, CRD, webhook or namespace; CI checks it; the one
+exception is the opt-in, read-only `cloudSessions.rbac.volumeReader`), reuses the
 cluster's ingress controller and, if present, cert-manager, and runs every pod non-root, without capabilities, with a
 read-only root filesystem (except Ory Polis, whose Next.js runtime writes next to itself) under the `restricted` Pod
 Security standard. Images and the chart are signed with cosign ([docs/images.md](docs/images.md)).

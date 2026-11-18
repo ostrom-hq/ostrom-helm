@@ -19,9 +19,9 @@ rules:
     resources: [secrets]
     verbs: [create, delete, deletecollection]
   - apiGroups: [""]
-    # One workspace volume per session.
+    # One workspace volume per session; listed by the garbage collection, which deletes the claims no session owns.
     resources: [persistentvolumeclaims]
-    verbs: [get, create, delete]
+    verbs: [get, list, create, delete]
   - apiGroups: [networking.k8s.io]
     # The sessions' own policies (no ingress; DNS, the server and the public internet only).
     resources: [networkpolicies]
@@ -43,5 +43,37 @@ subjects:
   - kind: ServiceAccount
     name: {{ $full }}-server
     namespace: {{ .Release.Namespace }}
+{{- if .Values.cloudSessions.rbac.volumeReader }}
+---
+# Opt-in, the chart's only cluster-wide objects: read PersistentVolumes and StorageClasses (TeamCode's
+# docs/cloud-sessions.md). The server proves a deleted session's volume is gone, counts the orphaned volumes of its
+# garbage collection and refuses a profile whose storage class keeps volumes. Read only: it never deletes a volume.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $full }}-{{ .Release.Namespace }}-volume-reader
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "server") | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [persistentvolumes]
+    verbs: [get, list]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $full }}-{{ .Release.Namespace }}-volume-reader
+  labels: {{- include "ostrom.labels" (dict "root" . "component" "server") | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $full }}-{{ .Release.Namespace }}-volume-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ $full }}-server
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}
 {{- end }}
