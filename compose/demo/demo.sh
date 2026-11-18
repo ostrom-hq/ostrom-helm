@@ -13,14 +13,17 @@
 # OSTROM_SERVER_IMAGE, OSTROM_WEB_IMAGE and OSTROM_RUNNER_IMAGE, when set, win over the images `up` would take.
 set -eu
 cd "$(dirname "$0")/.."
+# The images `up` took, for the commands that follow it on the same stack (journey, logs, down). Gitignored.
+images_file=demo/.images.env
+# Those commands run the stack `up` composed, Stripe's overlay included, whatever this shell has set.
+# shellcheck source=/dev/null
+case "${1:-up}" in up) ;; *) [ ! -f "$images_file" ] || . "./$images_file" ;; esac
 files="-f docker-compose.yml -f demo/docker-compose.demo.yml"
 if [ -n "${OSTROM_DEMO_STRIPE_KEY_FILE:-}" ]; then files="$files -f demo/docker-compose.demo-stripe.yml"; fi
 # shellcheck disable=SC2086
 dc() { docker compose $files "$@"; }
 die() { echo "demo: $*" >&2; exit 1; }
 
-# The images `up` took, for the commands that follow it on the same stack (journey, logs, down). Gitignored.
-images_file=demo/.images.env
 REGISTRY=docker.io/ostromhq
 DEFAULT_RUNNER_IMAGE=$REGISTRY/ostrom-runner:latest
 # Below this, Docker's memory (Docker Desktop: Settings > Resources > Memory) does not hold the stack and a session.
@@ -51,7 +54,13 @@ pull() {
 }
 
 # The image's digest in its repository (what Compose then runs), and the commit it was built from when it says.
-digest_of() { docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" | grep -m1 "^${1%%[:@]*}@"; }
+# Docker lists a docker.io image's digests under its short name (ostromhq/x@sha256:...): matched with or without the
+# prefix, given back under the name asked for.
+digest_of() {
+  name=${1%%[:@]*}; short=${name#docker.io/}
+  docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" |
+    sed -n "s|^\(docker\.io/\)\{0,1\}$short@|$name@|p" | head -n 1 | grep . || die "no digest for $1 (an image built here, not pulled?)"
+}
 # Only for Ostrom's published images: one built here may carry its base image's revision label.
 revision_of() {
   r=
@@ -90,15 +99,17 @@ choose_images() {
     keep OSTROM_SERVER_IMAGE "$OSTROM_SERVER_IMAGE"
     keep OSTROM_WEB_IMAGE "$OSTROM_WEB_IMAGE"
     keep OSTROM_RUNNER_IMAGE "$OSTROM_RUNNER_IMAGE"
+    keep OSTROM_DEMO_STRIPE_KEY_FILE "${OSTROM_DEMO_STRIPE_KEY_FILE:-}"
   } > "$images_file"
 }
 
-# Port 80 for Caddy (the demo's names have no port), 443, and 3307 for the fake TeamCode base, unless this stack
-# already holds them.
+# Port 80 for Caddy (the demo's names have no port, so no other port will do), 443, and 3307 for the fake TeamCode
+# base, unless this stack already holds them (an earlier `up`, whole or cut short).
 ports() {
-  [ -z "$(dc ps -q caddy 2> /dev/null)" ] || return 0
+  case "${OSTROM_HTTP_PORT:-80}/${OSTROM_HTTPS_PORT:-443}" in 80/443) ;; *) die "the demo's addresses have no port: it runs on ports 80 and 443 only (unset OSTROM_HTTP_PORT and OSTROM_HTTPS_PORT)" ;; esac
+  [ -z "$(dc ps -q 2> /dev/null)" ] || return 0
   command -v nc > /dev/null 2>&1 || return 0
-  for port in "${OSTROM_HTTP_PORT:-80}" "${OSTROM_HTTPS_PORT:-443}" 3307; do
+  for port in 80 443 3307; do
     if nc -z -w 1 127.0.0.1 "$port" 2> /dev/null; then
       die "port $port of this machine is taken (\`lsof -nP -iTCP:$port -sTCP:LISTEN\` says by what): stop it, then run this again"
     fi
@@ -141,8 +152,11 @@ healthy() {
 
 # The memory each container of the stack and of the cloud sessions uses now, and their total.
 memory_used() {
-  # shellcheck disable=SC2046 # one id per word
-  docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' $(dc ps -q) $(docker ps -q --filter label=app.kubernetes.io/managed-by=ostrom) 2> /dev/null |
+  ids="$(dc ps -q) $(docker ps -q --filter label=app.kubernetes.io/managed-by=ostrom)"
+  # Without an id, docker stats would list every container of this machine.
+  [ -n "$(echo "$ids" | tr -d ' ')" ] || return 0
+  # shellcheck disable=SC2086 # one id per word
+  docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' $ids 2> /dev/null |
     awk '{ u = $2; n = u + 0; if (u ~ /GiB/) n *= 1024; else if (u ~ /KiB/) n /= 1024; else if (u !~ /MiB/) n /= 1048576
            t += n; printf "  %-34s %s\n", $1, u } END { printf "  %-34s %.0f MiB\n", "total", t }' || true
 }
@@ -153,13 +167,14 @@ case "${1:-up}" in
     memory
     ./install.sh --no-start
     hosts
-    choose_images
     ports
+    choose_images
     names || true
     dc up -d --wait
     healthy
     echo
-    echo "Ostrom's demo is up: server $(revision_of "$(dc config --images | grep -m1 ostrom-server)"), console $(revision_of "$(dc config --images | grep -m1 ostrom-web)"), cloud sessions $(revision_of "$OSTROM_RUNNER_IMAGE")"
+    images=$(dc config --images)
+    echo "Ostrom's demo is up: server $(revision_of "$(echo "$images" | grep -m1 -E '/ostrom-server[:@]')"), console $(revision_of "$(echo "$images" | grep -m1 -E '/ostrom-web[:@]')"), cloud sessions $(revision_of "$OSTROM_RUNNER_IMAGE")"
     echo "Memory used now:"
     memory_used
     cat << EOF
@@ -178,15 +193,11 @@ Next: ./demo journey (the customer's journey, report in compose/demo-report.md),
 EOF
     ;;
   bootstrap)
-    # shellcheck source=/dev/null
-    [ ! -f "$images_file" ] || . "./$images_file"
-    dc exec server ostrom-server bootstrap
+    dc exec -T server ostrom-server bootstrap
     ;;
   journey)
     command -v node > /dev/null 2>&1 || die "the journey needs Node 22 or later (brew install node)"
     [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 22 ] || die "the journey needs Node 22 or later, not $(node -v)"
-    # shellcheck source=/dev/null
-    [ ! -f "$images_file" ] || . "./$images_file"
     hosts
     names || exit 1
     OSTROM_DEMO_SESSION_CHECK=${OSTROM_DEMO_SESSION_CHECK-demo/check-session.sh} \
@@ -195,14 +206,10 @@ EOF
     ;;
   # Every service but the Stripe CLI's, whose log holds its webhook signing secret.
   logs)
-    # shellcheck source=/dev/null
-    [ ! -f "$images_file" ] || . "./$images_file"
     # shellcheck disable=SC2046 # one service name per word
     dc logs --no-color --tail "${2:-200}" $(dc config --services | grep -v '^stripe-')
     ;;
   down)
-    # shellcheck source=/dev/null
-    [ ! -f "$images_file" ] || . "./$images_file"
     if [ -n "$(dc ps -q 2> /dev/null)" ]; then
       echo "Memory used before stopping:"
       memory_used
