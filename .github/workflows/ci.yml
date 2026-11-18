@@ -104,7 +104,8 @@ jobs:
           echo "Real server for the migration drill: ostrom-server@$(git rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
           # Give the disk and the memory back to kind and Compose: the toolchain is no longer needed.
           ./gradlew --stop || true
-          rm -rf ~/.konan ~/.gradle/caches "$RUNNER_TEMP/docs-truth-server/build" "$RUNNER_TEMP/docs-truth-server"/*/build "$RUNNER_TEMP/ostrom-core"
+          # Best effort: a daemon still closing may hold a file of the caches.
+          rm -rf ~/.konan ~/.gradle/caches "$RUNNER_TEMP/docs-truth-server/build" "$RUNNER_TEMP/docs-truth-server"/*/build "$RUNNER_TEMP/ostrom-core" || true
           df -h / && free -h
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with: { version: v3.17.2 }
