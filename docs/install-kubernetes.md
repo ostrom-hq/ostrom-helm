@@ -18,8 +18,8 @@ kubectl label namespace ostrom pod-security.kubernetes.io/enforce=restricted
 The images on `docker.io/ostromhq` are public: skip this step unless you pull from a private mirror.
 
 ```sh
-kubectl -n ostrom create secret docker-registry ghcr \
-  --docker-server=ghcr.io --docker-username=<github user> --docker-password=<token with read:packages>
+kubectl -n ostrom create secret docker-registry mirror \
+  --docker-server=<registry host> --docker-username=<user> --docker-password=<token>
 ```
 
 ## 3. TLS
@@ -38,7 +38,7 @@ Pick one:
 ```yaml
 global:
   imageTag: "<ostrom version>"   # or pin each image: server.image.digest: sha256:…
-  # imagePullSecrets: [ghcr]   # only for a private mirror; docker.io/ostromhq is public
+  # imagePullSecrets: [mirror]   # only for a private mirror; docker.io/ostromhq is public
   urls: { api: https://api.example.com, app: https://app.example.com, site: https://example.com }
 ingress:
   hosts: { api: api.example.com, app: app.example.com, site: example.com, siteAliases: [www.example.com], sso: sso.example.com }

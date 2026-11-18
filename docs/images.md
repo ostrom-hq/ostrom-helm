@@ -2,15 +2,16 @@
 
 | Image | What | Base |
 |---|---|---|
-| `docker.io/ostromhq/ostrom-server` | the native server binary | `gcr.io/distroless/cc-debian12:nonroot` |
+| `docker.io/ostromhq/ostrom-server` | the server, a JVM application built by jib (ostrom-server `docs/decisions/0001`) | `eclipse-temurin:21-jre-noble` |
 | `docker.io/ostromhq/ostrom-web` | the console (static files + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
 | `docker.io/ostromhq/ostrom-site` | the site (Next.js static export + nginx) | `nginxinc/nginx-unprivileged` (alpine) |
 | `docker.io/ostromhq/ostrom-runner` | cloud sessions, delivery: the `ostrom` CLI binary (slim image) | `debian:12-slim` |
 | `docker.io/ostromhq/ostrom-session` | cloud sessions, default session image: the agents (Claude Code, Codex), git | `debian:12-slim` |
 
-All are built for `linux/amd64` and `linux/arm64`, tagged `<version>`, `<major>.<minor>` and `latest` on a release
-(`edge` from `main`), carry an SPDX SBOM and SLSA provenance as attestations, and are **signed with cosign** by
-digest. The signing key is Ostrom's (not keyless while the repositories are private):
+All are built for `linux/amd64` and `linux/arm64` and **signed with cosign** by digest. The server is tagged `<version>`
+on a release and `latest` and `sha-<commit>` from `main` (jib, no SBOM attestation); the others are tagged `<version>`,
+`<major>.<minor>` and `latest` on a release (`edge` from `main`) and carry an SPDX SBOM and SLSA provenance as
+attestations. The signing key is Ostrom's (not keyless while the repositories are private):
 
 ```
 -----BEGIN PUBLIC KEY-----

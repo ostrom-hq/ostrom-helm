@@ -56,8 +56,9 @@ The full list of server keys is in [values.md](values.md#server-environment).
 No release tag exists yet: `docker-compose.yml` pins the server and the console by digest, to a signed multi-arch build
 of `main`. To run another build, set `OSTROM_SERVER_IMAGE` and `OSTROM_WEB_IMAGE` in `.env` (by digest, e.g.
 `docker.io/ostromhq/ostrom-server@sha256:…`), then `docker compose pull && docker compose up -d`. To build the server
-yourself instead, in a clone of `ostrom-server`: `ci/build-linux.sh` (it leaves the native binary in
-`dist/ostrom-server`), then `docker build -t ostrom-server:local .`, and `OSTROM_SERVER_IMAGE=ostrom-server:local`. See [upgrade.md](upgrade.md).
+yourself instead, in a clone of `ostrom-server`: `./gradlew :image:publishImageToLocalRegistry -PimageTags=local
+-PimagePlatforms=amd64` (or `arm64`; jib puts `ostrom-server:local` in the local Docker), and
+`OSTROM_SERVER_IMAGE=ostrom-server:local`. See [upgrade.md](upgrade.md).
 
 Cloud sessions (agents running on the server) need Kubernetes in the Compose install: they are off there. The local
 demo below runs them on the machine's own Docker.
