@@ -538,8 +538,8 @@ async function machineRunner(owner, image) {
   };
   try {
     const before = await listed();
-    docker('run', '-d', '--name', container, '--network', MACHINE_NETWORK, '-e', `OSTROM_SERVER_URL=${MACHINE_SERVER_URL}`, '-e', `OSTROM_RUNNER_ID=${id}`, '-e', 'OSTROM_RUNNER_KEY', '-e', `OSTROM_RUNNER_INTERVAL_SECONDS=${MACHINE_INTERVAL_S}`, image, 'machine');
-    record('M1', 'Runner enregistré, clé affichée une fois', before?.status === 'offline' ? GREEN : RED, `POST /runners → 201 (${id}, clé de ${key.length} caractères) ; avant tout heartbeat : ${before?.status ?? 'absent de GET /runners'} ; \`ostrom-runner machine\` démarré, un heartbeat toutes les ${MACHINE_INTERVAL_S} s`);
+    docker('run', '-d', '--name', container, '--network', MACHINE_NETWORK, '-e', `OSTROM_SERVER_URL=${MACHINE_SERVER_URL}`, '-e', `OSTROM_RUNNER_ID=${id}`, '-e', 'OSTROM_RUNNER_KEY', '-e', `OSTROM_RUNNER_INTERVAL_SECONDS=${MACHINE_INTERVAL_S}`, '--entrypoint', '/usr/local/bin/ostrom', image, 'cloud', 'machine');
+    record('M1', 'Runner enregistré, clé affichée une fois', before?.status === 'offline' ? GREEN : RED, `POST /runners → 201 (${id}, clé de ${key.length} caractères) ; avant tout heartbeat : ${before?.status ?? 'absent de GET /runners'} ; \`ostrom cloud machine\` démarré, un heartbeat toutes les ${MACHINE_INTERVAL_S} s`);
 
     const online = await until('online', 30);
     const logs = logsOf();
