@@ -365,6 +365,10 @@ cloudSessions:
     # It lets the server prove a deleted session's volume is gone, count orphaned volumes and refuse a profile whose
     # storage class keeps volumes (runners.cloud.retention.v1). Off, those checks cannot read the cluster.
     volumeReader: false
+    # Opt-in ClusterRoleBinding to the built-in system:auth-delegator (create TokenReviews): a session's runner then
+    # proves its pod with a projected ServiceAccount token (audience ostrom, 600 s), reviewed by the server, as
+    # TeamCode's. Off, the runner authenticates with its execution's runner token only.
+    tokenReview: false
 
 # --- Ingress (uses the cluster's ingress controller; creates nothing cluster-wide) ---------------------------------
 ingress:

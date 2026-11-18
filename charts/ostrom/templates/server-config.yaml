@@ -112,6 +112,10 @@ data:
   {{- fail "cloudSessions.allowedOrgs: \"*\" stands alone" }}
   {{- end }}
   OSTROM_RUNNERS_ALLOWED_ORGS: {{ join "," $orgs | quote }}
+  {{- if .Values.cloudSessions.rbac.tokenReview }}
+  # The runner proves its pod with a projected ServiceAccount token, reviewed by TokenReview (rbac.tokenReview).
+  OSTROM_RUNNERS_KUBERNETES_POD_IDENTITY: "true"
+  {{- end }}
   {{- end }}
   {{- range $k, $v := $s.config }}
   {{ $k }}: {{ $v | toString | quote }}
