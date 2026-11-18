@@ -16,7 +16,24 @@ data:
   OSTROM_LOG_LEVEL: {{ $s.logLevel | quote }}
   OSTROM_DATABASE_URL: {{ include "ostrom.database.url" . | quote }}
   OSTROM_DATABASE_USER: {{ include "ostrom.database.user" . | quote }}
-  OSTROM_DATABASE_MAX_CONNECTIONS: {{ $s.database.maxConnections | quote }}
+  {{- /* What one replica's JDBC pool opens at most: the server's bounds (TeamCode's 2..64). */}}
+  {{- $conns := int $s.database.maxConnections }}
+  {{- if or (lt $conns 2) (gt $conns 64) }}
+  {{- fail (printf "server.database.maxConnections must be between 2 and 64, got %v" $s.database.maxConnections) }}
+  {{- end }}
+  {{- /* The connection budget across replicas (CRL-01, ostrom-server docs/MODULES.md "Database connections"):
+         (most replicas + the rolling surge of 1) × (maxConnections + 1 listening) + 2 migrate + Polis (10 a replica)
+         + 1 backup + 1 exporter + 3 reserved, at most 80 % of the bundled PostgreSQL's max_connections. */}}
+  {{- if .Values.postgresql.enabled }}
+  {{- $pods := add1 (int (ternary $s.autoscaling.maxReplicas $s.replicas $s.autoscaling.enabled)) }}
+  {{- $polis := ternary (mul (int .Values.polis.replicas) 10) 0 .Values.polis.enabled }}
+  {{- $used := add (mul $pods (add1 $conns)) 2 $polis 1 1 3 }}
+  {{- $max := int .Values.postgresql.parameters.max_connections }}
+  {{- if gt (mul $used 10) (mul $max 8) }}
+  {{- fail (printf "the server would open up to %d database connections (%d pods × (%d + 1) + %d others), over 80 %% of postgresql.parameters.max_connections (%d): lower server.database.maxConnections or the replicas, or raise max_connections" $used $pods $conns (sub $used (mul $pods (add1 $conns))) $max) }}
+  {{- end }}
+  {{- end }}
+  OSTROM_DATABASE_MAX_CONNECTIONS: {{ $conns | quote }}
   {{- if $s.trustedProxies }}
   OSTROM_TRUSTED_PROXIES: {{ $s.trustedProxies | quote }}
   {{- end }}

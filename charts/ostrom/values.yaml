@@ -33,6 +33,9 @@ server:
   runAsUser: 65532            # the user of the server image (jib `container.user`)
   logLevel: info
   database:
+    # 2 to 64: the connections one replica's JDBC pool opens at most (one listening connection apart). With
+    # the bundled PostgreSQL the chart refuses (most replicas + 1) × (maxConnections + 1) + Polis + 7 over 80 % of
+    # postgresql.parameters.max_connections (docs/sizing.md).
     maxConnections: 10
   # Ed25519 instance key that signs receipts. Must be the SAME for every replica and survive upgrades:
   # by default the chart generates it once and keeps it (lookup); or give your own Secret (key `instance-key.pem`).
