@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: Apache-2.0
 # Scaling under load on kind, with the real server (image built from ostrom-server main, loaded as $SERVER_IMAGE),
 # the built-in PostgreSQL and the HPA on (2 to 4 replicas; needs metrics-server in the cluster). k6 runs in a pod of
 # the namespace and hits the server's Service (ci/load/drill.js):

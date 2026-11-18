@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: Apache-2.0
 // Load of ci/scale-drill.sh, from a pod of the release namespace to the server's Service (ClusterIP, no DNS).
 // MODE=steady: RATE requests/s for DURATION (a version rollout runs meanwhile).
 // MODE=peak: from 10 to RATE requests/s in RAMP, held for DURATION (the HPA must follow).
