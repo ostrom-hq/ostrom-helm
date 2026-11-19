@@ -42,7 +42,7 @@ tests:
       - equal: { path: "spec.groups[0].rules[4].alert", value: OstromDatabasePoolWaiting }
       - matchRegex:
           path: "spec.groups[0].rules[4].expr"
-          pattern: 'db_client_connection_pending_requests\{job="ostrom/ostrom-server"\}'
+          pattern: 'max_over_time\(db_client_connection_pending_requests\{job="ostrom/ostrom-server"\}\[1m\]\)'
       - equal: { path: "spec.groups[0].rules[5].alert", value: OstromDatabasePoolSaturated }
       - matchRegex:
           path: "spec.groups[0].rules[5].expr"

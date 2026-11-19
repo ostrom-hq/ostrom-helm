@@ -28,7 +28,7 @@ data:
     REVOKE ALL ON DATABASE polis FROM PUBLIC;
     -- The statistics of every database's statements, read from `postgres` by the superuser (CRL-04); only when the
     -- library is preloaded (postgresql.parameters.shared_preload_libraries).
-    {{- if contains "pg_stat_statements" (toString (index $pg.parameters "shared_preload_libraries")) }}
+    {{- if regexMatch "(^|,)\\s*pg_stat_statements\\s*(,|$)" (toString (index $pg.parameters "shared_preload_libraries")) }}
     CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
     {{- end }}
     \connect :"db"

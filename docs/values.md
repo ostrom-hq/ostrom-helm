@@ -211,12 +211,13 @@ Collector or at any OTLP backend; once the metrics reach Prometheus under the us
   - dropped telemetry (`info`);
   - requests waiting for a database connection for 5 minutes (`db_client_connection_pending_requests`);
   - a replica using more than 90 % of its connections for 10 minutes (`info`).
-
-The bundled PostgreSQL (`postgresql.parameters`) preloads `pg_stat_statements`, whose view the data directory's first
-start creates in the `postgres` database, and logs every statement over 1 s and every lock wait over 1 s. An external
-database needs the same settings from its operator.
   Without the operator the chart refuses it; with `helm template`, pass
   `--api-versions monitoring.coreos.com/v1/PrometheusRule`.
+
+The bundled PostgreSQL (`postgresql.parameters`) preloads `pg_stat_statements`, whose view the data directory's first
+start creates in the `postgres` database (on an older data directory, `CREATE EXTENSION pg_stat_statements` there by
+hand), and logs every statement over 1 s and every lock wait over 1 s, without the bound values. Changing these
+settings restarts the database. An external database needs the same settings from its operator.
 
 The series are selected by `job="ostrom/<prefix>-server"`: the server's `service.namespace` is `ostrom`, and the
 `service.name` comes from `observability.otel.serviceNamePrefix`. Set `monitoring.job` if your collector labels them

@@ -74,14 +74,16 @@ spec:
             description: The reason label says why (queue_full, rejected, retries_exhausted). Telemetry never slows a request.
         - alert: OstromDatabasePoolWaiting
           expr: |
-            max(db_client_connection_pending_requests{ {{- $sel -}} }) > 0
+            max(max_over_time(db_client_connection_pending_requests{ {{- $sel -}} }[1m])) > 0
           for: 5m
           labels: { severity: warning, service: ostrom }
           annotations:
             summary: Ostrom requests have waited for a database connection for 5 minutes.
             description: >-
-              The pool (server.database.maxConnections) is too small for the load, or PostgreSQL is slow (its log has
-              every statement over 1 s and every lock wait). After 30 s of waiting callers a replica leaves the Service.
+              Every minute for 5 minutes, callers waited for a connection. The pool (server.database.maxConnections) is
+              too small for the load, or PostgreSQL is slow: its log has the slow statements and the lock waits
+              (postgresql.parameters), pg_stat_statements their totals. A replica whose callers wait long leaves the
+              Service (/ready).
         - alert: OstromDatabasePoolSaturated
           expr: |
             max(

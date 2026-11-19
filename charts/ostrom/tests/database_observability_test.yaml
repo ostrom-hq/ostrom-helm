@@ -11,7 +11,7 @@ tests:
       - contains: { path: 'spec.template.spec.containers[0].args', content: track_io_timing=on }
       - contains: { path: 'spec.template.spec.containers[0].args', content: log_min_duration_statement=1000 }
       - contains: { path: 'spec.template.spec.containers[0].args', content: log_lock_waits=on }
-      - contains: { path: 'spec.template.spec.containers[0].args', content: deadlock_timeout=1s }
+      - contains: { path: 'spec.template.spec.containers[0].args', content: log_parameter_max_length=0 }
   - it: creates the extension in the postgres database, before the Ostrom database
     documentSelector: { path: kind, value: ConfigMap }
     asserts:
@@ -23,3 +23,13 @@ tests:
     set: { postgresql.parameters.shared_preload_libraries: "" }
     asserts:
       - notMatchRegex: { path: 'data["10-roles.sh"]', pattern: 'pg_stat_statements' }
+  - it: the extension follows the preload list, not a name that only contains it
+    documentSelector: { path: kind, value: ConfigMap }
+    set: { postgresql.parameters.shared_preload_libraries: "auto_explain, pg_stat_statements" }
+    asserts:
+      - matchRegex: { path: 'data["10-roles.sh"]', pattern: 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements;' }
+  - it: a library named after it is not it
+    documentSelector: { path: kind, value: ConfigMap }
+    set: { postgresql.parameters.shared_preload_libraries: pg_stat_statements_v2 }
+    asserts:
+      - notMatchRegex: { path: 'data["10-roles.sh"]', pattern: 'CREATE EXTENSION' }
