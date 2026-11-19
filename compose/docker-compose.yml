@@ -14,7 +14,22 @@ services:
     image: docker.io/library/postgres:17.6@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929
     # Roles (postgres-init/10-roles.sh, the same script as the Helm chart): the superuser; `ostrom`, owner of the
     # database, for migrations only; `ostrom_app`, the server's role, which owns nothing and cannot bypass
-    # row-level security; `polis`, with its own database.
+    # row-level security; `polis`, with its own database. The chart's postgresql.parameters for slow queries and lock
+    # waits (audit CRL-04), without the bound values in the log.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - track_io_timing=on
+      - -c
+      - log_min_duration_statement=1000
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_parameter_max_length=0
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres

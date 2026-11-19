@@ -12,6 +12,9 @@ GRANT CONNECT, TEMPORARY ON DATABASE :"db" TO :"app";
 CREATE ROLE polis LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'polis_pw';
 CREATE DATABASE polis OWNER polis;
 REVOKE ALL ON DATABASE polis FROM PUBLIC;
+-- The statistics of every database's statements, read from `postgres` by the superuser (CRL-04); only when the
+-- library is preloaded (postgresql.parameters.shared_preload_libraries).
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 \connect :"db"
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
 ALTER SCHEMA public OWNER TO :"owner";
