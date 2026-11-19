@@ -25,7 +25,7 @@ tests:
       apiVersions: [monitoring.coreos.com/v1/PrometheusRule]
     asserts:
       - isKind: { of: PrometheusRule }
-      - lengthEqual: { path: "spec.groups[0].rules", count: 4 }
+      - lengthEqual: { path: "spec.groups[0].rules", count: 6 }
       - matchRegex: { path: "spec.groups[0].rules[0].expr", pattern: 'job="ostrom/acme-server"' }
       - equal: { path: "spec.groups[0].rules[2].alert", value: OstromServerSilent }
   - it: an explicit job wins
@@ -34,3 +34,16 @@ tests:
       apiVersions: [monitoring.coreos.com/v1/PrometheusRule]
     asserts:
       - matchRegex: { path: "spec.groups[0].rules[1].expr", pattern: 'job="prod/ostrom-server"' }
+  - it: the database pool alerts read the server's pool gauges
+    set: { monitoring.prometheusRule.enabled: true }
+    capabilities:
+      apiVersions: [monitoring.coreos.com/v1/PrometheusRule]
+    asserts:
+      - equal: { path: "spec.groups[0].rules[4].alert", value: OstromDatabasePoolWaiting }
+      - matchRegex:
+          path: "spec.groups[0].rules[4].expr"
+          pattern: 'max_over_time\(db_client_connection_pending_requests\{job="ostrom/ostrom-server"\}\[1m\]\)'
+      - equal: { path: "spec.groups[0].rules[5].alert", value: OstromDatabasePoolSaturated }
+      - matchRegex:
+          path: "spec.groups[0].rules[5].expr"
+          pattern: 'db_client_connection_count\{job="ostrom/ostrom-server", db_client_connection_state="used"\}'
