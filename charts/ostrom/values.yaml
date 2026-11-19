@@ -267,9 +267,18 @@ postgresql:
   resources:
     requests: { cpu: 250m, memory: 256Mi }
     limits: { memory: 1Gi }
+  # Passed as `-c name=value`. Besides the size, what a slow query or a lock wait needs to be found (audit CRL-04):
+  # pg_stat_statements (its view in the `postgres` database, created with the data directory), I/O timings, every
+  # statement over 1 s and every lock wait over deadlock_timeout in the log.
   parameters:
     max_connections: "200"
     shared_buffers: 128MB
+    shared_preload_libraries: pg_stat_statements
+    pg_stat_statements.track: top
+    track_io_timing: "on"
+    log_min_duration_statement: "1000"
+    log_lock_waits: "on"
+    deadlock_timeout: 1s
   nodeSelector: {}
   tolerations: []
   affinity: {}

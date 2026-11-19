@@ -203,12 +203,18 @@ Collector or at any OTLP backend; once the metrics reach Prometheus under the us
 - `monitoring.dashboards.enabled`: a ConfigMap with the dashboard "Ostrom — API" (requests per route, 5xx ratio,
   p50/p95/p99, requests in flight, CPU, memory, dropped telemetry). It has a `datasource` variable and a `job` variable.
   The `grafana_dashboard: "1"` label is the one the Grafana sidecar of kube-prometheus-stack watches.
-- `monitoring.prometheusRule.enabled`: a PrometheusRule (Prometheus Operator) with four alerts, matching the API budget of
+- `monitoring.prometheusRule.enabled`: a PrometheusRule (Prometheus Operator) with six alerts, matching the API budget of
   50 ms at p95:
   - 5xx above 2 % for 5 minutes;
   - p95 above 250 ms for 10 minutes;
   - no metric from the server for 10 minutes;
-  - dropped telemetry (`info`).
+  - dropped telemetry (`info`);
+  - requests waiting for a database connection for 5 minutes (`db_client_connection_pending_requests`);
+  - a replica using more than 90 % of its connections for 10 minutes (`info`).
+
+The bundled PostgreSQL (`postgresql.parameters`) preloads `pg_stat_statements`, whose view the data directory's first
+start creates in the `postgres` database, and logs every statement over 1 s and every lock wait over 1 s. An external
+database needs the same settings from its operator.
   Without the operator the chart refuses it; with `helm template`, pass
   `--api-versions monitoring.coreos.com/v1/PrometheusRule`.
 
